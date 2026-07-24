@@ -7,7 +7,7 @@
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": ">=20"
+    "node": ">=20 <24"
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",

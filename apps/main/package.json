@@ -1,0 +1,24 @@
+{
+  "name": "@ln/main",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@ln/shared": "workspace:*",
+    "better-sqlite3": "^11.7.0",
+    "electron-store": "^10.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "electron": "^33.2.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

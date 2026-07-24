@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(python:*)",
+      "Bash(pytest:*)",
+      "Bash(pip install:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(rg:*)",
+      "Bash(mkdir:*)",
+      "Read(**)",
+      "Edit(apps/**)",
+      "Edit(packages/**)",
+      "Edit(sidecar/**)",
+      "Edit(*.md)",
+      "Edit(*.json)",
+      "Edit(*.yml)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Read(./resources/voices/*.onnx)",
+      "Read(./**/*.db)",
+      "Edit(./.env*)"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

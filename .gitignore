@@ -1,0 +1,42 @@
+node_modules/
+dist/
+dist-electron/
+out/
+release/
+*.tsbuildinfo
+
+# Dữ liệu người dùng — không bao giờ commit
+*.db
+*.db-shm
+*.db-wal
+*.ogg
+*.onnx
+*.onnx.json
+resources/voices/*/
+sidecar/models/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+build/
+*.spec
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.ogg binary
+*.onnx binary
+*.pdf binary
+*.docx binary
+pnpm-lock.yaml -diff

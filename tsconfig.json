@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/parsers" },
+    { "path": "./apps/main" },
+    { "path": "./apps/preload" },
+    { "path": "./apps/renderer" }
+  ]
+}

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "vite build"

@@ -40,3 +40,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Bản build native module theo từng ABI (Node/Electron)
+.abi-cache/

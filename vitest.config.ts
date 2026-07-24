@@ -2,8 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Test nằm cạnh source trong từng package
-    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts', 'apps/**/*.test.tsx'],
+    name: 'node',
+    // Renderer có config riêng (jsdom) — xem vitest.workspace.ts
+    include: ['packages/**/*.test.ts', 'apps/main/**/*.test.ts', 'apps/preload/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/release/**'],
     environment: 'node',
     coverage: {

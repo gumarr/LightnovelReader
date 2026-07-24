@@ -16,6 +16,9 @@ export type CreateWindowOptions = {
   /** File index.html của bản build */
   rendererFile: string;
   settings: AppSettings;
+  openDevTools?: boolean;
+  /** Gọi khi renderer không tải được — để log lại thay vì im lặng */
+  onLoadError: (message: string) => void;
 };
 
 export const createMainWindow = (options: CreateWindowOptions): BrowserWindow => {
@@ -58,6 +61,15 @@ export const createMainWindow = (options: CreateWindowOptions): BrowserWindow =>
   } else {
     void window.loadFile(options.rendererFile);
   }
+
+  if (options.openDevTools) {
+    window.webContents.openDevTools({ mode: 'detach' });
+  }
+
+  // Lỗi tải renderer phải nổi lên log, không im lặng để lại màn hình trắng
+  window.webContents.on('did-fail-load', (_e, code, description, url) => {
+    options.onLoadError(`Không tải được renderer (${code}): ${description} — ${url}`);
+  });
 
   return window;
 };

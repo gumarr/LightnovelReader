@@ -19,6 +19,11 @@ import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './win
  * Settings đọc trước vì cần `audioDir` và `theme` (màu nền cửa sổ).
  */
 
+// Đặt tên trước khi đọc userData: mặc định Electron lấy từ package name
+// (`@ln/main`) tạo ra thư mục lồng nhau khó hiểu.
+app.setName('LN Reader');
+app.setPath('userData', join(app.getPath('appData'), 'LN Reader'));
+
 // Chỉ cho phép một instance — hai instance sẽ tranh nhau ghi cùng file DB
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -76,6 +81,8 @@ const start = (): void => {
     devServerUrl: DEV_SERVER_URL,
     rendererFile: resolveRendererFile(appRoot),
     settings: settings.getAll(),
+    openDevTools: process.env['LN_DEVTOOLS'] === '1',
+    onLoadError: (message) => logger.error(message),
   });
 
   // Titlebar tự vẽ cần biết trạng thái để đổi icon phóng to / khôi phục

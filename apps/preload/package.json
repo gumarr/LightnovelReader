@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./src/api.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api": "./src/api.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "vite build"

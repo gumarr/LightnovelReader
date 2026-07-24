@@ -61,7 +61,17 @@ export default tseslint.config(
     },
   },
   {
+    // Script build/dev chạy trực tiếp bằng Node, không qua TypeScript
     files: ['**/*.config.{js,ts,mjs}', 'scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        __dirname: 'readonly',
+      },
+    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
     },

@@ -1,0 +1,39 @@
+@import './theme.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family:
+      'Segoe UI', system-ui, -apple-system, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+    /* App desktop: không cho kéo bật như trang web */
+    overscroll-behavior: none;
+  }
+
+  /* Chỉ hiện viền focus khi điều hướng bằng bàn phím */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Vùng kéo cửa sổ của titlebar tự vẽ */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}

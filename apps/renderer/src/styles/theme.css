@@ -1,0 +1,51 @@
+/*
+ * Bảng màu của app. Component chỉ dùng biến ở đây (qua Tailwind token
+ * `bg-bg`, `text-fg`, ...), không hardcode hex.
+ *
+ * Theme áp bằng class `.dark` trên <html> — khớp `darkMode: 'class'`.
+ */
+
+:root {
+  --bg: #ffffff;
+  --bg-elevated: #f7f7f8;
+  --bg-subtle: #eeeef1;
+  --fg: #18181b;
+  --fg-muted: #6b7280;
+  --accent: #4f46e5;
+  --accent-fg: #ffffff;
+  --border: #e4e4e7;
+  --danger: #dc2626;
+
+  /* Highlight phụ đề: từ đã đọc dịu, từ hiện tại nổi, từ chưa đọc nhạt */
+  --subtitle-past: #9ca3af;
+  --subtitle-current: #4f46e5;
+  --subtitle-future: #d1d5db;
+
+  --titlebar-height: 36px;
+}
+
+.dark {
+  --bg: #0f0f11;
+  --bg-elevated: #17171a;
+  --bg-subtle: #1f1f23;
+  --fg: #f4f4f5;
+  --fg-muted: #a1a1aa;
+  --accent: #818cf8;
+  --accent-fg: #0f0f11;
+  --border: #2a2a30;
+  --danger: #f87171;
+
+  --subtitle-past: #71717a;
+  --subtitle-current: #a5b4fc;
+  --subtitle-future: #3f3f46;
+}
+
+/* Tôn trọng thiết lập giảm chuyển động của hệ điều hành */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

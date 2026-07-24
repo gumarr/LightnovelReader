@@ -3,7 +3,10 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-24 · commit `88e7b04`
+> **Cập nhật lần cuối:** 2026-07-24 · commit `d627727`
+>
+> ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
+> xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
 
 ---
 
@@ -243,7 +246,9 @@ apps/renderer/src/
 - Với thay đổi ảnh hưởng UI hoặc đóng gói: **chạy app thật** để kiểm chứng,
   đừng chỉ dựa vào unit test (mục 4.2 là bài học)
 - Test phải kiểm tra hành vi thật, không viết test chỉ để tăng số lượng
-- Cập nhật file này sau mỗi phần hoàn thành
+- **Cập nhật file này trong cùng commit với code**, không để thành commit riêng:
+  ngày + hash ở đầu file, mục 2 (số test), mục 3 (dời mũi tên `⬅️`), và thêm
+  mục 4/5/8 nếu có quyết định kỹ thuật, bẫy môi trường hay nợ mới
 
 ---
 

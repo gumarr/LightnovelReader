@@ -119,6 +119,24 @@ Bắt buộc unit test cho: segmenter, chapter detector (từng tín hiệu), cl
 
 Chạy `pnpm typecheck && pnpm lint && pnpm test` trước khi báo hoàn thành. Sidecar: `pytest sidecar/tests`.
 
+## PROGRESS.md — cập nhật mỗi lần commit
+
+`PROGRESS.md` là nơi phiên làm việc sau lấy lại ngữ cảnh. **Đọc nó trước khi bắt đầu**, và **cập nhật trong cùng commit** với thay đổi code — không để thành commit riêng hay việc dọn dẹp sau.
+
+Mỗi commit phải sửa ít nhất:
+
+- **Ngày + hash commit** ở đầu file
+- **Mục 2 (Đã hoàn thành)** — đánh dấu phần vừa xong, cập nhật số test
+- **Mục 3 (Việc tiếp theo)** — đổi trạng thái, dời mũi tên `⬅️` sang mục kế
+
+Thêm mục mới khi gặp:
+
+- **Mục 4** — quyết định kỹ thuật khác/bổ sung so với `plan.md`, kèm **lý do**. Đây là thứ dễ mất nhất giữa các phiên.
+- **Mục 5** — bẫy môi trường (phiên bản runtime, biến môi trường, đường dẫn dữ liệu).
+- **Mục 8** — nợ kỹ thuật cố ý để lại, kèm mức độ.
+
+Ghi rõ cái gì **đã chạy thật** với cái gì **chỉ có unit test** — lỗi đóng gói và lỗi UI không lộ ra trong unit test.
+
 ## Lệnh
 
 ```bash
@@ -139,3 +157,4 @@ python sidecar/build.py   # PyInstaller onedir
 - Không bundle voice model / aligner model vào installer — tải runtime từ Hugging Face.
 - Không auto-generate audio ngay sau import — phải qua màn xác nhận chương.
 - Không tự thêm telemetry / analytics.
+- Không commit thay đổi code mà không cập nhật `PROGRESS.md` trong cùng commit.

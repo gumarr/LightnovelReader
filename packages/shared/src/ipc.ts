@@ -1,4 +1,4 @@
-import type { AppSettings, ThemeMode } from './types.js';
+import type { AppSettings, AppSettingsPatch, ThemeMode } from './types.js';
 import type { Result } from './result.js';
 
 /**
@@ -29,7 +29,7 @@ export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
 
   'settings:getAll': { in: void; out: Result<AppSettings> };
-  'settings:update': { in: Partial<AppSettings>; out: Result<AppSettings> };
+  'settings:update': { in: AppSettingsPatch; out: Result<AppSettings> };
   'settings:setTheme': { in: ThemeMode; out: Result<AppSettings> };
   /** Mở dialog chọn thư mục audio mới. `null` = user bấm huỷ */
   'settings:pickAudioDir': { in: void; out: Result<string | null> };

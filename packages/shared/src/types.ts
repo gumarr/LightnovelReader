@@ -119,6 +119,17 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 /** Bitrate Opus cho phép, mặc định 24 kbps */
 export type AudioBitrate = 16 | 24 | 32;
 
+/**
+ * Patch settings gửi qua IPC.
+ *
+ * Dùng `?: T | undefined` thay vì `Partial<AppSettings>` vì dự án bật
+ * `exactOptionalPropertyTypes` — `Partial` không nhận `undefined` tường minh,
+ * trong khi zod `.partial()` lại sinh ra đúng kiểu đó.
+ */
+export type AppSettingsPatch = {
+  [K in keyof AppSettings]?: AppSettings[K] | undefined;
+};
+
 export type AppSettings = {
   theme: ThemeMode;
   /** Thư mục lưu audio — user đổi được, không giả định nằm trong userData */

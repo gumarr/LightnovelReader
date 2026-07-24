@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Hủy lần chạy cũ khi có commit mới trên cùng nhánh
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint & test
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          # better-sqlite3 chưa có prebuild cho Node > 22 — xem .nvmrc
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm lint
+
+      - run: pnpm test
+
+  build:
+    name: Build Windows portable
+    runs-on: windows-latest
+    needs: check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build installer + portable
+        run: pnpm build:win
+        env:
+          # Không code sign — chấp nhận SmartScreen warning
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Kiểm tra bản đóng gói khởi động được
+        shell: pwsh
+        run: |
+          $exe = "release/win-unpacked/LN Reader.exe"
+          if (-not (Test-Path $exe)) { throw "Không tìm thấy $exe" }
+
+          $crash = Join-Path $env:APPDATA "LN Reader/logs/crash.log"
+          Remove-Item $crash -ErrorAction SilentlyContinue
+
+          Start-Process -FilePath $exe -ArgumentList "--remote-debugging-port=9222"
+          Start-Sleep -Seconds 25
+
+          # Renderer phải nạp được — bắt lỗi đóng gói thiếu module
+          $targets = Invoke-RestMethod "http://127.0.0.1:9222/json/list"
+          $page = $targets | Where-Object { $_.type -eq "page" }
+          if (-not $page) { throw "Renderer không nạp được" }
+          Write-Host "Renderer OK: $($page.url)"
+
+          if (Test-Path $crash) {
+            Get-Content $crash
+            throw "App crash lúc khởi động"
+          }
+
+          Get-Process -Name "LN Reader" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ln-reader-windows
+          path: |
+            release/*.exe
+            release/*.blockmap
+          retention-days: 14
+          if-no-files-found: error

@@ -5,6 +5,9 @@ out/
 release/
 *.tsbuildinfo
 
+# Bản build native module theo từng ABI (Node/Electron)
+.abi-cache/
+
 # Dữ liệu người dùng — không bao giờ commit
 *.db
 *.db-shm
@@ -40,6 +43,3 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
-
-# Bản build native module theo từng ABI (Node/Electron)
-.abi-cache/

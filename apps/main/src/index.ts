@@ -1,5 +1,6 @@
 import { app, type BrowserWindow } from 'electron';
 import { join } from 'node:path';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import Store from 'electron-store';
 import type { AppSettings } from '@ln/shared';
 import { closeDatabase, initDatabase } from './db/connection.js';
@@ -23,6 +24,26 @@ import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './win
 // (`@ln/main`) tạo ra thư mục lồng nhau khó hiểu.
 app.setName('LN Reader');
 app.setPath('userData', join(app.getPath('appData'), 'LN Reader'));
+
+/**
+ * Lỗi trước khi logger sẵn sàng sẽ chỉ hiện dialog "Error" trống của Electron.
+ * Ghi thẳng ra file để bản đóng gói còn dấu vết chẩn đoán.
+ */
+const writeCrashLog = (label: string, error: unknown): void => {
+  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  const line = `[${new Date().toISOString()}] ${label}\n${detail}\n\n`;
+  try {
+    const dir = logsDir(app.getPath('userData'));
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, 'crash.log'), line, 'utf8');
+  } catch {
+    // Không ghi được log thì vẫn phải in ra stderr, không nuốt lỗi gốc
+    process.stderr.write(line);
+  }
+};
+
+process.on('uncaughtException', (error) => writeCrashLog('uncaughtException', error));
+process.on('unhandledRejection', (reason) => writeCrashLog('unhandledRejection', reason));
 
 // Chỉ cho phép một instance — hai instance sẽ tranh nhau ghi cùng file DB
 if (!app.requestSingleInstanceLock()) {
@@ -75,7 +96,10 @@ const start = (): void => {
   registerHandler('window:close', windowHandlers.close, logger);
   registerHandler('window:getState', windowHandlers.getState, logger);
 
-  const appRoot = join(app.getAppPath(), 'dist');
+  // Thư mục chứa chính file main đã build. Dev: apps/main/dist.
+  // Bản đóng gói: <asar>/apps/main/dist. Suy từ __dirname nên đúng cả hai,
+  // trong khi app.getAppPath() trỏ về gốc asar và ghép sai đường dẫn.
+  const appRoot = __dirname;
   mainWindow = createMainWindow({
     preloadPath: resolvePreloadPath(appRoot),
     devServerUrl: DEV_SERVER_URL,

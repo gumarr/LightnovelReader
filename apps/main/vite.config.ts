@@ -7,10 +7,11 @@ import { builtinModules } from 'node:module';
  */
 export default defineConfig({
   ssr: {
-    // Mặc định build SSR external hoá mọi package trong node_modules.
-    // `electron-store` là ESM-only nên phải bundle vào, nếu không bundle CJS
-    // sẽ lỗi ERR_REQUIRE_ESM lúc chạy.
-    noExternal: ['electron-store'],
+    // Bundle TẤT CẢ dependency vào một file. Build SSR mặc định external hoá
+    // mọi package trong node_modules, nhưng bản đóng gói asar không có
+    // node_modules đầy đủ → app crash với "Cannot find module".
+    // `better-sqlite3` là ngoại lệ duy nhất (native, khai báo ở external).
+    noExternal: true,
   },
   build: {
     outDir: 'dist',

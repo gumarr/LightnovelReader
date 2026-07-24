@@ -1,0 +1,48 @@
+appId: com.lnreader.app
+productName: LN Reader
+copyright: MIT License
+
+directories:
+  output: release
+  buildResources: resources
+
+# Chỉ đóng gói bản build, không mang theo source
+files:
+  - apps/main/dist/**/*
+  - package.json
+  - '!**/*.map'
+
+# better-sqlite3 là native module — phải giữ nguyên file .node,
+# không cho asar nén vào trong
+asarUnpack:
+  - '**/*.node'
+
+# Chỉ mang những package không bundle được vào bundle chính
+extraMetadata:
+  main: apps/main/dist/index.cjs
+
+npmRebuild: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Không mua code signing certificate — user sẽ thấy SmartScreen warning,
+  # README hướng dẫn "More info → Run anyway"
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+
+# Không bundle voice model / aligner — tải runtime từ Hugging Face

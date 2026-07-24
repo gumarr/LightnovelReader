@@ -16,7 +16,8 @@
 | 4 | Forced alignment | — |
 | 5 | Polish & ship | — |
 
-Chi tiết kế hoạch: [plan.md](plan.md).
+Chi tiết kế hoạch: [plan.md](plan.md). Trạng thái công việc và ghi chú kỹ thuật:
+[PROGRESS.md](PROGRESS.md).
 
 ## Yêu cầu môi trường
 

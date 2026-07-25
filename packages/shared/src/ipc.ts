@@ -4,6 +4,7 @@ import type {
   Book,
   BookFormat,
   BookLang,
+  Chapter,
   ThemeMode,
 } from './types.js';
 import type { ChapterDraft } from './chapter-draft.js';
@@ -102,6 +103,22 @@ export type LibraryEntry = {
   segmentCount: number;
 };
 
+/** Sách đã mở, kèm danh sách chương để dựng mục lục bên trái */
+export type BookDetail = {
+  book: Book;
+  chapters: Chapter[];
+  /**
+   * Chương chứa `book.lastSegmentId`. `undefined` khi chưa đọc lần nào hoặc
+   * segment đó đã biến mất (sách được nhập lại).
+   */
+  resumeChapterId?: string;
+};
+
+export type ReadingProgress = {
+  bookId: string;
+  segmentId: string;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -123,6 +140,12 @@ export type IpcContract = {
   /** Lưu sách đã xác nhận cấu trúc vào thư viện */
   'library:saveBook': { in: SaveBookRequest; out: Result<SaveBookResponse> };
   'library:list': { in: void; out: Result<LibraryEntry[]> };
+  /** Mở sách: ghi lại thời điểm mở và trả về chương + vị trí đọc dở */
+  'library:openBook': { in: string; out: Result<BookDetail> };
+  /** Ghi vị trí đọc dở để lần sau resume */
+  'library:setProgress': { in: ReadingProgress; out: Result<void> };
+  /** Xoá sách khỏi thư viện, kèm chương và segment */
+  'library:removeBook': { in: string; out: Result<void> };
 
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
@@ -162,6 +185,9 @@ export const IPC_CHANNELS = [
   'import:cancel',
   'library:saveBook',
   'library:list',
+  'library:openBook',
+  'library:setProgress',
+  'library:removeBook',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',

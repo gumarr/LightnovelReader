@@ -142,6 +142,13 @@ export const saveBookRequestSchema = z.object({
   chapters: z.array(chapterDraftSchema).min(1).max(2000),
 });
 
+export const bookIdSchema = z.string().min(1).max(64);
+
+export const readingProgressSchema = z.object({
+  bookId: bookIdSchema,
+  segmentId: z.string().min(1).max(64),
+});
+
 // Kiểm tra AUDIO_BITRATES và schema không lệch nhau khi sửa constants
 const _bitrateGuard: ReadonlyArray<z.infer<typeof audioBitrateSchema>> = AUDIO_BITRATES;
 void _bitrateGuard;

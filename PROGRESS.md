@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-25 · commit `2dc7737`
+> **Cập nhật lần cuối:** 2026-07-25 · commit `(P1.6b)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -21,7 +21,7 @@ pnpm dev                 # mở app
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P1.6b — Library grid + resume (xem mục 3).
+**Việc tiếp theo:** P1.6c — Viewer PDF/DOCX (xem mục 3).
 
 ---
 
@@ -182,11 +182,42 @@ Kiểm chứng dữ liệu trong DB (không chỉ tin API trả về):
   nguyên hiệu lực ở quy mô thật
 - **0/4817** segment PDF thiếu `rects` (xem mục 4.21)
 
+### Phase 1 — P1.6b Library grid + resume ✅
+
+| File | Vai trò | Test |
+|---|---|---|
+| `main/ipc/handlers/library.ts` | Thêm `openBook` / `setProgress` / `removeBook` | 29 |
+| `renderer/stores/library-store.ts` | Danh sách sách + sách đang mở | 17 |
+| `renderer/features/library/LibraryGrid.tsx` | Grid, nút đọc tiếp, xoá sách | 16 |
+| `renderer/features/library/BookCard.tsx` | Thẻ sách + bìa tạm | ↑ |
+| `renderer/features/library/BookDetailView.tsx` | Mục lục chương, đánh dấu chương đọc dở | 9 |
+| `renderer/features/library/format.ts` | Thời gian tương đối, chữ cái bìa | 14 |
+
+`App.tsx` giờ điều hướng ba màn: thư viện → nhập sách → chi tiết sách. **Chưa
+dùng router** — ba màn, không có URL cần chia sẻ, Electron không có thanh địa
+chỉ; thêm router lúc này là thêm phụ thuộc mà chưa cần.
+
+**Đã chạy thật trên bản đóng gói, xem cả dark lẫn light:**
+
+- Grid hiện đúng 2 sách với bìa tạm phân biệt được (`SD` / `SV`), nhãn định
+  dạng, số chương, và trạng thái đọc khác nhau ("Vừa xong" / "Chưa đọc")
+- Nút "Đọc tiếp" trỏ đúng sách vừa mở
+- Màn chi tiết DOCX hiện **"Đoạn 1–164"** chứ không phải "Trang" — cờ
+  `hasRealPages` đi đúng suốt từ parser tới UI
+
+Sửa một lỗi bố cục chỉ thấy khi nhìn ảnh: thẻ 150px không đủ chỗ cho
+`N chương · M segment`, chữ tràn thành ba dòng. Số segment chuyển vào tooltip
+— vẫn tra được vì đó là thứ quyết định dung lượng audio ở Phase 2.
+
+Nút xoá có hộp thoại xác nhận, nói rõ mất bao nhiêu chương và file gốc vẫn
+còn: xoá sách là mất luôn cấu trúc chương user đã sửa tay ở màn xác nhận,
+một cú bấm nhầm không được phép huỷ công đó.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **817 passed** (+94 từ P1.6a) |
+| Unit test | **894 passed** (+77 từ P1.6b) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Installer | 82 MB |
@@ -206,34 +237,10 @@ unit test riêng và chạy `pnpm typecheck && pnpm lint && pnpm test` trước 
 | P1.4 | Parser PDF + DOCX, interface `DocumentParser` chung | ✅ Xong |
 | P1.5 | Màn hình "Xác nhận cấu trúc chương" — merge/split/rename/xóa | ✅ Xong |
 | P1.6a | Lưu sách + dựng segment vào DB | ✅ Xong |
-| **P1.6b** | **Library grid + resume** | ⬅️ **Tiếp theo** |
-| P1.6c | Viewer (PDF canvas + text layer, DOCX HTML) | ⬜ |
+| P1.6b | Library grid + resume | ✅ Xong |
+| **P1.6c** | **Viewer (PDF canvas + text layer, DOCX HTML)** | ⬅️ **Tiếp theo** |
 
 **DoD Phase 1:** Mở PDF & DOCX, thấy danh sách chương đúng, sửa được, thấy segment.
-
-### Ghi chú cho P1.6b (Library grid + resume)
-
-Tầng dữ liệu đã xong: sách/chương/segment vào được DB và đọc lại đúng.
-`library:list` đã có sẵn, trả `LibraryEntry[]` kèm số chương/segment.
-
-Việc phải làm:
-
-1. **Library grid** thay `SavedPanel` trong `App.tsx`. Dữ liệu lấy từ
-   `window.api.library.list()`.
-2. **Resume**: `books.markOpened(id, at, lastSegmentId)` đã có ở repository,
-   chỉ cần thêm kênh IPC và gọi khi user mở sách.
-3. Chưa có kênh **xoá sách** — `BookRepository.remove` đã viết và có test
-   CASCADE, nhưng chưa expose qua IPC.
-
-Lưu ý:
-
-- **Ngôn ngữ sách đang hardcode `'vi'`** trong `import-store.save()`. Cần cho
-  user chọn ở màn xác nhận hoặc đoán từ nội dung — ảnh hưởng trực tiếp tới
-  voice TTS ở Phase 2.
-- Chưa có ảnh bìa. `Book.coverPath` có trong schema nhưng chưa ai ghi vào;
-  grid sẽ cần placeholder.
-- `ParsedDocument.hasRealPages` = false với DOCX → **đừng hiện "trang X–Y"**.
-  `features/import/confidence.ts` có sẵn `rangeLabel()` lo việc này.
 
 ### Ghi chú cho P1.6c (Viewer)
 
@@ -241,13 +248,20 @@ Lưu ý:
 IPC. Lý do: renderer có `DOMMatrix`/`Path2D` thật của Chromium nên không dính
 hai lỗi ở mục 4.19; renderer vẫn không chạm `fs`.
 
+Cần thêm một kênh IPC đọc file sách trả `ArrayBuffer` — chưa có. Nhớ kiểm
+đường dẫn qua `services/paths.ts`, đừng đọc path tuỳ ý từ renderer.
+
 - Neo đã sẵn sàng: `SegmentAnchor` PDF có `page` + `rects` (toạ độ trong không
   gian trang, gốc góc **trên**-trái). Nhân với scale của viewport là ra vị trí
-  trên canvas.
+  trên canvas. Đo trên sách thật: 4817/4817 segment có rects.
 - DOCX có `nodePath = "p:<index>"` — index chính là thứ tự paragraph mammoth
   sinh ra, viewer render theo đúng thứ tự đó là khớp.
+- `library:setProgress` đã có và đã test; viewer chỉ cần gọi khi user đọc tới
+  segment mới. `BookDetail.resumeChapterId` cho biết mở vào chương nào.
 - `scoreCandidates()` → điểm **từng tín hiệu**, chưa dùng ở UI. Để dành cho
   chế độ "vì sao chương này được nhận" nếu user cần soi.
+- Danh sách segment dài (chương lớn nhất 1353 segment) → **cần virtualization**
+  theo đúng CLAUDE.md.
 
 ### Dữ liệu thật đã có — cấu trúc quan sát được
 
@@ -755,7 +769,7 @@ apps/preload/src/
   api.ts                   window.api.* — không lộ ipcRenderer
 
 apps/renderer/src/
-  App.tsx                  Shell → ImportScreen (Library thay vào ở P1.6)
+  App.tsx                  Điều hướng 3 màn: thư viện / nhập sách / chi tiết
   lib/theme.ts             Logic theme thuần
   features/theme/          use-theme + ThemeToggle
   features/titlebar/       TitleBar + WindowControls
@@ -764,8 +778,14 @@ apps/renderer/src/
     ChapterConfirm.tsx     Danh sách chương + nút xác nhận
     ChapterRow.tsx         Một hàng: tên, khoảng trang, preview, tách/gộp/xoá
     confidence.ts          Điểm detector → nhãn; "trang" vs "đoạn"
+  features/library/
+    LibraryGrid.tsx        Grid sách, nút đọc tiếp
+    BookCard.tsx           Thẻ sách + bìa tạm suy từ tên
+    BookDetailView.tsx     Mục lục chương, đánh dấu chương đọc dở
+    format.ts              Thời gian tương đối, chữ cái bìa
   stores/settings-store.ts Zustand, có bắt rejection IPC
   stores/import-store.ts   Bản nháp chương + hoàn tác
+  stores/library-store.ts  Danh sách sách + sách đang mở
   styles/theme.css         CSS variables — mọi màu lấy từ đây
 
 scripts/
@@ -802,8 +822,8 @@ scripts/
 | Kiểm bản đóng gói vẫn làm thủ công | TB | Quy trình CDP ở mục 4.19 chạy tay. Nên đưa vào CI như bước smoke test hiện có, nếu không lỗi kiểu 4.19 sẽ lại lọt |
 | `import:*` chưa chặn đường dẫn tuỳ ý | TB | Renderer gọi `parseFile` với path bất kỳ và main sẽ đọc. Hiện chưa lộ ra ngoài (chỉ dialog gọi tới), nhưng khi thêm kéo-thả thì phải kiểm path qua `services/paths.ts` |
 | Ngôn ngữ sách hardcode `'vi'` | **TB** | `import-store.save()` luôn gửi `lang: 'vi'`. Sách EN sẽ nhận voice sai ở Phase 2. Cần cho user chọn ở màn xác nhận — xem ghi chú P1.6b |
-| Chưa có kênh xoá sách | Thấp | `BookRepository.remove` đã viết + test CASCADE, nhưng chưa expose qua IPC |
-| Chưa sinh ảnh bìa | Thấp | `Book.coverPath` có trong schema nhưng chưa ai ghi. Library grid sẽ cần placeholder |
+| Xoá sách không xoá file đã copy | TB | `library:removeBook` xoá bản ghi DB (chương/segment theo CASCADE) nhưng để lại file trong `libraryDir`. Cố ý dồn cho Storage Manager (Phase 2) xử lý cùng audio — một chỗ duy nhất chịu trách nhiệm dọn file |
+| Chưa sinh ảnh bìa | Thấp | `Book.coverPath` có trong schema nhưng chưa ai ghi. Grid đang dùng bìa tạm (chữ cái đầu + sắc độ suy từ tên) |
 | Segment dựng đồng bộ trong main | Thấp | 4817 segment mất ~400ms, chấp nhận được. Sách lớn hơn nhiều lần thì sẽ thấy đơ — lúc đó chuyển sang worker thread |
 | DOCX chưa xử lý ảnh và bảng | Thấp | `extractBlocks` chỉ nhận `<h1>`–`<h6>` và `<p>`. File mẫu A4 có 2 `<img>` bị bỏ qua — chấp nhận được vì TTS không đọc ảnh, nhưng bảng có nội dung thì sẽ mất |
 | DOCX không có outline | Thấp | mammoth không đọc bookmark/TOC field của Word. Chương chỉ nhận được qua heading style hoặc regex — đã đủ với 2 file mẫu |

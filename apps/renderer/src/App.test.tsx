@@ -1,10 +1,12 @@
 ﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { err } from '@ln/shared';
 import { App } from './App';
-import { installFakeApi, type FakeApi } from '@/test/fake-api';
+import { installFakeApi, fakeLibraryEntry, type FakeApi } from '@/test/fake-api';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useImportStore } from '@/stores/import-store';
+import { useLibraryStore } from '@/stores/library-store';
 
 let fake: FakeApi;
 
@@ -24,6 +26,7 @@ beforeEach(() => {
     error: null,
     history: [],
   });
+  useLibraryStore.setState({ entries: [], opened: null, loading: false, error: null });
 });
 
 /**
@@ -50,11 +53,44 @@ describe('App', () => {
     await waitFor(() => expect(fake.api.settings.getAll).toHaveBeenCalledTimes(1));
   });
 
-  it('hiện màn nhập sách sau khi nạp settings xong', async () => {
+  it('mở vào màn thư viện, không phải màn nhập sách', async () => {
     await renderApp();
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Chọn file' })).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText('Thư viện')).toBeInTheDocument());
+  });
+
+  it('bấm "Nhập sách" chuyển sang màn nhập', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Thư viện')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Nhập sách đầu tiên' }));
+
+    expect(screen.getByRole('button', { name: 'Chọn file' })).toBeInTheDocument();
+  });
+
+  it('mở sách chuyển sang màn chi tiết', async () => {
+    const user = userEvent.setup();
+    fake = installFakeApi({ library: [fakeLibraryEntry()] });
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Kiếm Vực Thần Đế')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Mở Kiếm Vực Thần Đế/ }));
+
+    await waitFor(() => expect(screen.getAllByTestId('chapter-item').length).toBeGreaterThan(0));
+  });
+
+  it('quay lại được từ màn chi tiết về thư viện', async () => {
+    const user = userEvent.setup();
+    fake = installFakeApi({ library: [fakeLibraryEntry()] });
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Kiếm Vực Thần Đế')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Mở Kiếm Vực Thần Đế/ }));
+    await waitFor(() => expect(screen.getAllByTestId('chapter-item').length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole('button', { name: /← Thư viện/ }));
+
+    await waitFor(() => expect(screen.getAllByTestId('book-card').length).toBe(1));
   });
 
   it('nút đổi giao diện vẫn nằm ở titlebar', async () => {

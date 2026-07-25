@@ -5,6 +5,7 @@ import type { ImportSession, ImportSessionStore } from '../../services/import-se
 import type { LibraryService, SaveBookInput } from '../../services/library.js';
 import type { BookRepository } from '../../db/repositories/books.js';
 import type { ChapterRepository } from '../../db/repositories/chapters.js';
+import type { SegmentRepository } from '../../db/repositories/segments.js';
 import { InvalidInputError } from '../wrap.js';
 
 const book = (id = 'book-1'): Book => ({
@@ -38,9 +39,15 @@ const setup = (options: {
   session?: ImportSession | undefined;
   onSave?: (input: SaveBookInput) => Promise<unknown>;
   books?: Book[];
+  /** Sách tra được theo id — mặc định luôn tìm thấy `book-1` */
+  findBook?: (id: string) => Book | undefined;
+  findSegment?: (id: string) => { id: string; chapterId: string } | undefined;
+  removeResult?: boolean;
 } = {}) => {
   const saved: SaveBookInput[] = [];
   const discarded: string[] = [];
+  const opened: { id: string; at: number; lastSegmentId?: string }[] = [];
+  const removed: string[] = [];
 
   const sessions = {
     create: vi.fn(),
@@ -63,7 +70,21 @@ const setup = (options: {
 
   const books = {
     listRecent: () => options.books ?? [],
+    findById: options.findBook ?? ((id: string) => (id === 'book-1' ? book() : undefined)),
+    markOpened: (id: string, at: number, lastSegmentId?: string) => {
+      opened.push(lastSegmentId === undefined ? { id, at } : { id, at, lastSegmentId });
+    },
+    remove: (id: string) => {
+      removed.push(id);
+      return options.removeResult ?? true;
+    },
   } as unknown as BookRepository;
+
+  const segments = {
+    findById:
+      options.findSegment ??
+      ((id: string) => (id === 'seg-42' ? { id, chapterId: 'c2' } : undefined)),
+  } as unknown as SegmentRepository;
 
   const chapters = {
     listByBook: () => [
@@ -73,9 +94,18 @@ const setup = (options: {
   } as unknown as ChapterRepository;
 
   return {
-    handlers: createLibraryHandlers({ library, sessions, books, chapters }),
+    handlers: createLibraryHandlers({
+      library,
+      sessions,
+      books,
+      chapters,
+      segments,
+      now: () => 5000,
+    }),
     saved,
     discarded,
+    opened,
+    removed,
   };
 };
 
@@ -185,6 +215,130 @@ describe('library:saveBook', () => {
     await expect(handlers.saveBook(request({ chapters: many }))).rejects.toBeInstanceOf(
       InvalidInputError,
     );
+  });
+});
+
+describe('library:openBook', () => {
+  it('trả về sách kèm danh sách chương', () => {
+    const { handlers } = setup();
+    const result = handlers.openBook('book-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.book.id).toBe('book-1');
+      expect(result.data.chapters).toHaveLength(2);
+    }
+  });
+
+  it('ghi lại thời điểm mở', () => {
+    const { handlers, opened } = setup();
+    handlers.openBook('book-1');
+
+    expect(opened).toEqual([{ id: 'book-1', at: 5000 }]);
+  });
+
+  it('mở sách KHÔNG ghi đè vị trí đọc dở', () => {
+    const { handlers, opened } = setup();
+    handlers.openBook('book-1');
+
+    // Mở sách không có nghĩa là đã đọc tới đâu
+    expect(opened[0]).not.toHaveProperty('lastSegmentId');
+  });
+
+  it('chỉ ra chương chứa segment đọc dở để resume', () => {
+    const { handlers } = setup({
+      findBook: () => ({ ...book(), lastSegmentId: 'seg-42' }),
+    });
+    const result = handlers.openBook('book-1');
+
+    if (result.ok) expect(result.data.resumeChapterId).toBe('c2');
+  });
+
+  it('chưa đọc lần nào thì không có chương resume', () => {
+    const { handlers } = setup();
+    const result = handlers.openBook('book-1');
+
+    if (result.ok) expect(result.data).not.toHaveProperty('resumeChapterId');
+  });
+
+  it('segment đọc dở đã biến mất thì bỏ qua, không phải lỗi', () => {
+    // Sách nhập lại sinh ID mới — vị trí cũ trỏ vào segment không còn
+    const { handlers } = setup({
+      findBook: () => ({ ...book(), lastSegmentId: 'seg-cũ' }),
+      findSegment: () => undefined,
+    });
+    const result = handlers.openBook('book-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data).not.toHaveProperty('resumeChapterId');
+  });
+
+  it('sách không tồn tại trả NOT_FOUND', () => {
+    const { handlers } = setup();
+    const result = handlers.openBook('không-có');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('từ chối bookId rỗng', () => {
+    const { handlers } = setup();
+    expect(() => handlers.openBook('')).toThrow(InvalidInputError);
+  });
+});
+
+describe('library:setProgress', () => {
+  it('ghi lại vị trí đọc dở', () => {
+    const { handlers, opened } = setup();
+    const result = handlers.setProgress({ bookId: 'book-1', segmentId: 'seg-42' });
+
+    expect(result.ok).toBe(true);
+    expect(opened).toEqual([{ id: 'book-1', at: 5000, lastSegmentId: 'seg-42' }]);
+  });
+
+  it('từ chối segment không tồn tại — resume sau sẽ trỏ vào hư không', () => {
+    const { handlers, opened } = setup();
+    const result = handlers.setProgress({ bookId: 'book-1', segmentId: 'seg-lạ' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+    expect(opened).toEqual([]);
+  });
+
+  it('từ chối sách không tồn tại', () => {
+    const { handlers } = setup();
+    const result = handlers.setProgress({ bookId: 'không-có', segmentId: 'seg-42' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('từ chối input thiếu field', () => {
+    const { handlers } = setup();
+    expect(() => handlers.setProgress({ bookId: 'book-1' })).toThrow(InvalidInputError);
+  });
+});
+
+describe('library:removeBook', () => {
+  it('xoá sách theo id', () => {
+    const { handlers, removed } = setup();
+    const result = handlers.removeBook('book-1');
+
+    expect(result.ok).toBe(true);
+    expect(removed).toEqual(['book-1']);
+  });
+
+  it('xoá sách không tồn tại trả NOT_FOUND', () => {
+    const { handlers } = setup({ removeResult: false });
+    const result = handlers.removeBook('không-có');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('từ chối bookId rỗng', () => {
+    const { handlers } = setup();
+    expect(() => handlers.removeBook('')).toThrow(InvalidInputError);
   });
 });
 

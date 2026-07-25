@@ -1,11 +1,16 @@
 import { vi } from 'vitest';
 import {
   DEFAULT_SETTINGS,
+  err,
   ok,
   type AppSettings,
+  type Book,
+  type BookDetail,
+  type Chapter,
   type ChapterPreviewRequest,
   type ImportPreview,
   type LibraryEntry,
+  type ReadingProgress,
   type Result,
   type SaveBookRequest,
   type WindowState,
@@ -23,7 +28,41 @@ export type FakeApiOptions = {
   windowState?: Partial<WindowState>;
   /** Preview trả về khi test gọi `import.pickFile` / `import.parseFile` */
   importPreview?: ImportPreview;
+  /** Sách trong thư viện. Mặc định rỗng — test nào cần thì truyền vào. */
+  library?: LibraryEntry[];
 };
+
+/** Sách mẫu để test Library grid */
+export const fakeBook = (overrides: Partial<Book> = {}): Book => ({
+  id: 'book-1',
+  title: 'Kiếm Vực Thần Đế',
+  format: 'pdf',
+  filePath: 'D:\\lib\\book-1.pdf',
+  fileHash: 'hash-1',
+  lang: 'vi',
+  addedAt: 1000,
+  ...overrides,
+});
+
+export const fakeLibraryEntry = (
+  book: Book = fakeBook(),
+  chapterCount = 3,
+  segmentCount = 120,
+): LibraryEntry => ({ book, chapterCount, segmentCount });
+
+/** Chương giả cho `openBook`, chia đều segment cho đủ số */
+const fakeChapters = (entry: LibraryEntry): Chapter[] =>
+  Array.from({ length: entry.chapterCount }, (_, i) => ({
+    id: `${entry.book.id}-c${i + 1}`,
+    bookId: entry.book.id,
+    index: i,
+    title: `Chương ${i + 1}`,
+    pageStart: i * 10 + 1,
+    pageEnd: (i + 1) * 10,
+    segmentCount: Math.floor(entry.segmentCount / entry.chapterCount),
+    audioBytes: 0,
+    generateStatus: 'none' as const,
+  }));
 
 /** Preview mặc định: 3 chương liền mạch trên sách 30 trang */
 export const defaultImportPreview: ImportPreview = {
@@ -55,6 +94,7 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
   };
 
   const importPreview: ImportPreview = options.importPreview ?? defaultImportPreview;
+  const libraryEntries: LibraryEntry[] = options.library ?? [];
 
   const settingsListeners = new Set<(s: AppSettings) => void>();
   const windowListeners = new Set<(s: WindowState) => void>();
@@ -113,7 +153,14 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
           duplicate: false,
         }),
       ),
-      list: vi.fn(async () => ok([] as LibraryEntry[])),
+      list: vi.fn(async () => ok(libraryEntries)),
+      openBook: vi.fn(async (bookId: string): Promise<Result<BookDetail>> => {
+        const entry = libraryEntries.find((e) => e.book.id === bookId);
+        if (entry === undefined) return err('NOT_FOUND', 'Không tìm thấy sách này trong thư viện.');
+        return ok({ book: entry.book, chapters: fakeChapters(entry) });
+      }),
+      setProgress: vi.fn(async (_progress: ReadingProgress) => ok(undefined)),
+      removeBook: vi.fn(async (_bookId: string) => ok(undefined)),
     },
 
     window: {

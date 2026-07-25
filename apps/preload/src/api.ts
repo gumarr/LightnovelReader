@@ -5,11 +5,13 @@ import {
   type AppInfo,
   type AppSettings,
   type AppSettingsPatch,
+  type BookDetail,
   type ChapterPreview,
   type ChapterPreviewRequest,
   type ImportPreview,
   type IpcChannel,
   type LibraryEntry,
+  type ReadingProgress,
   type SaveBookRequest,
   type SaveBookResponse,
   type IpcEventName,
@@ -87,6 +89,10 @@ export const api = {
     saveBook: (request: SaveBookRequest): Promise<Result<SaveBookResponse>> =>
       invoke('library:saveBook', request),
     list: (): Promise<Result<LibraryEntry[]>> => invoke('library:list', undefined),
+    openBook: (bookId: string): Promise<Result<BookDetail>> => invoke('library:openBook', bookId),
+    setProgress: (progress: ReadingProgress): Promise<Result<void>> =>
+      invoke('library:setProgress', progress),
+    removeBook: (bookId: string): Promise<Result<void>> => invoke('library:removeBook', bookId),
   },
 
   window: {

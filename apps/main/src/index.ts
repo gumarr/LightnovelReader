@@ -117,6 +117,7 @@ const start = (): void => {
     sessions: importSessions,
     books: bookRepo,
     chapters: chapterRepo,
+    segments: segmentRepo,
     logError: (message, detail) => logger.error(message, detail),
   });
 
@@ -131,6 +132,9 @@ const start = (): void => {
   registerHandler('import:cancel', importHandlers.cancel, logger);
   registerHandler('library:saveBook', libraryHandlers.saveBook, logger);
   registerHandler('library:list', libraryHandlers.list, logger);
+  registerHandler('library:openBook', libraryHandlers.openBook, logger);
+  registerHandler('library:setProgress', libraryHandlers.setProgress, logger);
+  registerHandler('library:removeBook', libraryHandlers.removeBook, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);

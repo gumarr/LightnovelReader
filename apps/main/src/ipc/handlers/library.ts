@@ -1,13 +1,17 @@
 import {
+  bookIdSchema,
   err,
   ok,
+  readingProgressSchema,
   saveBookRequestSchema,
+  type BookDetail,
   type LibraryEntry,
   type Result,
   type SaveBookResponse,
 } from '@ln/shared';
 import type { BookRepository } from '../../db/repositories/books.js';
 import type { ChapterRepository } from '../../db/repositories/chapters.js';
+import type { SegmentRepository } from '../../db/repositories/segments.js';
 import type { LibraryService } from '../../services/library.js';
 import type { ImportSessionStore } from '../../services/import-session.js';
 import { InvalidInputError } from '../wrap.js';
@@ -19,6 +23,9 @@ import { InvalidInputError } from '../wrap.js';
 export type LibraryHandlers = {
   saveBook: (input: unknown) => Promise<Result<SaveBookResponse>>;
   list: () => Result<LibraryEntry[]>;
+  openBook: (input: unknown) => Result<BookDetail>;
+  setProgress: (input: unknown) => Result<void>;
+  removeBook: (input: unknown) => Result<void>;
 };
 
 export type LibraryHandlerDeps = {
@@ -26,10 +33,77 @@ export type LibraryHandlerDeps = {
   sessions: ImportSessionStore;
   books: BookRepository;
   chapters: ChapterRepository;
+  segments: SegmentRepository;
+  now?: () => number;
   logError?: (message: string, detail: string) => void;
 };
 
 export const createLibraryHandlers = (deps: LibraryHandlerDeps): LibraryHandlers => ({
+  openBook: (input) => {
+    const parsed = bookIdSchema.safeParse(input);
+    if (!parsed.success) throw new InvalidInputError('bookId không hợp lệ');
+
+    const bookId = parsed.data;
+    const book = deps.books.findById(bookId);
+    if (book === undefined) {
+      return err('NOT_FOUND', 'Không tìm thấy sách này trong thư viện.', `bookId=${bookId}`);
+    }
+
+    const now = deps.now ?? Date.now;
+    // Ghi thời điểm mở nhưng KHÔNG đụng `lastSegmentId` — mở sách không có
+    // nghĩa là đã đọc tới đâu; vị trí cũ phải giữ nguyên để resume đúng.
+    deps.books.markOpened(bookId, now());
+
+    const chapters = deps.chapters.listByBook(bookId);
+
+    // Segment đọc dở thuộc chương nào. Segment có thể không còn (sách nhập
+    // lại sinh ID mới) — khi đó bỏ qua, user đọc từ đầu chứ không phải lỗi.
+    const lastSegment =
+      book.lastSegmentId === undefined
+        ? undefined
+        : deps.segments.findById(book.lastSegmentId);
+
+    return ok({
+      book: { ...book, lastOpenedAt: now() },
+      chapters,
+      ...(lastSegment === undefined ? {} : { resumeChapterId: lastSegment.chapterId }),
+    });
+  },
+
+  setProgress: (input) => {
+    const parsed = readingProgressSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new InvalidInputError(`Tiến độ đọc không hợp lệ: ${parsed.error.issues[0]?.message}`);
+    }
+
+    const { bookId, segmentId } = parsed.data;
+    if (deps.books.findById(bookId) === undefined) {
+      return err('NOT_FOUND', 'Không tìm thấy sách này trong thư viện.', `bookId=${bookId}`);
+    }
+
+    // Segment phải có thật, nếu không lần resume sau sẽ trỏ vào hư không
+    if (deps.segments.findById(segmentId) === undefined) {
+      return err('NOT_FOUND', 'Không tìm thấy đoạn đọc dở.', `segmentId=${segmentId}`);
+    }
+
+    deps.books.markOpened(bookId, (deps.now ?? Date.now)(), segmentId);
+    return ok(undefined);
+  },
+
+  removeBook: (input) => {
+    const parsed = bookIdSchema.safeParse(input);
+    if (!parsed.success) throw new InvalidInputError('bookId không hợp lệ');
+
+    // Chương và segment tự đi theo nhờ ON DELETE CASCADE. File sách đã copy
+    // vào thư viện thì chưa xoá — Storage Manager (Phase 2) lo việc đó cùng
+    // với audio, để một chỗ duy nhất chịu trách nhiệm dọn file.
+    if (!deps.books.remove(parsed.data)) {
+      return err('NOT_FOUND', 'Không tìm thấy sách này trong thư viện.');
+    }
+
+    return ok(undefined);
+  },
+
   saveBook: async (input) => {
     const parsed = saveBookRequestSchema.safeParse(input);
     if (!parsed.success) {

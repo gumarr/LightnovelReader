@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-24 · commit `d627727`
+> **Cập nhật lần cuối:** 2026-07-25 · commit `5994f39`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -21,7 +21,7 @@ pnpm dev                 # mở app
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P1.2 — Cleaner (xem mục 3).
+**Việc tiếp theo:** P1.3 — Chapter detector (xem mục 3).
 
 ---
 
@@ -47,11 +47,28 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
 - `packages/parsers/src/segmenter/sentence-splitter.ts` — tách câu VI/EN
 - `packages/parsers/src/segmenter/segmenter.ts` — gom câu thành segment ≤ 300 ký tự
 
+### Phase 1 — P1.2 Cleaner ✅
+
+Bốn hàm thuần, mỗi hàm một file + test riêng, ghép lại ở `cleaner.ts`:
+
+| File | Vai trò | Test |
+|---|---|---|
+| `cleaner/header-footer.ts` | Loại running head / số trang lặp | 15 |
+| `cleaner/dehyphenate.ts` | Nối từ bị ngắt cuối dòng | 21 |
+| `cleaner/merge-lines.ts` | Nối dòng bị PDF ngắt giữa câu | 23 |
+| `cleaner/columns.ts` | Detect 2 cột theo x-position, sắp lại thứ tự đọc | 15 |
+| `cleaner/cleaner.ts` | Pipeline 4 bước, thứ tự bắt buộc | 7 |
+
+`cleanPages()` trả về text **theo trang** (không gộp cả sách) để P1.3 còn
+ánh xạ được chương ↔ khoảng trang.
+
+**Chỉ mới có unit test** — chưa chạy trên PDF thật (chưa có file mẫu).
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **306 passed** |
+| Unit test | **387 passed** (+81 từ P1.2) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Installer | 80.8 MB |
@@ -66,21 +83,27 @@ unit test riêng và chạy `pnpm typecheck && pnpm lint && pnpm test` trước 
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
 | P1.1 | Segmenter (tách câu, gom segment) | ✅ Xong |
-| **P1.2** | **Cleaner** — header/footer lặp, de-hyphenate, merge dòng, cột đôi | ⬅️ **Tiếp theo** |
-| P1.3 | Chapter detector — mỗi tín hiệu 1 hàm thuần + test riêng, trả điểm số | ⬜ |
+| P1.2 | Cleaner — header/footer lặp, de-hyphenate, merge dòng, cột đôi | ✅ Xong |
+| **P1.3** | **Chapter detector** — mỗi tín hiệu 1 hàm thuần + test riêng, trả điểm số | ⬅️ **Tiếp theo** |
 | P1.4 | Parser PDF (`pdfjs-dist`) + DOCX (`mammoth`), interface `DocumentParser` chung | ⬜ |
 | P1.5 | Màn hình "Xác nhận cấu trúc chương" — merge/split/rename/xóa | ⬜ |
 | P1.6 | Viewer (PDF canvas + text layer, DOCX HTML) + Library grid + resume | ⬜ |
 
 **DoD Phase 1:** Mở PDF & DOCX, thấy danh sách chương đúng, sửa được, thấy segment.
 
-### Ghi chú cho P1.2 (Cleaner)
+### Ghi chú cho P1.3 (Chapter detector)
 
-Bốn việc, mỗi việc một hàm thuần + test riêng:
-- **Header/footer lặp** — text xuất hiện cùng vị trí trên > 60% số trang → loại
-- **De-hyphenate** — từ bị ngắt cuối dòng (`nhân-\nvật`) → nối lại
-- **Merge dòng** — dòng không kết thúc bằng dấu câu → nối với dòng sau
-- **Cột đôi** — detect theo x-position, sắp xếp lại thứ tự đọc
+Mỗi tín hiệu là một hàm thuần riêng **trả điểm số** (không trả boolean), có
+test riêng, rồi một hàm tổng hợp cộng điểm:
+
+- PDF: outline → font size heuristic → regex tiêu đề → vị trí dọc → fallback chia theo trang
+- DOCX: heading style → regex trên paragraph in đậm → page break
+
+Đầu vào lấy từ `cleanPages()` của P1.2 — đã có `pageNumber` để dựng
+`pageStart`/`pageEnd` cho `Chapter`.
+
+`TextLine` hiện chưa có `fontSize`; P1.3 cần thì **thêm field optional** vào
+`cleaner/types.ts`, đừng tạo type song song.
 
 ### Chưa có dữ liệu thật
 
@@ -143,7 +166,40 @@ mất `"Ừ."`, `"À."`, `"Ồ."` khiến câu sau bị dính vào — sai ở *
 → `isInitial()` chỉ nhận **chữ Latin HOA không dấu**. Test khoá ở
 `sentence-splitter.test.ts` mục "thán từ một chữ trong hội thoại LN".
 
-### 4.6 TypeScript project references — đã bỏ
+### 4.6 Cleaner — ba bẫy phát hiện khi viết test
+
+Cả ba đều là lỗi **xoá/dính mất nội dung thật**, không lộ ra nếu chỉ test
+đường đi thuận lợi.
+
+**a) Thay số bằng `#` khi so khớp header là chưa đủ.**
+Ý tưởng ban đầu: chuẩn hoá `\d+` → `#` để "Trang 12" và "Trang 137" cùng một
+mẫu. Nhưng thế thì hai câu **thân bài** khác nội dung mà cùng khung số cũng
+trùng khoá → xoá mất cả đoạn văn.
+→ Gộp khoá theo **phần chữ** (`letterPartOf`, bỏ hẳn cụm số), thêm lưới an
+toàn `maxLength` (mặc định 80): running head thật luôn ngắn.
+`normalizeForMatch` vẫn export để test riêng phần chuẩn hoá.
+
+**b) Luật "dòng ngắn" trong merge-lines phải đo trên dòng nguồn.**
+Đo trên biến tích luỹ `current` thì nó dài dần sau mỗi lần nối, luật không
+bao giờ bắn nữa. Và dòng ngắn phải đứng **riêng hẳn một khối** — chặn cả hai
+phía; chỉ chặn phía trước thì dòng sau vẫn dính vào tiêu đề.
+
+**c) Trung vị, không phải trung bình.**
+Một tiêu đề ngắn đủ kéo trung bình xuống khiến dòng thân bài bình thường bị
+coi là ngắn. Thêm `minLinesForStats` (mặc định 5): dưới ngưỡng thì **tắt hẳn**
+luật, vì với 2–3 dòng thì câu cuối ngắn tự nhiên sẽ bị cắt oan.
+
+### 4.7 Thứ tự pipeline cleaner là bắt buộc
+
+`stripHeadersFooters` → `reorderColumns` → `dehyphenate` → `mergeLines`.
+
+- Header/footer phải bỏ **trước** khi sắp cột, nếu không số trang nằm giữa
+  trang làm nhiễu thống kê rãnh.
+- `dehyphenate` phải chạy **trước** `mergeLines` vì nó cần thấy ký tự `\n`.
+
+Đổi thứ tự thì test `cleaner.test.ts` mục "pipeline đầy đủ" sẽ đỏ.
+
+### 4.8 TypeScript project references — đã bỏ
 
 `@ln/shared` trỏ thẳng vào `src/*.ts` (không build ra `dist`), nên project
 references gây lỗi `TS6305`. Đã bỏ `composite` và `references`, để TS resolve
@@ -211,6 +267,13 @@ packages/parsers/src/
   segmenter/
     sentence-splitter.ts   Tách câu VI/EN (xử lý 「」『』, viết tắt, số thập phân)
     segmenter.ts           Gom câu → segment ≤ 300 ký tự
+  cleaner/
+    types.ts               TextLine + Page (đầu vào có toạ độ, từ parser PDF)
+    header-footer.ts       Loại running head / số trang lặp (khớp theo phần chữ)
+    dehyphenate.ts         Nối từ bị ngắt cuối dòng
+    merge-lines.ts         Nối dòng bị PDF ngắt giữa câu
+    columns.ts             Detect rãnh giữa 2 cột → sắp lại thứ tự đọc
+    cleaner.ts             Pipeline 4 bước (thứ tự bắt buộc — mục 4.7)
 
 apps/main/src/
   index.ts                 Entry: settings → logger → DB → IPC → cửa sổ
@@ -260,3 +323,5 @@ apps/renderer/src/
 | Chưa có icon ứng dụng | Thấp | electron-builder đang dùng icon Electron mặc định |
 | CI chưa chạy lần nào | TB | Workflow đã viết nhưng chưa có push nào kích hoạt để xác nhận |
 | `@electron/rebuild` là dependency thừa | Thấp | electron-builder đã có sẵn; giữ lại vô hại |
+| Ngưỡng cleaner chưa kiểm chứng trên PDF thật | **TB** | `minRatio` 0.6, `maxLength` 80, `shortLineRatio` 0.6, `minGutterRatio` 0.04 đều chọn theo suy luận + test tổng hợp. Khi có file thật phải chạy `/detect` và **thêm test case** cho mỗi lần chỉnh, không sửa ngưỡng trần |
+| Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

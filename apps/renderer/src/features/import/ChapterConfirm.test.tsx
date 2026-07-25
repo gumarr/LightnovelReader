@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ImportPreview } from '@ln/shared';
+import { err, type ImportPreview } from '@ln/shared';
 import { installFakeApi, defaultImportPreview, type FakeApi } from '@/test/fake-api';
 import { useImportStore } from '@/stores/import-store';
 import { ChapterConfirm } from './ChapterConfirm';
@@ -16,6 +16,7 @@ const resetStore = (): void => {
     loadingPreviews: [],
     issues: [],
     parsing: false,
+    saving: false,
     error: null,
     history: [],
   });
@@ -30,16 +31,16 @@ beforeEach(() => {
 /** Nạp preview vào store rồi render màn xác nhận */
 const setup = async (
   preview: ImportPreview = defaultImportPreview,
-): Promise<{ onConfirm: ReturnType<typeof vi.fn>; onCancel: ReturnType<typeof vi.fn> }> => {
+): Promise<{ onSaved: ReturnType<typeof vi.fn>; onCancel: ReturnType<typeof vi.fn> }> => {
   fake.api.import.pickFile.mockResolvedValueOnce({ ok: true, data: preview });
   await act(async () => {
     await useImportStore.getState().pickFile();
   });
 
-  const onConfirm = vi.fn();
+  const onSaved = vi.fn();
   const onCancel = vi.fn();
-  render(<ChapterConfirm preview={preview} onConfirm={onConfirm} onCancel={onCancel} />);
-  return { onConfirm, onCancel };
+  render(<ChapterConfirm preview={preview} onSaved={onSaved} onCancel={onCancel} />);
+  return { onSaved, onCancel };
 };
 
 const rows = (): HTMLElement[] => screen.getAllByTestId('chapter-row');
@@ -139,16 +140,16 @@ describe('loại trừ chương', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('ít nhất một chương');
   });
 
-  it('chỉ truyền chương được giữ ra ngoài khi xác nhận', async () => {
+  it('gửi cả chương bị loại xuống main — main lọc, để nó biết user đã bỏ gì', async () => {
     const user = userEvent.setup();
-    const { onConfirm } = await setup();
+    await setup();
 
     await user.click(within(rowFor('c2')).getByRole('checkbox'));
     await user.click(screen.getByRole('button', { name: 'Xác nhận 2 chương' }));
 
-    expect(onConfirm).toHaveBeenCalledTimes(1);
-    const passed = onConfirm.mock.calls[0]![0] as { id: string }[];
-    expect(passed.map((c) => c.id)).toEqual(['c1', 'c3']);
+    await waitFor(() => expect(fake.api.library.saveBook).toHaveBeenCalledTimes(1));
+    const sent = fake.api.library.saveBook.mock.calls[0]![0];
+    expect(sent.chapters.filter((c) => !c.excluded).map((c) => c.id)).toEqual(['c1', 'c3']);
   });
 });
 
@@ -314,6 +315,75 @@ describe('hoàn tác', () => {
 
     await user.click(screen.getByRole('button', { name: 'Hoàn tác' }));
     expect(screen.getByDisplayValue('Chương 1: Mở đầu')).toBeInTheDocument();
+  });
+});
+
+describe('lưu vào thư viện', () => {
+  it('gửi tên sách gợi ý nếu user không sửa', async () => {
+    const user = userEvent.setup();
+    await setup();
+
+    await user.click(screen.getByRole('button', { name: /Xác nhận/ }));
+
+    await waitFor(() => expect(fake.api.library.saveBook).toHaveBeenCalled());
+    expect(fake.api.library.saveBook.mock.calls[0]![0].title).toBe('Test Book');
+  });
+
+  it('gửi tên sách user đã sửa', async () => {
+    const user = userEvent.setup();
+    await setup();
+
+    const input = screen.getByLabelText('Tên sách');
+    await user.clear(input);
+    await user.type(input, 'Tên tự đặt');
+    await user.click(screen.getByRole('button', { name: /Xác nhận/ }));
+
+    await waitFor(() => expect(fake.api.library.saveBook).toHaveBeenCalled());
+    expect(fake.api.library.saveBook.mock.calls[0]![0].title).toBe('Tên tự đặt');
+  });
+
+  it('tên sách rỗng thì chặn lưu', async () => {
+    const user = userEvent.setup();
+    await setup();
+
+    const input = screen.getByLabelText('Tên sách');
+    await user.clear(input);
+
+    expect(screen.getByRole('button', { name: /Xác nhận/ })).toBeDisabled();
+  });
+
+  it('báo cho màn ngoài sau khi lưu xong', async () => {
+    const user = userEvent.setup();
+    const { onSaved } = await setup();
+
+    await user.click(screen.getByRole('button', { name: /Xác nhận/ }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(onSaved.mock.calls[0]![0]).toMatchObject({ bookId: 'book-1', segmentCount: 42 });
+  });
+
+  it('lỗi từ main hiện ra, KHÔNG báo đã lưu xong', async () => {
+    const user = userEvent.setup();
+    fake.api.library.saveBook.mockResolvedValueOnce(
+      err('NOT_FOUND', 'Phiên nhập sách đã hết hạn. Hãy chọn lại file.'),
+    );
+    const { onSaved } = await setup();
+
+    await user.click(screen.getByRole('button', { name: /Xác nhận/ }));
+
+    await waitFor(() => expect(screen.getByText(/hết hạn/)).toBeInTheDocument());
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('IPC hỏng không làm kẹt ở "Đang lưu…"', async () => {
+    const user = userEvent.setup();
+    fake.api.library.saveBook.mockRejectedValueOnce(new Error('main chết'));
+    await setup();
+
+    await user.click(screen.getByRole('button', { name: /Xác nhận/ }));
+
+    await waitFor(() => expect(screen.getByText(/Không kết nối được/)).toBeInTheDocument());
+    expect(screen.queryByText('Đang lưu…')).not.toBeInTheDocument();
   });
 });
 

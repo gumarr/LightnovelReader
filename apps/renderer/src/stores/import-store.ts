@@ -11,6 +11,7 @@ import {
   type ChapterDraft,
   type DraftIssue,
   type ImportPreview,
+  type SaveBookResponse,
 } from '@ln/shared';
 
 /**
@@ -36,6 +37,8 @@ export type ImportState = {
   issues: DraftIssue[];
   /** Đang parse file — thao tác này mất vài giây với sách 270 trang */
   parsing: boolean;
+  /** Đang lưu vào thư viện — dựng segment cho sách lớn mất vài giây */
+  saving: boolean;
   error: string | null;
   /** Ngăn xếp hoàn tác, phần tử cuối là trạng thái gần nhất */
   history: ChapterDraft[][];
@@ -49,6 +52,8 @@ export type ImportState = {
   remove: (chapterId: string) => void;
   toggleExclude: (chapterId: string) => void;
   undo: () => void;
+  /** Lưu vào thư viện. Trả `null` khi thất bại — `error` mang lý do. */
+  save: (title: string) => Promise<SaveBookResponse | null>;
   reset: () => Promise<void>;
   canConfirm: () => boolean;
 };
@@ -60,6 +65,7 @@ const initial = {
   loadingPreviews: [],
   issues: [],
   parsing: false,
+  saving: false,
   error: null,
   history: [],
 } satisfies Omit<
@@ -73,6 +79,7 @@ const initial = {
   | 'remove'
   | 'toggleExclude'
   | 'undo'
+  | 'save'
   | 'reset'
   | 'canConfirm'
 >;
@@ -233,6 +240,35 @@ export const useImportStore = create<ImportState>((set, get) => {
       });
     },
 
+    save: async (title) => {
+      const state = get();
+      if (state.preview === null || state.saving) return null;
+
+      set({ saving: true, error: null });
+      try {
+        const result = await window.api.library.saveBook({
+          importId: state.preview.importId,
+          title,
+          // Ngôn ngữ chưa cho user chọn — sẽ thêm cùng màn Library ở P1.6b
+          lang: 'vi',
+          chapters: state.chapters,
+        });
+
+        if (!result.ok) {
+          set({ error: result.error.message, saving: false });
+          return null;
+        }
+
+        // Main đã giải phóng phiên sau khi lưu — không gọi `reset()` ở đây vì
+        // nó sẽ gọi `import:cancel` cho một importId không còn tồn tại.
+        set({ ...initial });
+        return result.data;
+      } catch (e) {
+        set({ error: `${IPC_FAILED} (${errorMessage(e)})`, saving: false });
+        return null;
+      }
+    },
+
     reset: async () => {
       const { preview } = get();
       set({ ...initial });
@@ -249,8 +285,8 @@ export const useImportStore = create<ImportState>((set, get) => {
     },
 
     canConfirm: () => {
-      const { preview, issues, parsing } = get();
-      return preview !== null && !parsing && !hasBlockingIssue(issues);
+      const { preview, issues, parsing, saving } = get();
+      return preview !== null && !parsing && !saving && !hasBlockingIssue(issues);
     },
   };
 });

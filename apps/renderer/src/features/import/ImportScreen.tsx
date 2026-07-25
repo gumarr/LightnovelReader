@@ -1,4 +1,4 @@
-import type { ChapterDraft } from '@ln/shared';
+import type { SaveBookResponse } from '@ln/shared';
 import { useImportStore } from '@/stores/import-store';
 import { ChapterConfirm } from './ChapterConfirm';
 
@@ -9,10 +9,11 @@ import { ChapterConfirm } from './ChapterConfirm';
  */
 
 export type ImportScreenProps = {
-  onConfirm: (chapters: ChapterDraft[]) => void;
+  /** Gọi sau khi sách đã lưu vào thư viện */
+  onSaved: (result: SaveBookResponse) => void;
 };
 
-export const ImportScreen = ({ onConfirm }: ImportScreenProps): JSX.Element => {
+export const ImportScreen = ({ onSaved }: ImportScreenProps): JSX.Element => {
   const preview = useImportStore((s) => s.preview);
   const parsing = useImportStore((s) => s.parsing);
   const error = useImportStore((s) => s.error);
@@ -23,7 +24,7 @@ export const ImportScreen = ({ onConfirm }: ImportScreenProps): JSX.Element => {
     return (
       <ChapterConfirm
         preview={preview}
-        onConfirm={onConfirm}
+        onSaved={onSaved}
         onCancel={() => {
           void reset();
         }}

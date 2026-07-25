@@ -26,8 +26,12 @@ export type ChapterDraft = {
   /**
    * Điểm tin cậy từ detector. 0 = fallback chia đều theo trang.
    * `undefined` = chương do user tự tạo (tách/gộp), không còn ý nghĩa "tin cậy".
+   *
+   * `| undefined` tường minh vì dự án bật `exactOptionalPropertyTypes`, mà
+   * bản nháp này đi qua zod ở biên IPC — `.optional()` của zod sinh ra đúng
+   * kiểu đó, không gán được vào field optional thuần.
    */
-  confidence?: number;
+  confidence?: number | undefined;
   /** User bỏ chọn để không đưa vào sách (bìa, mục lục, trang quảng cáo) */
   excluded: boolean;
 };

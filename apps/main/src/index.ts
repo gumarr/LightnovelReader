@@ -10,8 +10,13 @@ import { dbPath, logsDir } from './services/paths.js';
 import { registerHandler, clearRegisteredChannels } from './ipc/registry.js';
 import { getAppInfo } from './ipc/handlers/app.js';
 import { createImportHandlers } from './ipc/handlers/import.js';
+import { createLibraryHandlers } from './ipc/handlers/library.js';
 import { createSettingsHandlers } from './ipc/handlers/settings.js';
 import { createImportSessionStore } from './services/import-session.js';
+import { createLibraryService } from './services/library.js';
+import { createBookRepository } from './db/repositories/books.js';
+import { createChapterRepository } from './db/repositories/chapters.js';
+import { createSegmentRepository } from './db/repositories/segments.js';
 import { createWindowHandlers, readWindowState } from './ipc/handlers/window.js';
 import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './window.js';
 import { createNodeParserRegistry } from '@ln/parsers/node';
@@ -72,7 +77,7 @@ const start = (): void => {
     join(userData, 'audio'),
   );
 
-  const { migration } = initDatabase(dbPath(userData));
+  const { db, migration } = initDatabase(dbPath(userData));
   logger.info(
     `DB sẵn sàng (schema ${migration.from} → ${migration.to})`,
     migration.applied.length > 0 ? `đã chạy: ${migration.applied.join(', ')}` : undefined,
@@ -90,10 +95,28 @@ const start = (): void => {
   const windowHandlers = createWindowHandlers(getWindow);
 
   const parserRegistry = createNodeParserRegistry();
+  const importSessions = createImportSessionStore({ registry: parserRegistry });
   const importHandlers = createImportHandlers({
-    sessions: createImportSessionStore({ registry: parserRegistry }),
+    sessions: importSessions,
     getWindow,
     extensions: parserRegistry.extensions(),
+    logError: (message, detail) => logger.error(message, detail),
+  });
+
+  const bookRepo = createBookRepository(db);
+  const chapterRepo = createChapterRepository(db);
+  const segmentRepo = createSegmentRepository(db);
+
+  const libraryHandlers = createLibraryHandlers({
+    library: createLibraryService({
+      userData,
+      books: bookRepo,
+      chapters: chapterRepo,
+      segments: segmentRepo,
+    }),
+    sessions: importSessions,
+    books: bookRepo,
+    chapters: chapterRepo,
     logError: (message, detail) => logger.error(message, detail),
   });
 
@@ -106,6 +129,8 @@ const start = (): void => {
   registerHandler('import:parseFile', importHandlers.parseFile, logger);
   registerHandler('import:getChapterPreview', importHandlers.getChapterPreview, logger);
   registerHandler('import:cancel', importHandlers.cancel, logger);
+  registerHandler('library:saveBook', libraryHandlers.saveBook, logger);
+  registerHandler('library:list', libraryHandlers.list, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);

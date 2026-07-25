@@ -5,7 +5,9 @@ import {
   type AppSettings,
   type ChapterPreviewRequest,
   type ImportPreview,
+  type LibraryEntry,
   type Result,
+  type SaveBookRequest,
   type WindowState,
 } from '@ln/shared';
 
@@ -100,6 +102,18 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
         }),
       ),
       cancel: vi.fn(async (_importId: string) => ok(undefined)),
+    },
+
+    library: {
+      saveBook: vi.fn(async (request: SaveBookRequest) =>
+        ok({
+          bookId: 'book-1',
+          chapterCount: request.chapters.filter((c) => !c.excluded).length,
+          segmentCount: 42,
+          duplicate: false,
+        }),
+      ),
+      list: vi.fn(async () => ok([] as LibraryEntry[])),
     },
 
     window: {

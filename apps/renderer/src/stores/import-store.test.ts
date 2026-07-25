@@ -13,6 +13,7 @@ const resetStore = (): void => {
     loadingPreviews: [],
     issues: [],
     parsing: false,
+    saving: false,
     error: null,
     history: [],
   });
@@ -303,6 +304,90 @@ describe('undo', () => {
       useImportStore.getState().rename('c1', `Tên ${i}`);
     }
     expect(useImportStore.getState().history.length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe('save', () => {
+  it('gửi importId, tên và toàn bộ chương xuống main', async () => {
+    await loaded();
+    await useImportStore.getState().save('Tên sách');
+
+    expect(fake.api.library.saveBook).toHaveBeenCalledWith({
+      importId: 'imp1',
+      title: 'Tên sách',
+      lang: 'vi',
+      chapters: expect.arrayContaining([expect.objectContaining({ id: 'c1' })]),
+    });
+  });
+
+  it('xoá trạng thái sau khi lưu xong', async () => {
+    await loaded();
+    await useImportStore.getState().save('Tên sách');
+
+    const state = useImportStore.getState();
+    expect(state.preview).toBeNull();
+    expect(state.chapters).toEqual([]);
+    expect(state.saving).toBe(false);
+  });
+
+  it('KHÔNG gọi import:cancel — main đã giải phóng phiên sau khi lưu', async () => {
+    await loaded();
+    await useImportStore.getState().save('Tên sách');
+
+    expect(fake.api.import.cancel).not.toHaveBeenCalled();
+  });
+
+  it('trả về kết quả để UI hiện số chương/segment', async () => {
+    await loaded();
+    const result = await useImportStore.getState().save('Tên sách');
+
+    expect(result).toMatchObject({ bookId: 'book-1', segmentCount: 42 });
+  });
+
+  it('lỗi từ main giữ nguyên bản nháp để user thử lại', async () => {
+    await loaded();
+    fake.api.library.saveBook.mockResolvedValueOnce(err('DB_ERROR', 'Không ghi được DB'));
+
+    const result = await useImportStore.getState().save('Tên sách');
+    const state = useImportStore.getState();
+
+    expect(result).toBeNull();
+    expect(state.error).toBe('Không ghi được DB');
+    expect(state.chapters).toHaveLength(3);
+    expect(state.saving).toBe(false);
+  });
+
+  it('IPC reject không làm kẹt cờ saving', async () => {
+    await loaded();
+    fake.api.library.saveBook.mockRejectedValueOnce(new Error('main chết'));
+
+    await useImportStore.getState().save('Tên sách');
+    const state = useImportStore.getState();
+
+    expect(state.saving).toBe(false);
+    expect(state.error).toContain('Không kết nối được');
+  });
+
+  it('chưa nạp file thì không gọi IPC', async () => {
+    expect(await useImportStore.getState().save('Tên')).toBeNull();
+    expect(fake.api.library.saveBook).not.toHaveBeenCalled();
+  });
+
+  it('bấm hai lần chỉ lưu một lần', async () => {
+    await loaded();
+    await Promise.all([
+      useImportStore.getState().save('Tên sách'),
+      useImportStore.getState().save('Tên sách'),
+    ]);
+
+    expect(fake.api.library.saveBook).toHaveBeenCalledTimes(1);
+  });
+
+  it('đang lưu thì chặn xác nhận', async () => {
+    await loaded();
+    useImportStore.setState({ saving: true });
+
+    expect(useImportStore.getState().canConfirm()).toBe(false);
   });
 });
 

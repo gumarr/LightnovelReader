@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import type { ChapterDraft, DraftIssue, ImportPreview } from '@ln/shared';
+import { useCallback, useMemo, useState } from 'react';
+import type { ChapterDraft, DraftIssue, ImportPreview, SaveBookResponse } from '@ln/shared';
 import { useImportStore } from '@/stores/import-store';
 import { ChapterRow } from './ChapterRow';
 import { rangeSize } from './confidence';
@@ -14,14 +14,14 @@ import { rangeSize } from './confidence';
 
 export type ChapterConfirmProps = {
   preview: ImportPreview;
-  /** Gọi khi user xác nhận. P1.6 sẽ nối vào bước lưu sách. */
-  onConfirm: (chapters: ChapterDraft[]) => void;
+  /** Gọi sau khi sách đã lưu vào thư viện */
+  onSaved: (result: SaveBookResponse) => void;
   onCancel: () => void;
 };
 
 export const ChapterConfirm = ({
   preview,
-  onConfirm,
+  onSaved,
   onCancel,
 }: ChapterConfirmProps): JSX.Element => {
   const chapters = useImportStore((s) => s.chapters);
@@ -30,6 +30,16 @@ export const ChapterConfirm = ({
   const loadingPreviews = useImportStore((s) => s.loadingPreviews);
   const historyLength = useImportStore((s) => s.history.length);
   const canConfirm = useImportStore((s) => s.canConfirm());
+  const saving = useImportStore((s) => s.saving);
+  const error = useImportStore((s) => s.error);
+  const save = useImportStore((s) => s.save);
+
+  const [title, setTitle] = useState(preview.suggestedTitle);
+
+  const handleSave = async (): Promise<void> => {
+    const result = await save(title);
+    if (result !== null) onSaved(result);
+  };
 
   const merge = useImportStore((s) => s.merge);
   const split = useImportStore((s) => s.split);
@@ -51,13 +61,25 @@ export const ChapterConfirm = ({
 
   return (
     <div className="flex h-full flex-col">
-      <Header preview={preview} keptCount={kept.length} keptPages={keptPages} />
+      <Header
+        preview={preview}
+        keptCount={kept.length}
+        keptPages={keptPages}
+        title={title}
+        onTitleChange={setTitle}
+      />
 
       {globalIssues.map((issue) => (
         <p key={issue.kind} role="alert" className="mx-4 mb-2 text-sm text-danger">
           {issue.message}
         </p>
       ))}
+
+      {error !== null ? (
+        <p role="alert" className="mx-4 mb-2 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
 
       <ol className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
         {chapters.map((chapter, index) => (
@@ -101,11 +123,13 @@ export const ChapterConfirm = ({
           </button>
           <button
             type="button"
-            onClick={() => onConfirm(kept)}
-            disabled={!canConfirm}
+            onClick={() => {
+              void handleSave();
+            }}
+            disabled={!canConfirm || title.trim().length === 0}
             className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Xác nhận {kept.length} chương
+            {saving ? 'Đang lưu…' : `Xác nhận ${kept.length} chương`}
           </button>
         </div>
       </footer>
@@ -130,20 +154,38 @@ type HeaderProps = {
   preview: ImportPreview;
   keptCount: number;
   keptPages: number;
+  title: string;
+  onTitleChange: (title: string) => void;
 };
 
-const Header = ({ preview, keptCount, keptPages }: HeaderProps): JSX.Element => {
+const Header = ({
+  preview,
+  keptCount,
+  keptPages,
+  title,
+  onTitleChange,
+}: HeaderProps): JSX.Element => {
   const unit = preview.hasRealPages ? 'trang' : 'đoạn';
 
   return (
     <header className="shrink-0 px-4 py-3">
       <h1 className="text-lg font-semibold text-fg">Xác nhận cấu trúc chương</h1>
-      <p className="mt-0.5 text-sm text-fg-muted">
-        {preview.suggestedTitle} · {preview.totalPages} {unit} ·{' '}
-        {preview.hasOutline ? 'có mục lục' : 'không có mục lục'}
-      </p>
-      <p className="mt-1 text-sm text-fg-muted">
-        Giữ lại <span className="font-medium text-fg">{keptCount}</span> chương,{' '}
+
+      <label className="mt-2 block">
+        <span className="text-xs text-fg-muted">Tên sách</span>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          aria-label="Tên sách"
+          placeholder="Đặt tên cho sách"
+          className="mt-0.5 w-full max-w-md rounded border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
+        />
+      </label>
+
+      <p className="mt-1.5 text-sm text-fg-muted">
+        {preview.totalPages} {unit} · {preview.hasOutline ? 'có mục lục' : 'không có mục lục'} ·
+        giữ lại <span className="font-medium text-fg">{keptCount}</span> chương,{' '}
         {keptPages}/{preview.totalPages} {unit}. Bỏ chọn phần không phải nội dung truyện
         (bìa, bản quyền, lời bạt) trước khi xác nhận.
       </p>

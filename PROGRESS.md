@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-25 · commit `45c2f57`
+> **Cập nhật lần cuối:** 2026-07-25 · commit `(P1.6a)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -21,7 +21,7 @@ pnpm dev                 # mở app
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P1.6 — Viewer + Library + lưu sách vào DB (xem mục 3).
+**Việc tiếp theo:** P1.6b — Library grid + resume (xem mục 3).
 
 ---
 
@@ -150,11 +150,43 @@ thấy được bằng mắt trên ảnh chụp thật (mục 4.20).
 
 Đã xem cả **dark lẫn light** trên bản đóng gói — mọi màu lấy từ CSS variable.
 
+### Phase 1 — P1.6a Lưu sách + dựng segment ✅
+
+P1.6 chia ba phần làm tuần tự (thống nhất với user): **a)** lưu sách + segment,
+**b)** Library + resume, **c)** Viewer. Đây là phần a.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `parsers/segmenter/chapter-segments.ts` | Dựng segment **theo trang** + neo về tài liệu gốc | 24 |
+| `main/db/repositories/books.ts` | Truy vấn sách, tìm theo hash, resume | 24 |
+| `main/db/repositories/chapters.ts` | Chương, insert theo transaction | ↑ |
+| `main/db/repositories/segments.ts` | Segment, anchor lưu JSON | ↑ |
+| `main/services/library.ts` | Copy file, hash SHA-256, dựng segment, lưu DB | 17 |
+| `main/ipc/handlers/library.ts` | `library:saveBook`, `library:list` | 14 |
+
+**Đã chạy thật trên bản đóng gói**, gọi IPC như UI:
+
+| | Kết quả |
+|---|---|
+| PDF VI 270tr | 10 chương, **4817 segment**, 397ms |
+| DOCX A4 | 2 chương, 430 segment, 24ms |
+| Import lại cùng file | `duplicate=true`, không tạo bản sao |
+| `library:list` | Đọc lại đúng từ SQLite |
+
+Kiểm chứng dữ liệu trong DB (không chỉ tin API trả về):
+
+- Khoảng trang khớp outline: `Chương Một tr 17–76`, `Chương Hai tr 77–132`…
+- Neo PDF đúng: `page=15 rects=1`, câu trải 2 dòng cho `rects=2`
+- Neo DOCX: `nodePath=p:1`, `p:2`
+- **0/5247** segment chứa `\n` hoặc vượt 300 ký tự — các bản sửa ở P1.4 giữ
+  nguyên hiệu lực ở quy mô thật
+- **0/4817** segment PDF thiếu `rects` (xem mục 4.21)
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **723 passed** (+161 từ P1.5) |
+| Unit test | **817 passed** (+94 từ P1.6a) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Installer | 82 MB |
@@ -173,37 +205,49 @@ unit test riêng và chạy `pnpm typecheck && pnpm lint && pnpm test` trước 
 | P1.3 | Chapter detector — mỗi tín hiệu 1 hàm thuần + test riêng, trả điểm số | ✅ Xong |
 | P1.4 | Parser PDF + DOCX, interface `DocumentParser` chung | ✅ Xong |
 | P1.5 | Màn hình "Xác nhận cấu trúc chương" — merge/split/rename/xóa | ✅ Xong |
-| **P1.6** | **Viewer (PDF canvas + text layer, DOCX HTML) + Library grid + resume** | ⬅️ **Tiếp theo** |
+| P1.6a | Lưu sách + dựng segment vào DB | ✅ Xong |
+| **P1.6b** | **Library grid + resume** | ⬅️ **Tiếp theo** |
+| P1.6c | Viewer (PDF canvas + text layer, DOCX HTML) | ⬜ |
 
 **DoD Phase 1:** Mở PDF & DOCX, thấy danh sách chương đúng, sửa được, thấy segment.
 
-### Ghi chú cho P1.6 (Viewer + Library + lưu sách)
+### Ghi chú cho P1.6b (Library grid + resume)
 
-P1.5 dừng đúng ở chỗ user bấm "Xác nhận" — chương đã sửa xong **chưa được lưu
-vào DB**. `App.tsx` hiện danh sách ra màn tạm (`ConfirmedPanel`) để kiểm chứng
-luồng chạy đúng. P1.6 nối tiếp từ đây.
+Tầng dữ liệu đã xong: sách/chương/segment vào được DB và đọc lại đúng.
+`library:list` đã có sẵn, trả `LibraryEntry[]` kèm số chương/segment.
 
-Việc phải làm, theo thứ tự phụ thuộc:
+Việc phải làm:
 
-1. **Lưu sách + chương vào DB.** Copy file gốc vào `libraryDir`, tính
-   `fileHash` (SHA-256) để phát hiện import trùng. Repository ở
-   `db/repositories/*.ts` — không viết SQL rải rác trong handler.
-2. **Dựng segment.** `segmentText()` đã chạy đúng trên cả 4 file; cần lưu kèm
-   `SegmentAnchor` để highlight ngược lại viewer. Đây là chỗ `anchor` lần đầu
-   được dùng thật — PDF cần `rects`, mà `groupItemsIntoLines` hiện **bỏ mất**
-   toạ độ từng item sau khi gộp dòng. Nhiều khả năng phải trả thêm dữ liệu.
-3. **Library grid + resume**, rồi mới tới viewer.
+1. **Library grid** thay `SavedPanel` trong `App.tsx`. Dữ liệu lấy từ
+   `window.api.library.list()`.
+2. **Resume**: `books.markOpened(id, at, lastSegmentId)` đã có ở repository,
+   chỉ cần thêm kênh IPC và gọi khi user mở sách.
+3. Chưa có kênh **xoá sách** — `BookRepository.remove` đã viết và có test
+   CASCADE, nhưng chưa expose qua IPC.
 
-Lưu ý còn nguyên giá trị:
+Lưu ý:
 
+- **Ngôn ngữ sách đang hardcode `'vi'`** trong `import-store.save()`. Cần cho
+  user chọn ở màn xác nhận hoặc đoán từ nội dung — ảnh hưởng trực tiếp tới
+  voice TTS ở Phase 2.
+- Chưa có ảnh bìa. `Book.coverPath` có trong schema nhưng chưa ai ghi vào;
+  grid sẽ cần placeholder.
 - `ParsedDocument.hasRealPages` = false với DOCX → **đừng hiện "trang X–Y"**.
   `features/import/confidence.ts` có sẵn `rangeLabel()` lo việc này.
+
+### Ghi chú cho P1.6c (Viewer)
+
+Đã thống nhất với user: **pdfjs chạy trong renderer**, main chỉ cấp bytes qua
+IPC. Lý do: renderer có `DOMMatrix`/`Path2D` thật của Chromium nên không dính
+hai lỗi ở mục 4.19; renderer vẫn không chạm `fs`.
+
+- Neo đã sẵn sàng: `SegmentAnchor` PDF có `page` + `rects` (toạ độ trong không
+  gian trang, gốc góc **trên**-trái). Nhân với scale của viewport là ra vị trí
+  trên canvas.
+- DOCX có `nodePath = "p:<index>"` — index chính là thứ tự paragraph mammoth
+  sinh ra, viewer render theo đúng thứ tự đó là khớp.
 - `scoreCandidates()` → điểm **từng tín hiệu**, chưa dùng ở UI. Để dành cho
   chế độ "vì sao chương này được nhận" nếu user cần soi.
-- Parser chỉ gọi được từ main process. `node-parsers.ts` kéo pdfjs/mammoth vào
-  nên **không** export từ `index.ts`; main import qua `@ln/parsers/node`.
-- `ImportSessionStore` giữ tối đa 3 phiên rồi bỏ phiên cũ nhất. Khi P1.6 lưu
-  sách xong phải gọi `import:cancel` để giải phóng sớm.
 
 ### Dữ liệu thật đã có — cấu trúc quan sát được
 
@@ -560,6 +604,40 @@ Kèm một lỗi CSS chỉ thấy bằng mắt: ô tên chương dùng `hover:bo
 mà sau khi bấm thì chuột vẫn nằm trên ô nên viền bám lại, trông như chương đó
 đang được chọn. Đổi sang `group-hover` trên cả hàng.
 
+### 4.21 Dựng segment theo TRANG, và cách tìm lại toạ độ
+
+**Dựng theo trang, không ghép cả chương.** `buildChapterSegments` chạy
+segmenter trên từng `CleanedPage` rồi nối kết quả, thay vì ghép cả chương
+thành một chuỗi dài. Lý do là **neo**: ghép cả chương thì offset của segment
+trỏ vào chuỗi ghép, muốn biết segment nằm trang nào phải dò ngược qua bảng
+offset — thêm một chỗ sai mà không có gì kiểm chứng. Chạy theo trang thì
+`anchor.page` đúng **theo cấu trúc**, không phải suy luận.
+
+Đánh đổi: câu bị PDF ngắt qua hai trang thành hai segment. Chấp nhận được —
+segment là đơn vị ~10s audio, không phải đơn vị ngữ nghĩa.
+
+**Tìm `rects` phải dò trên chuỗi cả trang, không dò từng dòng.**
+
+Bản đầu dò theo từng dòng: so phần đầu segment với dòng thứ nhất, khớp thì
+sang dòng kế. Chạy trên sách thật thì **226/4817 segment không khớp được**.
+Nhìn vào chúng mới thấy giả định sai ở đâu:
+
+```
+"Chitose trở về Trái Đất đi!!!”"     ← dấu đóng nhưng không có dấu mở
+"khi cô vui vẻ vẫy tay."             ← chữ thường ở đầu
+```
+
+Đây là segment **bắt đầu giữa một dòng**. Cleaner nối nhiều dòng thành một
+khối, rồi segmenter cắt lại theo ranh giới **câu** — hai ranh giới đó gần như
+không bao giờ trùng nhau. Chỉ segment nào tình cờ trùng đầu dòng mới khớp.
+
+→ Ghép cả trang thành một chuỗi kèm bảng tra ngược `ký tự → dòng`, rồi
+`indexOf`. Đoạn khớp chạm dòng nào thì lấy rect dòng đó. Kết quả trên sách
+thật: **0/4817 thiếu rects**.
+
+Test khoá ở `chapter-segments.test.ts` mục "khớp segment bắt đầu GIỮA một
+dòng", dùng đúng câu hội thoại gặp trong file thật.
+
 ### 4.18 TypeScript project references — đã bỏ
 
 `@ln/shared` trỏ thẳng vào `src/*.ts` (không build ra `dist`), nên project
@@ -629,6 +707,7 @@ packages/parsers/src/
   segmenter/
     sentence-splitter.ts   Tách câu VI/EN (xử lý 「」『』, viết tắt, số thập phân)
     segmenter.ts           Gom câu → segment ≤ 300 ký tự
+    chapter-segments.ts    Segment theo trang + neo về tài liệu gốc (mục 4.21)
   cleaner/
     types.ts               TextLine + Page (đầu vào có toạ độ, từ parser PDF)
     header-footer.ts       Loại running head / số trang lặp (khớp theo phần chữ)
@@ -662,10 +741,12 @@ apps/main/src/
   db/migrations.ts         Schema SQL theo version (KHÔNG sửa migration đã phát hành)
   db/migrator.ts           Runner theo PRAGMA user_version
   db/connection.ts         Instance dùng chung, WAL
+  db/repositories/         MỌI SQL nằm ở đây — books / chapters / segments
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
-  ipc/handlers/            app / settings / window / import
+  ipc/handlers/            app / settings / window / import / library
   services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
+  services/library.ts      Copy file + hash + dựng segment + lưu DB
   services/paths.ts        NGUỒN DUY NHẤT sinh path + chặn path traversal
   services/settings.ts     electron-store, file hỏng → rơi về mặc định từng field
   services/logger.ts       Log file + xoay vòng
@@ -719,7 +800,11 @@ scripts/
 | Detector chỉ kiểm trên 2 file PDF | TB | Cả hai đều là LN dịch bố cục 1 cột, đánh số kiểu phương Tây. Chưa biết hành xử với sách đánh số kiểu `第一章`, sách nhiều chương nhỏ, hay chương không có tiêu đề |
 | ~~pdfjs chưa kiểm ở bản đóng gói~~ | ✅ Xong | Đã kiểm ở P1.5 và **lộ ra 2 lỗi thật** (mục 4.19). Nay chạy đúng trên `.exe` với cả 5 file mẫu, gọi qua IPC thật |
 | Kiểm bản đóng gói vẫn làm thủ công | TB | Quy trình CDP ở mục 4.19 chạy tay. Nên đưa vào CI như bước smoke test hiện có, nếu không lỗi kiểu 4.19 sẽ lại lọt |
-| `import:*` chưa chặn đường dẫn tuỳ ý | TB | Renderer gọi `parseFile` với path bất kỳ và main sẽ đọc. Hiện chưa lộ ra ngoài (chỉ dialog gọi tới), nhưng khi P1.6 thêm kéo-thả thì phải kiểm path qua `services/paths.ts` |
+| `import:*` chưa chặn đường dẫn tuỳ ý | TB | Renderer gọi `parseFile` với path bất kỳ và main sẽ đọc. Hiện chưa lộ ra ngoài (chỉ dialog gọi tới), nhưng khi thêm kéo-thả thì phải kiểm path qua `services/paths.ts` |
+| Ngôn ngữ sách hardcode `'vi'` | **TB** | `import-store.save()` luôn gửi `lang: 'vi'`. Sách EN sẽ nhận voice sai ở Phase 2. Cần cho user chọn ở màn xác nhận — xem ghi chú P1.6b |
+| Chưa có kênh xoá sách | Thấp | `BookRepository.remove` đã viết + test CASCADE, nhưng chưa expose qua IPC |
+| Chưa sinh ảnh bìa | Thấp | `Book.coverPath` có trong schema nhưng chưa ai ghi. Library grid sẽ cần placeholder |
+| Segment dựng đồng bộ trong main | Thấp | 4817 segment mất ~400ms, chấp nhận được. Sách lớn hơn nhiều lần thì sẽ thấy đơ — lúc đó chuyển sang worker thread |
 | DOCX chưa xử lý ảnh và bảng | Thấp | `extractBlocks` chỉ nhận `<h1>`–`<h6>` và `<p>`. File mẫu A4 có 2 `<img>` bị bỏ qua — chấp nhận được vì TTS không đọc ảnh, nhưng bảng có nội dung thì sẽ mất |
 | DOCX không có outline | Thấp | mammoth không đọc bookmark/TOC field của Word. Chương chỉ nhận được qua heading style hoặc regex — đã đủ với 2 file mẫu |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

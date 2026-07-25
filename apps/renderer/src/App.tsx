@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ChapterDraft } from '@ln/shared';
+import type { SaveBookResponse } from '@ln/shared';
 import { TitleBar } from '@/features/titlebar/TitleBar';
 import { ImportScreen } from '@/features/import/ImportScreen';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -12,8 +12,8 @@ export const App = (): JSX.Element => {
   const load = useSettingsStore((s) => s.load);
   const applyExternal = useSettingsStore((s) => s.applyExternal);
 
-  // Kết quả xác nhận, giữ tạm cho tới khi P1.6 nối vào bước lưu sách vào DB
-  const [confirmed, setConfirmed] = useState<ChapterDraft[] | null>(null);
+  // Kết quả lưu sách. P1.6b thay chỗ này bằng màn Library.
+  const [saved, setSaved] = useState<SaveBookResponse | null>(null);
 
   useEffect(() => {
     void load();
@@ -32,50 +32,55 @@ export const App = (): JSX.Element => {
           </p>
         ) : loading && settings === null ? (
           <p className="p-8 text-center text-fg-muted">Đang tải…</p>
-        ) : confirmed !== null ? (
-          <ConfirmedPanel chapters={confirmed} onBack={() => setConfirmed(null)} />
+        ) : saved !== null ? (
+          <SavedPanel result={saved} onBack={() => setSaved(null)} />
         ) : (
-          <ImportScreen onConfirm={setConfirmed} />
+          <ImportScreen onSaved={setSaved} />
         )}
       </main>
     </div>
   );
 };
 
-type ConfirmedPanelProps = {
-  chapters: readonly ChapterDraft[];
+type SavedPanelProps = {
+  result: SaveBookResponse;
   onBack: () => void;
 };
 
 /**
- * Màn tạm sau khi xác nhận cấu trúc.
+ * Màn tạm sau khi lưu sách.
  *
- * P1.5 dừng ở đây theo đúng phạm vi: lưu sách vào DB và dựng segment là việc
- * của P1.6. Hiện kết quả ra để kiểm chứng được luồng đã chạy đúng.
+ * P1.6a dừng ở đây theo đúng phạm vi: Library grid và viewer là P1.6b/c.
+ * Hiện số liệu thật lấy từ DB để kiểm chứng luồng đã chạy đúng.
  */
-const ConfirmedPanel = ({ chapters, onBack }: ConfirmedPanelProps): JSX.Element => (
+const SavedPanel = ({ result, onBack }: SavedPanelProps): JSX.Element => (
   <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-    <h1 className="text-xl font-semibold text-fg">Đã xác nhận {chapters.length} chương</h1>
-    <p className="max-w-md text-sm text-fg-muted">
-      Bước lưu sách và tạo segment thuộc P1.6 — chưa nối vào đây.
+    <h1 className="text-xl font-semibold text-fg">
+      {result.duplicate ? 'Sách này đã có trong thư viện' : 'Đã lưu vào thư viện'}
+    </h1>
+
+    {result.duplicate ? (
+      <p className="max-w-md text-sm text-fg-muted">
+        Cùng nội dung với một sách đã nhập trước đó, nên không tạo bản sao.
+      </p>
+    ) : (
+      <p className="max-w-md text-sm text-fg-muted">
+        <span className="font-medium text-fg">{result.chapterCount}</span> chương ·{' '}
+        <span className="font-medium text-fg">{result.segmentCount}</span> segment đã sẵn sàng
+        để generate audio.
+      </p>
+    )}
+
+    <p className="max-w-md text-xs text-fg-muted">
+      Màn thư viện và trình đọc thuộc P1.6b/c — chưa nối vào đây.
     </p>
-    <ol className="max-h-64 w-full max-w-md space-y-1 overflow-y-auto text-left text-sm">
-      {chapters.map((chapter, i) => (
-        <li key={chapter.id} className="flex gap-2 text-fg-muted">
-          <span className="tabular-nums">{i + 1}.</span>
-          <span className="truncate text-fg">{chapter.title}</span>
-          <span className="ml-auto shrink-0 tabular-nums">
-            {chapter.pageStart}–{chapter.pageEnd}
-          </span>
-        </li>
-      ))}
-    </ol>
+
     <button
       type="button"
       onClick={onBack}
       className="rounded px-3 py-1.5 text-sm text-fg-muted transition-colors hover:bg-bg-subtle hover:text-fg"
     >
-      Quay lại
+      Nhập sách khác
     </button>
   </div>
 );

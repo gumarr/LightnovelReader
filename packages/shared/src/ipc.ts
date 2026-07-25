@@ -1,4 +1,11 @@
-import type { AppSettings, AppSettingsPatch, BookFormat, ThemeMode } from './types.js';
+import type {
+  AppSettings,
+  AppSettingsPatch,
+  Book,
+  BookFormat,
+  BookLang,
+  ThemeMode,
+} from './types.js';
 import type { ChapterDraft } from './chapter-draft.js';
 import type { Result } from './result.js';
 
@@ -66,6 +73,35 @@ export type ChapterPreviewRequest = {
   maxChars?: number;
 };
 
+/**
+ * Yêu cầu lưu sách sau khi user xác nhận cấu trúc chương.
+ *
+ * Chỉ gửi `importId` + danh sách chương: text đầy đủ vẫn nằm ở main từ lúc
+ * parse (xem `ImportPreview`), không cần gửi ngược lên rồi gửi xuống lại.
+ */
+export type SaveBookRequest = {
+  importId: string;
+  title: string;
+  lang: BookLang;
+  /** Chương user giữ lại, đã bỏ những chương bị loại trừ */
+  chapters: ChapterDraft[];
+};
+
+export type SaveBookResponse = {
+  bookId: string;
+  chapterCount: number;
+  segmentCount: number;
+  /** Sách đã có sẵn trong thư viện — UI nên mở sách cũ thay vì báo thành công */
+  duplicate: boolean;
+};
+
+/** Một mục trong Library grid */
+export type LibraryEntry = {
+  book: Book;
+  chapterCount: number;
+  segmentCount: number;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -83,6 +119,10 @@ export type IpcContract = {
   'import:getChapterPreview': { in: ChapterPreviewRequest; out: Result<ChapterPreview> };
   /** Bỏ phiên import — giải phóng tài liệu đã parse khỏi bộ nhớ main */
   'import:cancel': { in: string; out: Result<void> };
+
+  /** Lưu sách đã xác nhận cấu trúc vào thư viện */
+  'library:saveBook': { in: SaveBookRequest; out: Result<SaveBookResponse> };
+  'library:list': { in: void; out: Result<LibraryEntry[]> };
 
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
@@ -120,6 +160,8 @@ export const IPC_CHANNELS = [
   'import:parseFile',
   'import:getChapterPreview',
   'import:cancel',
+  'library:saveBook',
+  'library:list',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',

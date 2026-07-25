@@ -20,6 +20,7 @@ beforeEach(() => {
     loadingPreviews: [],
     issues: [],
     parsing: false,
+    saving: false,
     error: null,
     history: [],
   });

@@ -124,6 +124,24 @@ export const chapterPreviewRequestSchema = z.object({
   maxChars: z.number().int().positive().max(2000).optional(),
 });
 
+export const chapterDraftSchema = z.object({
+  id: z.string().min(1).max(64),
+  title: z.string().max(500),
+  pageStart: z.number().int().positive(),
+  pageEnd: z.number().int().positive(),
+  confidence: z.number().optional(),
+  excluded: z.boolean(),
+});
+
+export const saveBookRequestSchema = z.object({
+  importId: importIdSchema,
+  title: z.string().trim().min(1).max(500),
+  lang: bookLangSchema,
+  // Sách thật hiếm khi quá vài trăm chương; trần để một renderer hỏng không
+  // ép main dựng segment vô hạn
+  chapters: z.array(chapterDraftSchema).min(1).max(2000),
+});
+
 // Kiểm tra AUDIO_BITRATES và schema không lệch nhau khi sửa constants
 const _bitrateGuard: ReadonlyArray<z.infer<typeof audioBitrateSchema>> = AUDIO_BITRATES;
 void _bitrateGuard;

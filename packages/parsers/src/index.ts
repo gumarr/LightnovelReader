@@ -1,5 +1,11 @@
 export { splitSentences, type Sentence } from './segmenter/sentence-splitter.js';
 export { segmentText, type RawSegment, type SegmenterOptions } from './segmenter/segmenter.js';
+export {
+  buildChapterSegments,
+  findLineRects,
+  type BuildSegmentsInput,
+  type ChapterSegment,
+} from './segmenter/chapter-segments.js';
 
 export type { Page, TextLine } from './cleaner/types.js';
 export { cleanPages, cleanText, type CleanOptions, type CleanedPage } from './cleaner/cleaner.js';

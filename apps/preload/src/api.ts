@@ -9,6 +9,9 @@ import {
   type ChapterPreviewRequest,
   type ImportPreview,
   type IpcChannel,
+  type LibraryEntry,
+  type SaveBookRequest,
+  type SaveBookResponse,
   type IpcEventName,
   type IpcEventPayload,
   type IpcInput,
@@ -78,6 +81,12 @@ export const api = {
     getChapterPreview: (request: ChapterPreviewRequest): Promise<Result<ChapterPreview>> =>
       invoke('import:getChapterPreview', request),
     cancel: (importId: string): Promise<Result<void>> => invoke('import:cancel', importId),
+  },
+
+  library: {
+    saveBook: (request: SaveBookRequest): Promise<Result<SaveBookResponse>> =>
+      invoke('library:saveBook', request),
+    list: (): Promise<Result<LibraryEntry[]>> => invoke('library:list', undefined),
   },
 
   window: {

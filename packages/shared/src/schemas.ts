@@ -108,6 +108,22 @@ export const appSettingsSchema = z.object({
 /** Patch settings — mọi field optional, dùng cho IPC settings:update */
 export const appSettingsPatchSchema = appSettingsSchema.partial();
 
+/**
+ * Input của `import:*`. Main không tin đường dẫn từ renderer — nhưng ở đây
+ * chỉ kiểm dạng, việc chặn đường dẫn ngoài thư viện là của handler.
+ */
+export const importFilePathSchema = z.string().min(1);
+
+export const importIdSchema = z.string().min(1).max(64);
+
+export const chapterPreviewRequestSchema = z.object({
+  importId: importIdSchema,
+  chapterId: z.string().min(1).max(64),
+  pageStart: z.number().int().positive(),
+  pageEnd: z.number().int().positive(),
+  maxChars: z.number().int().positive().max(2000).optional(),
+});
+
 // Kiểm tra AUDIO_BITRATES và schema không lệch nhau khi sửa constants
 const _bitrateGuard: ReadonlyArray<z.infer<typeof audioBitrateSchema>> = AUDIO_BITRATES;
 void _bitrateGuard;

@@ -9,9 +9,12 @@ import { createSettingsService } from './services/settings.js';
 import { dbPath, logsDir } from './services/paths.js';
 import { registerHandler, clearRegisteredChannels } from './ipc/registry.js';
 import { getAppInfo } from './ipc/handlers/app.js';
+import { createImportHandlers } from './ipc/handlers/import.js';
 import { createSettingsHandlers } from './ipc/handlers/settings.js';
+import { createImportSessionStore } from './services/import-session.js';
 import { createWindowHandlers, readWindowState } from './ipc/handlers/window.js';
 import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './window.js';
+import { createNodeParserRegistry } from '@ln/parsers/node';
 
 /**
  * Entry point của Electron main process.
@@ -86,11 +89,23 @@ const start = (): void => {
   });
   const windowHandlers = createWindowHandlers(getWindow);
 
+  const parserRegistry = createNodeParserRegistry();
+  const importHandlers = createImportHandlers({
+    sessions: createImportSessionStore({ registry: parserRegistry }),
+    getWindow,
+    extensions: parserRegistry.extensions(),
+    logError: (message, detail) => logger.error(message, detail),
+  });
+
   registerHandler('app:getInfo', getAppInfo, logger);
   registerHandler('settings:getAll', settingsHandlers.getAll, logger);
   registerHandler('settings:update', settingsHandlers.update, logger);
   registerHandler('settings:setTheme', settingsHandlers.setTheme, logger);
   registerHandler('settings:pickAudioDir', settingsHandlers.pickAudioDir, logger);
+  registerHandler('import:pickFile', importHandlers.pickFile, logger);
+  registerHandler('import:parseFile', importHandlers.parseFile, logger);
+  registerHandler('import:getChapterPreview', importHandlers.getChapterPreview, logger);
+  registerHandler('import:cancel', importHandlers.cancel, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);

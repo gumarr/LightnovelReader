@@ -1,5 +1,13 @@
 import { vi } from 'vitest';
-import { DEFAULT_SETTINGS, ok, type AppSettings, type WindowState } from '@ln/shared';
+import {
+  DEFAULT_SETTINGS,
+  ok,
+  type AppSettings,
+  type ChapterPreviewRequest,
+  type ImportPreview,
+  type Result,
+  type WindowState,
+} from '@ln/shared';
 
 /**
  * `window.api` giả cho test renderer — thay cho preload thật vốn cần Electron.
@@ -11,6 +19,24 @@ export type FakeApi = ReturnType<typeof createFakeApi>;
 export type FakeApiOptions = {
   settings?: Partial<AppSettings>;
   windowState?: Partial<WindowState>;
+  /** Preview trả về khi test gọi `import.pickFile` / `import.parseFile` */
+  importPreview?: ImportPreview;
+};
+
+/** Preview mặc định: 3 chương liền mạch trên sách 30 trang */
+export const defaultImportPreview: ImportPreview = {
+  importId: 'imp1',
+  filePath: 'D:\\sach\\Test Book.pdf',
+  suggestedTitle: 'Test Book',
+  format: 'pdf',
+  totalPages: 30,
+  hasRealPages: true,
+  hasOutline: true,
+  chapters: [
+    { id: 'c1', title: 'Chương 1: Mở đầu', pageStart: 1, pageEnd: 10, confidence: 5.2, excluded: false },
+    { id: 'c2', title: 'Chương 2: Tiếp theo', pageStart: 11, pageEnd: 20, confidence: 4.1, excluded: false },
+    { id: 'c3', title: 'Chương 3: Kết', pageStart: 21, pageEnd: 30, confidence: 1.5, excluded: false },
+  ],
 };
 
 export const createFakeApi = (options: FakeApiOptions = {}) => {
@@ -25,6 +51,8 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
     isFullScreen: false,
     ...options.windowState,
   };
+
+  const importPreview: ImportPreview = options.importPreview ?? defaultImportPreview;
 
   const settingsListeners = new Set<(s: AppSettings) => void>();
   const windowListeners = new Set<(s: WindowState) => void>();
@@ -58,6 +86,20 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
         settingsListeners.add(listener);
         return () => settingsListeners.delete(listener);
       }),
+    },
+
+    import: {
+      // Kiểu trả về phải cho phép `null`: user bấm huỷ ở dialog là ca thật,
+      // không suy được từ giá trị mặc định nên phải chú thích tường minh.
+      pickFile: vi.fn(async (): Promise<Result<ImportPreview | null>> => ok(importPreview)),
+      parseFile: vi.fn(async (_filePath: string) => ok(importPreview)),
+      getChapterPreview: vi.fn(async (request: ChapterPreviewRequest) =>
+        ok({
+          chapterId: request.chapterId,
+          text: `Nội dung trang ${request.pageStart}–${request.pageEnd}.`,
+        }),
+      ),
+      cancel: vi.fn(async (_importId: string) => ok(undefined)),
     },
 
     window: {

@@ -1,4 +1,5 @@
-import type { AppSettings, AppSettingsPatch, ThemeMode } from './types.js';
+import type { AppSettings, AppSettingsPatch, BookFormat, ThemeMode } from './types.js';
+import type { ChapterDraft } from './chapter-draft.js';
 import type { Result } from './result.js';
 
 /**
@@ -24,6 +25,47 @@ export type AppInfo = {
   userDataPath: string;
 };
 
+/**
+ * Kết quả phân tích một file sách, đủ để dựng màn "Xác nhận cấu trúc chương".
+ *
+ * Cố ý **không** kèm text đầy đủ của sách: file 270 trang cho ra vài MB text,
+ * gửi hết qua IPC để rồi chỉ hiện 2 dòng preview mỗi chương là lãng phí.
+ * Text đầy đủ nằm lại ở main cho tới khi user xác nhận.
+ */
+export type ImportPreview = {
+  /** ID tạm của phiên import, dùng để main tìm lại tài liệu đã parse */
+  importId: string;
+  filePath: string;
+  /** Tên file không kèm đuôi — gợi ý tên sách, user sửa được */
+  suggestedTitle: string;
+  format: BookFormat;
+  /** Số trang thật (PDF) hoặc số đoạn văn (DOCX) */
+  totalPages: number;
+  /**
+   * `false` với DOCX. UI phải dựa cờ này để hiện "đoạn X–Y" thay vì "trang X–Y".
+   */
+  hasRealPages: boolean;
+  /** Có đọc được outline/bookmark không — quyết định mức tin cậy hiển thị */
+  hasOutline: boolean;
+  chapters: ChapterDraft[];
+};
+
+/** Vài dòng đầu của một chương, tải riêng để không phải gửi cả sách */
+export type ChapterPreview = {
+  chapterId: string;
+  /** Rỗng khi vùng trang không có text (trang toàn ảnh) */
+  text: string;
+};
+
+export type ChapterPreviewRequest = {
+  importId: string;
+  chapterId: string;
+  pageStart: number;
+  pageEnd: number;
+  /** Số ký tự tối đa trả về */
+  maxChars?: number;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -33,6 +75,14 @@ export type IpcContract = {
   'settings:setTheme': { in: ThemeMode; out: Result<AppSettings> };
   /** Mở dialog chọn thư mục audio mới. `null` = user bấm huỷ */
   'settings:pickAudioDir': { in: void; out: Result<string | null> };
+
+  /** Mở dialog chọn sách rồi parse luôn. `null` = user bấm huỷ */
+  'import:pickFile': { in: void; out: Result<ImportPreview | null> };
+  /** Parse một file đã biết đường dẫn (dùng khi kéo-thả) */
+  'import:parseFile': { in: string; out: Result<ImportPreview> };
+  'import:getChapterPreview': { in: ChapterPreviewRequest; out: Result<ChapterPreview> };
+  /** Bỏ phiên import — giải phóng tài liệu đã parse khỏi bộ nhớ main */
+  'import:cancel': { in: string; out: Result<void> };
 
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
@@ -66,6 +116,10 @@ export const IPC_CHANNELS = [
   'settings:update',
   'settings:setTheme',
   'settings:pickAudioDir',
+  'import:pickFile',
+  'import:parseFile',
+  'import:getChapterPreview',
+  'import:cancel',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',

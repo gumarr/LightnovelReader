@@ -36,6 +36,16 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.settings.update({ bitrate: 32 }),
     () => api.settings.setTheme('dark'),
     () => api.settings.pickAudioDir(),
+    () => api.import.pickFile(),
+    () => api.import.parseFile('D:\\a.pdf'),
+    () =>
+      api.import.getChapterPreview({
+        importId: 'imp1',
+        chapterId: 'c1',
+        pageStart: 1,
+        pageEnd: 10,
+      }),
+    () => api.import.cancel('imp1'),
     () => api.window.minimize(),
     () => api.window.toggleMaximize(),
     () => api.window.close(),
@@ -69,7 +79,7 @@ describe('bề mặt window.api', () => {
   it('không expose ipcRenderer thô cho renderer', () => {
     const surface = JSON.stringify(Object.keys(api));
     expect(surface).not.toContain('ipcRenderer');
-    expect(Object.keys(api).sort()).toEqual(['app', 'settings', 'window']);
+    expect(Object.keys(api).sort()).toEqual(['app', 'import', 'settings', 'window']);
   });
 
   it('truyền input xuống đúng channel', async () => {

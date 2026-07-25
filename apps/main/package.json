@@ -6,9 +6,10 @@
   "main": "./dist/index.cjs",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "vite build"
+    "build": "vite build && node ../../scripts/copy-pdf-worker.mjs"
   },
   "dependencies": {
+    "@ln/parsers": "workspace:*",
     "@ln/shared": "workspace:*",
     "better-sqlite3": "^11.7.0",
     "electron-store": "^10.0.0",

@@ -45,7 +45,7 @@ trị, nhưng nhóm A là thứ đang thiếu nhất.
 
 | # | Dạng file | Kiểm được gì |
 |---|---|---|
-| **C1** | **PDF scan, không có text layer** | Phải báo lỗi rõ ràng cho user, **không** được crash hay ra chương rỗng |
+| **C1** | **PDF scan, không có text layer** ✅ đã có | Phải báo lỗi rõ ràng cho user, **không** được crash hay ra chương rỗng. Đã kiểm trên bản `.exe`: trả `PDF_NO_TEXT_LAYER` đúng |
 | **C2** | PDF có trang bìa, mục lục, lời bạt, trang quảng cáo | Phần cần loại trừ ở màn xác nhận chương (P1.5) |
 | **C3** | Sách chỉ có 1 chương, hoặc chương rất dài (> 50 trang) | Fallback chia theo trang |
 | **C4** | PDF có ảnh minh hoạ chèn giữa text | Ảnh không được làm đứt đoạn văn |

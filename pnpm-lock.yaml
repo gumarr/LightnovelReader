@@ -51,6 +51,9 @@ importers:
 
   apps/main:
     dependencies:
+      '@ln/parsers':
+        specifier: workspace:*
+        version: link:../../packages/parsers
       '@ln/shared':
         specifier: workspace:*
         version: link:../../packages/shared

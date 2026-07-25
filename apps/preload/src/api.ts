@@ -5,6 +5,9 @@ import {
   type AppInfo,
   type AppSettings,
   type AppSettingsPatch,
+  type ChapterPreview,
+  type ChapterPreviewRequest,
+  type ImportPreview,
   type IpcChannel,
   type IpcEventName,
   type IpcEventPayload,
@@ -66,6 +69,15 @@ export const api = {
     pickAudioDir: (): Promise<Result<string | null>> => invoke('settings:pickAudioDir', undefined),
     onChanged: (listener: (settings: AppSettings) => void): (() => void) =>
       subscribe('settings:changed', listener),
+  },
+
+  import: {
+    pickFile: (): Promise<Result<ImportPreview | null>> => invoke('import:pickFile', undefined),
+    parseFile: (filePath: string): Promise<Result<ImportPreview>> =>
+      invoke('import:parseFile', filePath),
+    getChapterPreview: (request: ChapterPreviewRequest): Promise<Result<ChapterPreview>> =>
+      invoke('import:getChapterPreview', request),
+    cancel: (importId: string): Promise<Result<void>> => invoke('import:cancel', importId),
   },
 
   window: {

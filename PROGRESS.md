@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-25 · commit `abf0cf1`
+> **Cập nhật lần cuối:** 2026-07-25 · commit `(P1.5)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -21,7 +21,7 @@ pnpm dev                 # mở app
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P1.5 — Màn xác nhận cấu trúc chương (xem mục 3).
+**Việc tiếp theo:** P1.6 — Viewer + Library + lưu sách vào DB (xem mục 3).
 
 ---
 
@@ -118,14 +118,46 @@ detector → segmenter:**
 
 Tìm ra **3 lỗi thật** khi nối các phần lại — xem mục 4.16.
 
+### Phase 1 — P1.5 Màn xác nhận cấu trúc chương ✅
+
+UI đầu tiên dùng tới toàn bộ tầng logic. Chia bốn tầng đúng ràng buộc kiến trúc:
+
+| File | Vai trò | Test |
+|---|---|---|
+| `shared/chapter-draft.ts` | merge/split/rename/xoá/loại trừ + `validateDraft` — **hàm thuần** | 37 |
+| `main/services/import-session.ts` | Giữ tài liệu đã parse, sinh preview theo khoảng trang | 23 |
+| `main/ipc/handlers/import.ts` | 4 kênh `import:*`, đổi `ParseError` → mã lỗi riêng | 20 |
+| `renderer/stores/import-store.ts` | State + hoàn tác, nối IPC | 36 |
+| `renderer/features/import/ChapterConfirm.tsx` | Danh sách chương, sửa tại chỗ | 25 |
+| `renderer/features/import/confidence.ts` | Điểm detector → nhãn cho user | 15 |
+| `parsers/parser/node-parsers.ts` | Tìm `pdf.worker.mjs` (mục 4.19) | 4 |
+
+Logic sửa chương đặt ở `packages/shared` (không phải renderer) vì đó là quy
+tắc miền có bất biến thật — vùng trang không chồng, không âm — và P1.6 dùng lại.
+
+**Đã chạy thật trên bản đóng gói** (không chỉ unit test): gọi
+`window.api.import.parseFile` qua CDP trên `.exe` đã build:
+
+| File | Kết quả |
+|---|---|
+| PDF VI có outline | ✅ 270tr → 10 chương, outline=true |
+| PDF EN không outline | ✅ 259tr → 5 chương |
+| **PDF scan (C1)** | ✅ báo `PDF_NO_TEXT_LAYER`, không crash |
+| DOCX A4 / B3 | ✅ 2 chương / 1 chương |
+
+Tìm ra **2 lỗi đóng gói** mà unit test không lộ (mục 4.19) và **2 lỗi UI** chỉ
+thấy được bằng mắt trên ảnh chụp thật (mục 4.20).
+
+Đã xem cả **dark lẫn light** trên bản đóng gói — mọi màu lấy từ CSS variable.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **562 passed** (+86 từ P1.4) |
+| Unit test | **723 passed** (+161 từ P1.5) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
-| Installer | 80.8 MB |
+| Installer | 82 MB |
 
 ---
 
@@ -140,33 +172,38 @@ unit test riêng và chạy `pnpm typecheck && pnpm lint && pnpm test` trước 
 | P1.2 | Cleaner — header/footer lặp, de-hyphenate, merge dòng, cột đôi | ✅ Xong |
 | P1.3 | Chapter detector — mỗi tín hiệu 1 hàm thuần + test riêng, trả điểm số | ✅ Xong |
 | P1.4 | Parser PDF + DOCX, interface `DocumentParser` chung | ✅ Xong |
-| **P1.5** | **Màn hình "Xác nhận cấu trúc chương"** — merge/split/rename/xóa | ⬅️ **Tiếp theo** |
-| P1.6 | Viewer (PDF canvas + text layer, DOCX HTML) + Library grid + resume | ⬜ |
+| P1.5 | Màn hình "Xác nhận cấu trúc chương" — merge/split/rename/xóa | ✅ Xong |
+| **P1.6** | **Viewer (PDF canvas + text layer, DOCX HTML) + Library grid + resume** | ⬅️ **Tiếp theo** |
 
 **DoD Phase 1:** Mở PDF & DOCX, thấy danh sách chương đúng, sửa được, thấy segment.
 
-### Ghi chú cho P1.5 (Màn xác nhận cấu trúc chương)
+### Ghi chú cho P1.6 (Viewer + Library + lưu sách)
 
-Toàn bộ tầng logic đã xong và chạy đúng trên 4 file thật. P1.5 là UI đầu tiên
-dùng tới nó.
+P1.5 dừng đúng ở chỗ user bấm "Xác nhận" — chương đã sửa xong **chưa được lưu
+vào DB**. `App.tsx` hiện danh sách ra màn tạm (`ConfirmedPanel`) để kiểm chứng
+luồng chạy đúng. P1.6 nối tiếp từ đây.
 
-Dữ liệu sẵn có để dựng màn hình:
+Việc phải làm, theo thứ tự phụ thuộc:
 
-- `detectChapters()` → `DetectedChapter[]` có `title`, `pageStart`, `pageEnd`,
-  `confidence`. Hiển thị `confidence` thấp để user biết chỗ nào cần soi kỹ.
-- `scoreCandidates()` → điểm **từng tín hiệu**, dùng cho chế độ "xem vì sao"
-- `ParsedDocument.hasRealPages` = false với DOCX → **đừng hiện "trang X–Y"**,
-  phải hiện "đoạn X–Y" hoặc ẩn hẳn
-- `CleanedPage.isTableOfContents` đánh dấu trang mục lục đã bị bỏ
+1. **Lưu sách + chương vào DB.** Copy file gốc vào `libraryDir`, tính
+   `fileHash` (SHA-256) để phát hiện import trùng. Repository ở
+   `db/repositories/*.ts` — không viết SQL rải rác trong handler.
+2. **Dựng segment.** `segmentText()` đã chạy đúng trên cả 4 file; cần lưu kèm
+   `SegmentAnchor` để highlight ngược lại viewer. Đây là chỗ `anchor` lần đầu
+   được dùng thật — PDF cần `rects`, mà `groupItemsIntoLines` hiện **bỏ mất**
+   toạ độ từng item sau khi gộp dòng. Nhiều khả năng phải trả thêm dữ liệu.
+3. **Library grid + resume**, rồi mới tới viewer.
 
-Thao tác bắt buộc có: merge, split, đổi tên, xoá chương, và preview 2 dòng đầu.
+Lưu ý còn nguyên giá trị:
 
-Nhớ: outline chứa cả "Bản quyền", "Lời bạt" — **user loại ở đây**, detector cố
-ý không tự đoán (mục 4.11a).
-
-Chạy IPC qua `packages/shared/src/ipc.ts`; parser chỉ được gọi từ main
-process — `node-parsers.ts` kéo pdfjs/mammoth vào nên **không** export từ
-`index.ts` của package.
+- `ParsedDocument.hasRealPages` = false với DOCX → **đừng hiện "trang X–Y"**.
+  `features/import/confidence.ts` có sẵn `rangeLabel()` lo việc này.
+- `scoreCandidates()` → điểm **từng tín hiệu**, chưa dùng ở UI. Để dành cho
+  chế độ "vì sao chương này được nhận" nếu user cần soi.
+- Parser chỉ gọi được từ main process. `node-parsers.ts` kéo pdfjs/mammoth vào
+  nên **không** export từ `index.ts`; main import qua `@ln/parsers/node`.
+- `ImportSessionStore` giữ tối đa 3 phiên rồi bỏ phiên cũ nhất. Khi P1.6 lưu
+  sách xong phải gọi `import:cancel` để giải phóng sớm.
 
 ### Dữ liệu thật đã có — cấu trúc quan sát được
 
@@ -450,6 +487,79 @@ cần `DOMMatrix`/`Path2D` mà Node và Electron main không có.
 **Chưa kiểm ở bản đóng gói** — asar có thể không nạp được worker file. Xem
 mục 8.
 
+### 4.19 pdfjs trong Electron đã đóng gói — hai lỗi, 716 test không lộ
+
+Đây là lần kiểm chứng nợ kỹ thuật "pdfjs chưa kiểm ở bản đóng gói". Kết quả:
+**mọi file PDF đều hỏng** ở bản build, trong khi unit test và `probe/` đều xanh.
+DOCX không sao — nên nếu chỉ thử DOCX sẽ tưởng đã xong.
+
+**a) `ReferenceError: DOMMatrix is not defined` ngay lúc `import()`.**
+
+Bản `legacy` của pdfjs *có* tự polyfill `DOMMatrix`/`Path2D`, nhưng chỉ chạy
+khi nó nhận ra đang ở Node. Trong Electron main thì `process.type === 'browser'`
+nên pdfjs tưởng mình ở trình duyệt và bỏ qua — mà Electron main lại **không**
+có `DOMMatrix` thật (đã đo: `typeof DOMMatrix === 'undefined'`).
+
+Module pdfjs có `const SCALE_MATRIX = new DOMMatrix()` ở cấp cao nhất, nên
+thiếu nó là ném ngay lúc import, trước khi chạm tới file PDF nào.
+
+→ `ensureDomMatrix()` trong `node-parsers.ts` cài một `DOMMatrix` tối thiểu
+trước khi import. Cố ý **không** cài `@napi-rs/canvas` (thêm ~40 MB native chỉ
+để dựng một ma trận mà parser không bao giờ dùng — nó chỉ trích text).
+
+**b) `Setting up fake worker failed: Cannot find module 'pdf.worker.mjs'`.**
+
+pdfjs đặt `workerSrc = "./pdf.worker.mjs"` — tương đối với **file bundle**.
+Vite gộp phần code của pdfjs vào bundle được, nhưng worker thì nó nạp bằng
+`import()` lúc chạy nên phải là file thật nằm cạnh. Mà `electron-builder.yml`
+chỉ đóng gói `apps/main/dist/**` — **không có `node_modules`**, nên
+`require.resolve('pdfjs-dist')` cũng vô nghĩa ở bản đóng gói.
+
+→ Hai phần: `scripts/copy-pdf-worker.mjs` chép worker vào `apps/main/dist/`
+lúc build (đã gắn vào `pnpm --filter @ln/main build`), và `findWorkerSrc()`
+tìm **cạnh bundle trước**, rồi mới tới `node_modules` (đường đi lúc dev/test).
+
+Phải gán đè `GlobalWorkerOptions.workerSrc`, **không** dùng `||=`: giá trị mặc
+định kia đã là chuỗi không rỗng nên `||=` bỏ qua và lỗi còn nguyên. Mất một
+vòng thử mới nhận ra.
+
+**c) Lỗi parse không để lại dấu vết nào.** `wrapHandler` chỉ ghi log khi
+handler **ném**, mà `ParseError` được chuyển thành `Result` nên đi vòng qua.
+Bản đóng gói chỉ trả về "File có thể đã hỏng" — vô dụng để chẩn đoán, mà đây
+lại đúng là loại lỗi khó tìm nhất.
+
+→ `import.ts` nhận `logError` và đưa `cause` vào `AppError.detail`. Chính nhờ
+bước này mới đọc được nguyên nhân thật ở (b).
+
+Test khoá ở `node-parsers.test.ts` (thứ tự tìm worker) và `import.test.ts`
+(giữ `detail`, có ghi log).
+
+**Cách kiểm lại khi sửa pdfjs:** build `.exe` rồi gọi thẳng IPC qua CDP —
+`Start-Process ... --remote-debugging-port=9222`, sau đó
+`Runtime.evaluate` với `window.api.import.parseFile(...)`. Truyền đường dẫn
+bằng `JSON.stringify` chứ đừng nội suy chuỗi: backslash Windows bị nuốt sẽ ra
+lỗi "file hỏng" giả, mất thời gian đuổi nhầm hướng.
+
+### 4.20 Nhãn tin cậy phải so theo bối cảnh, không phải mốc cứng
+
+Bản đầu chấm mốc tuyệt đối (≥3 "Chắc chắn", ≥2 "Có thể đúng"). Chạy thật trên
+bản đóng gói thì file EN cho **5/5 chương đều "Nên kiểm lại"** — vì không có
+outline nên mất luôn hai tín hiệu mạnh nhất (outline 3.0, font lớn 1.5), trần
+thực tế chỉ còn 2.5.
+
+Cảnh báo hiện ở mọi dòng thì không còn là cảnh báo: user chỉ học cách phớt lờ.
+
+→ `confidenceLevel(confidence, hasOutline)` đổi mốc theo việc tài liệu có
+outline hay không (1.8/1.5 khi không có). Sau khi sửa, đúng "Prologue :" bị
+gắn cờ — chương này thật sự chỉ có 1 trang nên đáng ngờ thật.
+
+Bài học chung: điểm của detector chỉ có nghĩa **tương đối trong cùng một tài
+liệu**. Đừng so điểm giữa hai file có bộ tín hiệu khác nhau.
+
+Kèm một lỗi CSS chỉ thấy bằng mắt: ô tên chương dùng `hover:border-border`,
+mà sau khi bấm thì chuột vẫn nằm trên ô nên viền bám lại, trông như chương đó
+đang được chọn. Đổi sang `group-hover` trên cả hàng.
+
 ### 4.18 TypeScript project references — đã bỏ
 
 `@ln/shared` trỏ thẳng vào `src/*.ts` (không build ra `dist`), nên project
@@ -508,6 +618,7 @@ Hoặc chạy từ PowerShell/Terminal ngoài VS Code.
 ```
 packages/shared/src/
   types.ts        Domain model 3 tầng: Chapter → Segment → Word
+  chapter-draft.ts Bản nháp chương user sửa ở màn xác nhận (hàm thuần)
   ipc.ts          IPC contract (in/out có kiểu) + whitelist channel
   result.ts       Result<T> — handler không throw qua IPC
   schemas.ts      zod, validate ở biên IPC
@@ -538,7 +649,8 @@ packages/parsers/src/
     pdf.ts                 pdfjs → Page[], outline, phát hiện PDF scan
     docx.ts                mammoth → khối → Page[] (hasRealPages = false)
     registry.ts            Chọn parser theo đuôi file
-    node-parsers.ts        Nối thư viện thật — KHÔNG export từ index.ts
+    node-parsers.ts        Nối thư viện thật — KHÔNG export từ index.ts.
+                           Bù DOMMatrix + trỏ workerSrc (xem mục 4.19)
   probe/                   Script khảo sát trên file thật (KHÔNG chạy trong
                            pnpm test — xem probe/README.md)
 
@@ -552,7 +664,8 @@ apps/main/src/
   db/connection.ts         Instance dùng chung, WAL
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
-  ipc/handlers/            app / settings / window
+  ipc/handlers/            app / settings / window / import
+  services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
   services/paths.ts        NGUỒN DUY NHẤT sinh path + chặn path traversal
   services/settings.ts     electron-store, file hỏng → rơi về mặc định từng field
   services/logger.ts       Log file + xoay vòng
@@ -561,12 +674,21 @@ apps/preload/src/
   api.ts                   window.api.* — không lộ ipcRenderer
 
 apps/renderer/src/
-  App.tsx                  Shell (màn hình tạm, thay bằng Library ở P1.6)
+  App.tsx                  Shell → ImportScreen (Library thay vào ở P1.6)
   lib/theme.ts             Logic theme thuần
   features/theme/          use-theme + ThemeToggle
   features/titlebar/       TitleBar + WindowControls
+  features/import/
+    ImportScreen.tsx       Chọn file → xác nhận
+    ChapterConfirm.tsx     Danh sách chương + nút xác nhận
+    ChapterRow.tsx         Một hàng: tên, khoảng trang, preview, tách/gộp/xoá
+    confidence.ts          Điểm detector → nhãn; "trang" vs "đoạn"
   stores/settings-store.ts Zustand, có bắt rejection IPC
+  stores/import-store.ts   Bản nháp chương + hoàn tác
   styles/theme.css         CSS variables — mọi màu lấy từ đây
+
+scripts/
+  copy-pdf-worker.mjs      Chép pdf.worker.mjs vào dist (BẮT BUỘC — mục 4.19)
 ```
 
 ---
@@ -593,9 +715,11 @@ apps/renderer/src/
 | CI job `build` chưa chạy tới nơi | TB | Job `check` đã chạy và lộ 2 lỗi (xem mục 4.14). Job `build` (đóng gói + smoke test) vẫn chưa xác nhận lần nào vì `check` fail trước |
 | `@electron/rebuild` là dependency thừa | Thấp | electron-builder đã có sẵn; giữ lại vô hại |
 | Ngưỡng cleaner mới kiểm trên 2 file | Thấp | `minRatio` 0.6, `maxLength` 80, `shortLineRatio` 0.6 đã chạy đúng trên 1 file VI + 1 file EN (60 trang). `minGutterRatio` 0.04 **vẫn chưa kiểm** — chưa có file 2 cột |
-| Chưa có file mẫu nhóm B/C | TB | Thiếu: **PDF 2 cột (B1)** — user xác nhận không có mẫu, `minGutterRatio` 0.04 vẫn chưa được kiểm lần nào. Còn thiếu PDF scan không text layer (C1). Xem `samples/README.md` |
+| Chưa có file mẫu nhóm B/C | Thấp | Còn thiếu **PDF 2 cột (B1)** — user xác nhận không có mẫu, `minGutterRatio` 0.04 vẫn chưa được kiểm lần nào. C1 (PDF scan) **đã có** và đã kiểm ở bản đóng gói: báo `PDF_NO_TEXT_LAYER` đúng như thiết kế |
 | Detector chỉ kiểm trên 2 file PDF | TB | Cả hai đều là LN dịch bố cục 1 cột, đánh số kiểu phương Tây. Chưa biết hành xử với sách đánh số kiểu `第一章`, sách nhiều chương nhỏ, hay chương không có tiêu đề |
-| pdfjs chưa kiểm ở bản đóng gói | **TB** | Chạy tốt dưới `pnpm test`/probe, nhưng asar có thể không nạp được worker file. Phải kiểm khi P1.5 gọi parser thật từ main process — đúng bài học mục 4.2 |
+| ~~pdfjs chưa kiểm ở bản đóng gói~~ | ✅ Xong | Đã kiểm ở P1.5 và **lộ ra 2 lỗi thật** (mục 4.19). Nay chạy đúng trên `.exe` với cả 5 file mẫu, gọi qua IPC thật |
+| Kiểm bản đóng gói vẫn làm thủ công | TB | Quy trình CDP ở mục 4.19 chạy tay. Nên đưa vào CI như bước smoke test hiện có, nếu không lỗi kiểu 4.19 sẽ lại lọt |
+| `import:*` chưa chặn đường dẫn tuỳ ý | TB | Renderer gọi `parseFile` với path bất kỳ và main sẽ đọc. Hiện chưa lộ ra ngoài (chỉ dialog gọi tới), nhưng khi P1.6 thêm kéo-thả thì phải kiểm path qua `services/paths.ts` |
 | DOCX chưa xử lý ảnh và bảng | Thấp | `extractBlocks` chỉ nhận `<h1>`–`<h6>` và `<p>`. File mẫu A4 có 2 `<img>` bị bỏ qua — chấp nhận được vì TTS không đọc ảnh, nhưng bảng có nội dung thì sẽ mất |
 | DOCX không có outline | Thấp | mammoth không đọc bookmark/TOC field của Word. Chương chỉ nhận được qua heading style hoặc regex — đã đủ với 2 file mẫu |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

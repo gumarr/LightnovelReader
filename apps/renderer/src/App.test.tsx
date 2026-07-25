@@ -4,12 +4,25 @@ import { err } from '@ln/shared';
 import { App } from './App';
 import { installFakeApi, type FakeApi } from '@/test/fake-api';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useImportStore } from '@/stores/import-store';
 
 let fake: FakeApi;
 
 beforeEach(() => {
   fake = installFakeApi();
   useSettingsStore.setState({ settings: null, error: null, loading: false });
+  // Store zustand sống xuyên test — không dọn thì test sau mở thẳng vào màn
+  // xác nhận chương của test trước
+  useImportStore.setState({
+    preview: null,
+    chapters: [],
+    previews: {},
+    loadingPreviews: [],
+    issues: [],
+    parsing: false,
+    error: null,
+    history: [],
+  });
 });
 
 /**
@@ -36,10 +49,17 @@ describe('App', () => {
     await waitFor(() => expect(fake.api.settings.getAll).toHaveBeenCalledTimes(1));
   });
 
-  it('hiển thị chế độ giao diện sau khi nạp xong', async () => {
+  it('hiện màn nhập sách sau khi nạp settings xong', async () => {
+    await renderApp();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Chọn file' })).toBeInTheDocument(),
+    );
+  });
+
+  it('nút đổi giao diện vẫn nằm ở titlebar', async () => {
     fake = installFakeApi({ settings: { theme: 'dark' } });
     await renderApp();
-    await waitFor(() => expect(screen.getByText(/Tối/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText(/Giao diện: Tối/)).toBeInTheDocument());
   });
 
   it('hiển thị lỗi thay vì kẹt ở "Đang tải" khi IPC hỏng', async () => {
@@ -60,11 +80,13 @@ describe('App', () => {
 
   it('cập nhật khi main đẩy event settings:changed', async () => {
     await renderApp();
-    await waitFor(() => expect(screen.getByText(/Theo hệ thống/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Giao diện: Theo hệ thống/)).toBeInTheDocument(),
+    );
 
     act(() => fake.emitSettingsChanged({ ...fake.getSettings(), theme: 'light' }));
 
-    await waitFor(() => expect(screen.getByText(/Sáng/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText(/Giao diện: Sáng/)).toBeInTheDocument());
   });
 
   it('huỷ đăng ký event settings khi unmount', async () => {

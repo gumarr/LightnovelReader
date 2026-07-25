@@ -34,7 +34,7 @@ Không có file trong `samples/pdf/` thì tự bỏ qua, không báo lỗi.
 
 ## Đã tìm ra lỗi gì
 
-Bảy lỗi thật mà unit test không lộ — đây là lý do thư mục này tồn tại:
+Chín lỗi thật mà unit test không lộ — đây là lý do thư mục này tồn tại:
 
 **Từ P1.2–P1.3:**
 
@@ -55,5 +55,14 @@ Bảy lỗi thật mà unit test không lộ — đây là lý do thư mục nà
   `cleanPages` dùng chung `isTableOfContents`.
 - **Gom dòng theo bucket cứng tách đôi một dòng chữ** — `round(y/3)` khiến
   hai item cách 1pt rơi khác bucket. Sửa: gom theo khoảng cách thực tế.
+
+**Từ P1.5 (chỉ lộ ra khi chạy bản đã đóng gói):**
+
+- **`DOMMatrix is not defined`** — pdfjs chỉ tự polyfill khi nhận ra đang ở
+  Node, mà Electron main báo `process.type === 'browser'`.
+- **Không tìm được `pdf.worker.mjs`** — bản đóng gói không mang `node_modules`.
+
+Hai lỗi này `probe/` **không** bắt được: nó chạy dưới vitest/Node nên pdfjs tự
+xoay xở được. Phải build `.exe` rồi gọi IPC qua CDP — xem PROGRESS.md mục 4.19.
 
 Mỗi lỗi đều có test khoá lại trong `src/`, dùng đúng dữ liệu gặp trong file thật.

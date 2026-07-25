@@ -1,0 +1,8 @@
+# Sách mẫu có bản quyền — KHÔNG commit.
+# Chỉ giữ README và các file mô tả kỳ vọng (*.expected.json).
+*.pdf
+*.docx
+*.epub
+*.txt
+
+!README.md

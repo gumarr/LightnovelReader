@@ -35,7 +35,7 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
 | Custom titlebar | ✅ | Frameless, nút gọi qua IPC |
 | Theme provider (dark/light/system) | ✅ | Đã xác minh bằng ảnh chụp cả 2 chế độ |
 | SQLite + migration runner | ✅ | Schema v1, WAL, chạy thật khi mở app |
-| CI build Windows portable | ✅ | GitHub Actions + smoke test khởi động |
+| CI build Windows portable | ⚠️ | Workflow đã viết + đã sửa lỗi lần chạy đầu (mục 4.14), nhưng job `build` chưa xác nhận xanh lần nào |
 
 **Đã kiểm chứng bằng cách chạy thật** (không chỉ unit test):
 - `pnpm dev` mở app, DB migrate `schema 0 → 1`, toggle theme hoạt động
@@ -324,7 +324,49 @@ Không neo thì `"…the last part left, most of the important decisions…"` kh
 Test khoá ở `pattern.test.ts` mục "không khớp nhầm văn xuôi", dùng đúng câu
 gặp trong file thật.
 
-### 4.13 TypeScript project references — đã bỏ
+### 4.14 CI — lỗi lần chạy đầu tiên
+
+Lần đầu workflow thật sự chạy (2026-07-25) và fail ngay ở bước setup.
+
+**a) Khai pnpm version ở hai chỗ.** `pnpm/action-setup` có `version: 9`,
+package.json có `packageManager: pnpm@9.15.9` → `ERR_PNPM_BAD_PM_VERSION`.
+
+→ **Bỏ `version` khỏi workflow.** Action tự đọc `packageManager` — giữ một
+nguồn duy nhất. Đừng thêm `version` lại, kể cả khi thấy ví dụ trên mạng có.
+
+**b) Action chạy trên Node 20 đã deprecated.** Đây là Node chạy *bản thân
+action*, không phải Node build project (cái đó vẫn ghim 22 qua `.nvmrc`).
+
+→ Nâng `checkout@v4→v7`, `setup-node@v4→v7`, `upload-artifact@v4→v7`,
+`pnpm/action-setup@v4→v6` (v5 là bản chuyển sang Node 24).
+
+**c) `scripts/sqlite-abi.mjs` hardcode đường dẫn Electron.** Dòng cũ trỏ
+thẳng `node_modules/.pnpm/electron@33.4.11/...`. Máy dev có sẵn thư mục đó
+nên không ai thấy, nhưng CI cài sạch — chỉ cần pnpm resolve bản patch khác
+là `Cannot find module`.
+
+→ Đổi sang `require.resolve('electron/package.json', { paths: [root] })`.
+Đã kiểm bằng cách xoá `.abi-cache/` rồi chạy lại đường đi lạnh.
+
+**d) Smoke test dùng `Start-Sleep 25` cứng** rồi gọi CDP ngay. Runner chậm
+thì fail giả, runner nhanh thì phí thời gian.
+
+→ Đổi thành vòng lặp thử lại 2s × 30 lần, thoát ngay khi renderer sẵn sàng.
+Chạy thật: sẵn sàng sau **2 giây**, tiết kiệm 23s mỗi lần build.
+
+**e) Smoke test không chạy được trên máy dev** vì `ELECTRON_RUN_AS_NODE=1`
+(mục 5.2). App chết ngay, không kịp ghi cả crash log — rất khó đoán nếu
+không biết trước.
+
+→ Thêm `Remove-Item Env:\ELECTRON_RUN_AS_NODE` vào bước smoke test. Runner
+không đặt biến này nên đây là phòng vệ, nhưng nhờ nó mà **kiểm chứng được
+smoke test trên máy dev** trước khi push.
+
+**Đã chạy thật toàn bộ job `build` dưới máy local:** `pnpm build:win` →
+NSIS + portable → smoke test PASS. Nghĩa là logic đã đúng; chỉ còn chờ CI
+xác nhận trên môi trường sạch.
+
+### 4.15 TypeScript project references — đã bỏ
 
 `@ln/shared` trỏ thẳng vào `src/*.ts` (không build ra `dist`), nên project
 references gây lỗi `TS6305`. Đã bỏ `composite` và `references`, để TS resolve
@@ -458,7 +500,7 @@ apps/renderer/src/
 |---|---|---|
 | `vitest` v2 kéo Vite 5 trong khi project dùng Vite 6 | Thấp | Đã né bằng cách bỏ `vitest.config.ts` khỏi typecheck của renderer. Nâng vitest lên v3 sẽ sạch hơn |
 | Chưa có icon ứng dụng | Thấp | electron-builder đang dùng icon Electron mặc định |
-| CI chưa chạy lần nào | TB | Workflow đã viết nhưng chưa có push nào kích hoạt để xác nhận |
+| CI job `build` chưa chạy tới nơi | TB | Job `check` đã chạy và lộ 2 lỗi (xem mục 4.14). Job `build` (đóng gói + smoke test) vẫn chưa xác nhận lần nào vì `check` fail trước |
 | `@electron/rebuild` là dependency thừa | Thấp | electron-builder đã có sẵn; giữ lại vô hại |
 | Ngưỡng cleaner mới kiểm trên 2 file | Thấp | `minRatio` 0.6, `maxLength` 80, `shortLineRatio` 0.6 đã chạy đúng trên 1 file VI + 1 file EN (60 trang). `minGutterRatio` 0.04 **vẫn chưa kiểm** — chưa có file 2 cột |
 | Chưa có file mẫu nhóm B/C | TB | Thiếu: **PDF 2 cột (B1)** — user xác nhận không có mẫu, `minGutterRatio` 0.04 vẫn chưa được kiểm lần nào. Còn thiếu PDF scan không text layer (C1). Xem `samples/README.md` |

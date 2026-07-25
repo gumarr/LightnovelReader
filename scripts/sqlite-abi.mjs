@@ -31,8 +31,15 @@ const binary = join(sqliteDir, 'build', 'Release', 'better_sqlite3.node');
 const cacheDir = join(root, '.abi-cache');
 const cached = join(cacheDir, `better_sqlite3-${target}.node`);
 
+/**
+ * Phiên bản Electron phải resolve động.
+ *
+ * Trước đây hardcode `node_modules/.pnpm/electron@33.4.11/...` — chỉ cần
+ * pnpm cài bản patch khác (điều luôn xảy ra trên CI vì máy sạch) là script
+ * ném `Cannot find module`.
+ */
 const electronVersion = require(
-  join(root, 'node_modules/.pnpm/electron@33.4.11/node_modules/electron/package.json'),
+  require.resolve('electron/package.json', { paths: [root] }),
 ).version;
 
 /** Tải bản prebuilt cho runtime yêu cầu */

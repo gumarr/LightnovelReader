@@ -17,13 +17,13 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      # Không khai báo `version` — action tự đọc `packageManager` trong
+      # package.json. Khai cả hai chỗ sẽ lỗi ERR_PNPM_BAD_PM_VERSION.
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # better-sqlite3 chưa có prebuild cho Node > 22 — xem .nvmrc
           node-version-file: .nvmrc
@@ -43,13 +43,13 @@ jobs:
     needs: check
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      # Không khai báo `version` — action tự đọc `packageManager` trong
+      # package.json. Khai cả hai chỗ sẽ lỗi ERR_PNPM_BAD_PM_VERSION.
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -71,13 +71,29 @@ jobs:
           $crash = Join-Path $env:APPDATA "LN Reader/logs/crash.log"
           Remove-Item $crash -ErrorAction SilentlyContinue
 
+          # Biến này khiến Electron chạy như Node thuần → không mở cửa sổ nào.
+          # Runner không đặt nó, nhưng xoá cho chắc để kết quả không phụ thuộc
+          # môi trường (máy dev chạy trong terminal VS Code luôn có biến này).
+          Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+
           Start-Process -FilePath $exe -ArgumentList "--remote-debugging-port=9222"
-          Start-Sleep -Seconds 25
+
+          # Chờ có điều kiện thay vì sleep cứng: runner chậm thì sleep 25s vẫn
+          # fail giả, runner nhanh thì phí thời gian. Thử lại tối đa 60s.
+          $page = $null
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 2
+            try {
+              $targets = Invoke-RestMethod "http://127.0.0.1:9222/json/list" -TimeoutSec 5
+              $page = $targets | Where-Object { $_.type -eq "page" } | Select-Object -First 1
+              if ($page) { break }
+            } catch {
+              # Cổng debug chưa mở — bình thường trong vài giây đầu
+            }
+          }
 
           # Renderer phải nạp được — bắt lỗi đóng gói thiếu module
-          $targets = Invoke-RestMethod "http://127.0.0.1:9222/json/list"
-          $page = $targets | Where-Object { $_.type -eq "page" }
-          if (-not $page) { throw "Renderer không nạp được" }
+          if (-not $page) { throw "Renderer không nạp được sau 60s" }
           Write-Host "Renderer OK: $($page.url)"
 
           if (Test-Path $crash) {
@@ -87,7 +103,7 @@ jobs:
 
           Get-Process -Name "LN Reader" -ErrorAction SilentlyContinue | Stop-Process -Force
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ln-reader-windows
           path: |

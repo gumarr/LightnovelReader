@@ -85,11 +85,20 @@ describe('nối dòng bị PDF ngắt', () => {
     expect(mergeLines('Câu một.\n   \nCâu hai.')).toBe('Câu một.\nCâu hai.');
   });
 
-  it('không nối dòng ngắn bất thường vào dòng sau', () => {
-    // Tiêu đề ngắn giữa các đoạn dài — không được dính vào đoạn kế
-    const body = 'Đây là một dòng văn xuôi dài bình thường trong sách và chưa hết ý';
+  it('tiêu đề ngắn sau một câu đã hết thì đứng riêng', () => {
+    // Đoạn trước đã chấm câu → dòng ngắn kế tiếp là tiêu đề thật
+    const body = 'Đây là một dòng văn xuôi dài bình thường trong sách và đã hết ý.';
     const input = `${body}\n${body}\nChương Hai\n${body}\n${body}`;
     expect(mergeLines(input).split('\n')).toContain('Chương Hai');
+  });
+
+  it('dòng ngắn cuối đoạn vẫn được nối vào câu đang dở', () => {
+    // Ca lỗi thật gặp trên PDF mẫu: câu chưa hết mà bị xé làm đôi
+    //   "…Tất cả vẫn ngồi" / "trong lớp chờ đợi."
+    const long = 'Nhưng dù bình thường giờ học đã xong, chẳng ai đi trực nhật hay sinh hoạt';
+    const input = [long, 'cuối ngày. Tất cả vẫn ngồi', 'trong lớp chờ đợi.', long, long].join('\n');
+
+    expect(mergeLines(input)).toContain('Tất cả vẫn ngồi trong lớp chờ đợi.');
   });
 
   it('text một dòng giữ nguyên', () => {
@@ -106,13 +115,13 @@ describe('nối dòng bị PDF ngắt', () => {
   });
 
   it('shortLineRatio = 0 thì tắt luật dòng ngắn', () => {
-    const body = 'Đây là một dòng văn xuôi dài bình thường trong sách và chưa hết ý';
+    const body = 'Đây là một dòng văn xuôi dài bình thường trong sách và đã hết ý.';
     const input = [body, body, 'Ngắn', body, body].join('\n');
 
     // Bật (mặc định): dòng ngắn đứng riêng
     expect(mergeLines(input).split('\n')).toContain('Ngắn');
-    // Tắt: mọi dòng nối thành một
-    expect(mergeLines(input, { shortLineRatio: 0 }).split('\n')).toHaveLength(1);
+    // Tắt: 'Ngắn' không còn là khối riêng mà dính vào dòng sau
+    expect(mergeLines(input, { shortLineRatio: 0 }).split('\n')).not.toContain('Ngắn');
   });
 
   it('quá ít dòng thì không suy luận thống kê độ dài', () => {

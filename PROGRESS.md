@@ -62,13 +62,21 @@ Bốn hàm thuần, mỗi hàm một file + test riêng, ghép lại ở `cleane
 `cleanPages()` trả về text **theo trang** (không gộp cả sách) để P1.3 còn
 ánh xạ được chương ↔ khoảng trang.
 
-**Chỉ mới có unit test** — chưa chạy trên PDF thật (chưa có file mẫu).
+**Đã kiểm chứng trên PDF thật** (2 file trong `samples/`, 30 trang mỗi file):
+
+| Kết quả | VI có outline | EN không outline |
+|---|---|---|
+| Header/footer bắt đúng | ✅ số trang | ✅ `Page N \| Kuku Moms House` |
+| Xoá nhầm nội dung | ✅ không | ✅ không |
+| Nhận nhầm 2 cột | ✅ 0/30 trang | ✅ 0/30 trang |
+
+Tìm ra **1 lỗi thật** mà unit test không lộ — xem mục 4.9.
 
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **387 passed** (+81 từ P1.2) |
+| Unit test | **388 passed** (+82 từ P1.2) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Installer | 80.8 MB |
@@ -105,11 +113,28 @@ test riêng, rồi một hàm tổng hợp cộng điểm:
 `TextLine` hiện chưa có `fontSize`; P1.3 cần thì **thêm field optional** vào
 `cleaner/types.ts`, đừng tạo type song song.
 
-### Chưa có dữ liệu thật
+### Dữ liệu thật đã có — cấu trúc quan sát được
 
-Chưa có file PDF/DOCX Light Novel thật để kiểm chứng chapter detection.
-Khi có, chạy `/detect <đường-dẫn-file>` (đã định nghĩa ở
-[.claude/commands/detect.md](.claude/commands/detect.md)) để tinh chỉnh ngưỡng.
+4 file trong `samples/` (không commit). Đã đo bằng `probe/`:
+
+| File | Trang | Outline | Header/footer | Font thân bài |
+|---|---|---|---|---|
+| `A1-A3-vietnamese-withbookmark.pdf` | 270 | ✅ 10 mục | số trang ở `y≈625` | 10pt, trang 432×648 |
+| `A2-A3-english-withoutbookmark.pdf` | 259 | ❌ không | `Page N \| Kuku Moms House` ở `y≈773` | 13pt, trang 612×792 |
+| `A4-docx-vietnamese.docx` | — | — | — | chưa đo |
+| `docx-noheading.docx` | — | — | — | chưa đo |
+
+Điều đáng chú ý cho P1.3:
+
+- File VI có outline **10 mục**, gồm cả `"Bản quyền"`, `"Lời tác giả"`,
+  `"Lời bạt"` — tức outline **không chỉ chứa chương**. Detector phải giữ
+  nguyên rồi để user loại ở màn xác nhận (P1.5), đừng tự đoán mục nào là chương.
+- Tiêu đề chương trong outline có dạng `"Chương Một: ..."`, `"Mở đầu: ..."`,
+  `"Kết: ..."` — số chương viết **bằng chữ**, không phải chữ số.
+- Trang mục lục (trang 2) có dòng `"Chương Hai: Đá văng ảo tưởng77"` — số trang
+  dính liền tiêu đề, không có khoảng trắng. Regex bắt tiêu đề dễ khớp nhầm ở đây.
+- File EN không outline → phải dựa font size. Thân bài đồng đều 13pt nên tiêu
+  đề chương sẽ nổi rõ; cần kiểm lại bằng `probe/` khi viết P1.3.
 
 **Không hardcode ngưỡng theo riêng một file** — mỗi lần chỉnh phải thêm test case
 tương ứng vào `packages/parsers/src/chapter-detector/__tests__/`.
@@ -199,7 +224,32 @@ luật, vì với 2–3 dòng thì câu cuối ngắn tự nhiên sẽ bị cắ
 
 Đổi thứ tự thì test `cleaner.test.ts` mục "pipeline đầy đủ" sẽ đỏ.
 
-### 4.8 TypeScript project references — đã bỏ
+### 4.9 Luật "dòng ngắn" — giả định sai, chỉ lộ ra trên PDF thật
+
+Đây là ví dụ điển hình cho lý do phải chạy trên dữ liệu thật.
+
+**Giả định ban đầu (sai):** "dòng bị wrap giữa câu thì đã chạy hết bề ngang
+nên không thể ngắn — ngắn tức là tiêu đề." Từ đó cho dòng ngắn đứng riêng
+hẳn một khối, chặn cả hai phía.
+
+**Thực tế:** dòng **cuối mỗi đoạn văn** cũng ngắn y hệt tiêu đề. Kết quả là
+câu bị xé làm đôi giữa chừng:
+
+```
+▸ …chẳng ai đi trực nhật hay sinh hoạt cuối ngày. Tất cả vẫn ngồi
+▸ trong lớp chờ đợi.        ← phải nối vào khối trên
+```
+
+**Sửa:** dòng ngắn chỉ tách khối khi khối đang mở **đã trọn ý**
+(`current.length === 0 || endsSentence(current)`). Đoạn dở câu vẫn được nối
+tiếp bình thường.
+
+Trên file mẫu VI: 602 → **488 khối** (bớt 114 câu bị xé sai).
+
+Test khoá ở `merge-lines.test.ts` mục "dòng ngắn cuối đoạn vẫn được nối vào
+câu đang dở", dùng đúng câu văn gặp trong file thật.
+
+### 4.10 TypeScript project references — đã bỏ
 
 `@ln/shared` trỏ thẳng vào `src/*.ts` (không build ra `dist`), nên project
 references gây lỗi `TS6305`. Đã bỏ `composite` và `references`, để TS resolve
@@ -274,6 +324,10 @@ packages/parsers/src/
     merge-lines.ts         Nối dòng bị PDF ngắt giữa câu
     columns.ts             Detect rãnh giữa 2 cột → sắp lại thứ tự đọc
     cleaner.ts             Pipeline 4 bước (thứ tự bắt buộc — mục 4.7)
+  probe/                   Script khảo sát trên file thật (KHÔNG chạy trong
+                           pnpm test — xem probe/README.md)
+
+samples/                   File PDF/DOCX mẫu (KHÔNG commit — xem samples/README.md)
 
 apps/main/src/
   index.ts                 Entry: settings → logger → DB → IPC → cửa sổ
@@ -323,5 +377,6 @@ apps/renderer/src/
 | Chưa có icon ứng dụng | Thấp | electron-builder đang dùng icon Electron mặc định |
 | CI chưa chạy lần nào | TB | Workflow đã viết nhưng chưa có push nào kích hoạt để xác nhận |
 | `@electron/rebuild` là dependency thừa | Thấp | electron-builder đã có sẵn; giữ lại vô hại |
-| Ngưỡng cleaner chưa kiểm chứng trên PDF thật | **TB** | `minRatio` 0.6, `maxLength` 80, `shortLineRatio` 0.6, `minGutterRatio` 0.04 đều chọn theo suy luận + test tổng hợp. Khi có file thật phải chạy `/detect` và **thêm test case** cho mỗi lần chỉnh, không sửa ngưỡng trần |
+| Ngưỡng cleaner mới kiểm trên 2 file | Thấp | `minRatio` 0.6, `maxLength` 80, `shortLineRatio` 0.6 đã chạy đúng trên 1 file VI + 1 file EN (60 trang). `minGutterRatio` 0.04 **vẫn chưa kiểm** — chưa có file 2 cột |
+| Chưa có file mẫu nhóm B/C | TB | Thiếu: PDF 2 cột (B1), DOCX không heading (B3), PDF scan không text layer (C1). Xem `samples/README.md` |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

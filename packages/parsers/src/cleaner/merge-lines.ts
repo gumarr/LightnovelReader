@@ -112,10 +112,15 @@ export const mergeLines = (text: string, options: MergeLinesOptions = {}): strin
       continue;
     }
 
-    // Dòng ngắn bất thường đứng riêng hẳn một khối: không nối vào khối trước,
-    // cũng không nhận dòng sau. Dòng bị wrap giữa câu thì đã chạy hết bề
-    // ngang nên không thể ngắn — ngắn tức là tiêu đề hoặc câu kết đoạn.
-    if (isShortLine(line, shortThreshold)) {
+    // Dòng ngắn đứng riêng hẳn một khối — NHƯNG chỉ khi nó thật sự độc lập,
+    // tức khối đang mở đã trọn ý (hoặc chưa có khối nào).
+    //
+    // Kiểm trên PDF thật cho thấy dòng **cuối mỗi đoạn văn** cũng ngắn y hệt
+    // tiêu đề. Nếu cắt vô điều kiện thì câu bị xé làm đôi:
+    //   "…Tất cả vẫn ngồi" / "trong lớp chờ đợi."
+    // Đoạn dở câu phải được nối tiếp, chỉ dòng đứng sau một câu đã hết mới
+    // là tiêu đề thật.
+    if (isShortLine(line, shortThreshold) && (current.length === 0 || endsSentence(current))) {
       flush();
       output.push(line);
       continue;

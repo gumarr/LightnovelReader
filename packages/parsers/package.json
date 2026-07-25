@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@ln/shared": "workspace:*"
+    "@ln/shared": "workspace:*",
+    "mammoth": "^1.12.0",
+    "pdfjs-dist": "^6.1.200"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

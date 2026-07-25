@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-25 · commit `161bf65`
+> **Cập nhật lần cuối:** 2026-07-25 · commit `251571b`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -17,11 +17,17 @@ nvm use 22.20.0          # BẮT BUỘC — xem mục 5 để biết lý do
 pnpm install
 pnpm typecheck && pnpm lint && pnpm test
 pnpm dev                 # mở app
+
+# Sidecar Python (từ P2.1) — venv riêng, xem mục 5.4
+cd sidecar && py -3.12 -m venv .venv
+.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+cd .. && pnpm test:sidecar
 ```
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** Phase 2 — TTS sidecar + player (xem mục 3). **Phase 1 xong.**
+**Việc tiếp theo:** P2.2 — supervisor sidecar bên main (xem mục 3).
+**Phase 1 xong. P2.1 xong.**
 
 ---
 
@@ -245,39 +251,90 @@ CLAUDE.md cấm.
   sau sanitize. Bấm segment → tô đúng khối `data-block="2"`.
 - Ghi tiến độ đọc chạy thật: mở lại sách thì nút đổi từ "Đọc" sang "Đọc tiếp".
 
+### Phase 2 — P2.1 Sidecar skeleton + text normalize ✅
+
+Phần đầu của Phase 2. **Chưa có engine TTS nào** — cố ý, vì dựng route
+`/synthesize` trả mock là đúng thứ CLAUDE.md cấm.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `sidecar/app/config.py` | Đọc env do main đặt lúc spawn | 12 |
+| `sidecar/app/auth.py` | Middleware `X-Session-Token`, so token thời gian hằng | 4 |
+| `sidecar/app/main.py` | FastAPI: `/health`, `/normalize` | 14 |
+| `sidecar/app/server.py` | Bind socket + bắt tay stdout | 10 |
+| `sidecar/app/schemas.py` | pydantic cho mọi biên vào-ra | — |
+| `sidecar/app/text/numbers_vi.py` | Đọc số VI ("lăm"/"mốt"/"tư"/"lẻ") | 35 |
+| `sidecar/app/text/numbers_en.py` | Đọc số EN + năm kiểu Anh | ↑ |
+| `sidecar/app/text/normalize_vi.py` | 8 luật, mỗi luật một hàm thuần | 48 |
+| `sidecar/app/text/normalize_en.py` | Như trên, ngày tháng kiểu Mỹ | 42 |
+| `sidecar/app/text/__init__.py` | Registry chọn normalizer theo `lang` | — |
+
+**Đã chạy thật như tiến trình con** (không chỉ `TestClient`):
+
+| | Kết quả |
+|---|---|
+| Bắt tay stdout | `LN_SIDECAR_READY {"host":"127.0.0.1","port":54757,...}` |
+| `/health` không token | 200 — main chẩn đoán được cả khi token lệch |
+| `/normalize` thiếu/sai token | 401, hai trường hợp trả **giống hệt nhau** |
+| Chỉ nghe loopback | Nối qua `192.168.1.9` **bị từ chối** |
+
+**Đã chạy normalize trên 2429 segment thật** lấy từ sách mẫu qua
+`probe/dump-segments.test.ts` (parser → cleaner → segmenter thật):
+0 lỗi, 0 segment mất nội dung, chỉ 3 segment còn chữ số — cả 3 đều **đúng**
+(`A2`, `F1` là mã hạng dính chữ, không được tách).
+
+Tìm ra **1 lỗi nặng** mà 90 unit test không lộ — xem mục 4.25.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **1008 passed** (+114 từ P1.6c) |
+| Unit test TypeScript | **1008 passed** (không đổi ở P2.1) |
+| Unit test sidecar (pytest) | **165 passed** (mới) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
-| Installer | 82 MB |
+| Installer | 82 MB (chưa gồm sidecar) |
 
 ---
 
-## 3. Việc tiếp theo — Phase 1
+## 3. Việc tiếp theo — Phase 2
 
-Thứ tự đã thống nhất: **logic thuần trước, UI sau**. Mỗi phần làm xong phải có
-unit test riêng và chạy `pnpm typecheck && pnpm lint && pnpm test` trước khi commit.
+**Phase 1 đã xong đủ 8/8 phần** (P1.1–P1.6c). DoD Phase 1 đạt: mở PDF & DOCX,
+thấy danh sách chương đúng, sửa được, thấy segment — kiểm trên bản đóng gói
+với 2 sách thật (PDF 270 trang/4817 segment, DOCX 388 khối/430 segment), cả
+dark lẫn light.
+
+Phase 2 chia bảy phần (thống nhất với user, vì 2 tuần trong `plan.md` là quá
+dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau**:
 
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
-| P1.1 | Segmenter (tách câu, gom segment) | ✅ Xong |
-| P1.2 | Cleaner — header/footer lặp, de-hyphenate, merge dòng, cột đôi | ✅ Xong |
-| P1.3 | Chapter detector — mỗi tín hiệu 1 hàm thuần + test riêng, trả điểm số | ✅ Xong |
-| P1.4 | Parser PDF + DOCX, interface `DocumentParser` chung | ✅ Xong |
-| P1.5 | Màn hình "Xác nhận cấu trúc chương" — merge/split/rename/xóa | ✅ Xong |
-| P1.6a | Lưu sách + dựng segment vào DB | ✅ Xong |
-| P1.6b | Library grid + resume | ✅ Xong |
-| P1.6c | Viewer (PDF canvas + neo highlight, DOCX HTML) | ✅ Xong |
+| P2.1 | Sidecar skeleton: FastAPI, token, bắt tay, text normalize VI/EN | ✅ Xong |
+| P2.2 | Supervisor bên main: spawn/kill, health check 5s, restart 3 lần | ⬅️ **Tiếp theo** |
+| P2.3 | Voice manager: catalog, download + verify SHA256, progress UI | Chưa |
+| P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | Chưa |
+| P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | Chưa |
+| P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | Chưa |
+| P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | Chưa |
 
-**DoD Phase 1:** Mở PDF & DOCX, thấy danh sách chương đúng, sửa được, thấy segment.
-→ **Đạt đủ.** Kiểm trên bản đóng gói với 2 sách thật (PDF 270 trang/4817 segment,
-DOCX 388 khối/430 segment), cả dark lẫn light.
+**DoD Phase 2:** Generate chương 1 → có audio, phát được, xem & xoá được dung lượng.
 
-**Tiếp theo: Phase 2** — sidecar Python (Piper TTS), queue generate persist trong
-SQLite, player, subtitle pane highlight từng từ. Xem `plan.md` mục Phase 2.
+### Ghi chú cho P2.2 (supervisor)
+
+Những gì P2.1 để lại sẵn:
+
+- **Hợp đồng bắt tay** đã khoá test: sidecar in đúng một dòng
+  `LN_SIDECAR_READY {"host","port","pid"}` ra **stdout**, log uvicorn đi
+  **stderr**. Supervisor đọc dòng đó rồi mới gọi API. Đừng chờ theo thời
+  gian cứng — cổng là `0` nên phải đọc mới biết.
+- **Token truyền qua env `LN_SIDECAR_TOKEN`**, không qua tham số dòng lệnh
+  (Windows cho mọi tiến trình đọc command line của nhau).
+- `LN_SIDECAR_MODELS_DIR` **bắt buộc** — thiếu thì sidecar thoát mã 2 kèm
+  thông báo rõ. Lấy từ `modelsDir()` ở `services/paths.ts`.
+- `SIDECAR_HEALTH_INTERVAL_MS`, `SIDECAR_MAX_RESTARTS`,
+  `SIDECAR_STARTUP_TIMEOUT_MS` đã có sẵn trong `packages/shared/src/constants.ts`.
+- `/health` trả `engine_ready: false` — P2.4 mới bật lên `true`. Supervisor
+  phải phân biệt "tiến trình sống" với "engine nạp xong".
 
 ### Ghi chú cho Phase 2 (TTS + player)
 
@@ -768,6 +825,77 @@ Hai bài học:
    xoá và thấy "ổn" — trong khi nền mờ hoàn toàn không hoạt động. Nền tối làm
    một lớp phủ mất tích trông chẳng khác gì có.
 
+### 4.25 Số hiệu lớp học trong LN khớp regex ngày tháng — lỗi nặng nhất của P2.1
+
+Lại một lần nữa dữ liệu thật lộ ra thứ 90 unit test không thấy. Chạy normalize
+trên 2429 segment lấy từ sách mẫu:
+
+```
+"Sau giờ học hôm ấy, lớp 11-5 kết thúc sinh hoạt."
+  → "lớp ngày mười một tháng năm kết thúc sinh hoạt"   ← SAI
+
+"In Class 2-5, we were having a homeroom..."
+  → "In Class February fifth, we were having..."        ← SAI
+```
+
+LN Nhật ghi lớp học kiểu **khối-lớp** (`11-5` = khối 11 lớp 5), khớp regex
+ngày `d-m` y hệt. **Cả hai cuốn mẫu đều dính**, mỗi cuốn nhiều chỗ.
+
+→ Dấu `-` **chỉ tính là ngày khi có năm 4 chữ số** đi kèm (`5-6-2024`). Dạng
+`11-5` trong LN gần như luôn là lớp, tỉ số hay khoảng; còn ngày viết bằng `-`
+mà thiếu năm thì hiếm. Dấu `/` vẫn nhận cả khi không có năm — `12/3` hầu như
+chỉ là ngày.
+
+Sửa ở **cả hai** normalizer: VI và EN có regex riêng (VI ngày/tháng, EN
+tháng/ngày) nên phải sửa hai chỗ. Test khoá ở `test_normalize_vi.py` và
+`test_normalize_en.py` mục "gạch ngang không năm KHÔNG phải ngày".
+
+Hai lỗi nhỏ hơn cũng chỉ lộ ra khi chạy thật, không phải unit test:
+
+**a) Lặp chữ "ngày".** `"Hẹn ngày 12/3"` → `"Hẹn ngày ngày mười hai tháng ba"`.
+Test ban đầu chỉ đưa vào chuỗi ngày trơ trọi nên không thấy. Nay kiểm phía
+trước đã có chữ "ngày" chưa.
+
+**b) Dấu chấm cuối câu bị nuốt.** `"...học sinh của TP."` → mất hẳn dấu chấm,
+vì `TP.` khớp cả dấu chấm. Mất ranh giới câu là TTS đọc dính sang câu sau.
+Nay trả lại dấu chấm khi viết tắt nằm **cuối chuỗi**.
+
+Cố ý **không** đoán theo "chữ sau viết hoa": `TP. Hồ Chí Minh` và `sống ở TP.
+Rồi đi.` giống hệt nhau ở dấu hiệu đó, đoán sai vế đầu thì chẻ đôi một địa danh.
+Segmenter đã cắt theo câu trước khi tới đây nên "cuối chuỗi" gần như luôn là
+cuối câu thật.
+
+### 4.26 Sidecar — bốn quyết định về giao tiếp với main
+
+**a) Bắt tay qua stdout, không phải cổng cố định hay file tạm.** Sidecar bind
+cổng `0` (OS cấp cổng trống) rồi in đúng một dòng
+`LN_SIDECAR_READY {...}`. Cổng cố định thì hai bản app chạy song song đụng
+nhau và tiến trình khác đoán được; file tạm thì phải dọn và cũng đè nhau.
+stdout là ống có sẵn giữa cha-con, tự đóng khi tiến trình chết.
+
+Log uvicorn đẩy hết sang **stderr** để stdout chỉ còn đúng dòng bắt tay.
+`flush()` bắt buộc — stdout nối vào pipe thì đệm theo khối, không theo dòng;
+quên flush thì main chờ mãi rồi giết một sidecar đang chạy bình thường.
+
+**b) Bind socket bằng tay TRƯỚC khi giao cho uvicorn.** Để uvicorn tự bind thì
+cổng chỉ biết được qua log của nó — phải parse ngược log, đúng thứ hay vỡ khi
+nâng phiên bản.
+
+**c) Cố ý KHÔNG đặt `SO_REUSEADDR`.** Trên Windows nó cho phép hai tiến trình
+cùng bind một cổng mà không ai báo lỗi — request sẽ đi lung tung giữa hai bản
+sidecar. Thà bind hỏng và biết ngay.
+
+**d) Token qua biến môi trường, không qua tham số dòng lệnh.** Trên Windows
+mọi tiến trình đều đọc được command line của tiến trình khác
+(`wmic process get CommandLine`). Env của tiến trình con thì chỉ nó và cha đọc được.
+
+So token bằng `secrets.compare_digest`, không phải `==`: `==` thoát sớm ở byte
+đầu khác nhau, đo thời gian phản hồi đủ nhiều lần là dò ra token từng byte.
+
+`/health` là route **duy nhất** không cần token — main phải chẩn đoán được
+sidecar sống ngay cả khi token hai bên lệch. Trang `/docs` tắt hẳn vì đó là
+đường duy nhất phục vụ request không kèm token.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -810,6 +938,27 @@ pnpm dev
 ```
 
 Hoặc chạy từ PowerShell/Terminal ngoài VS Code.
+
+### 5.4 Sidecar dùng Python 3.12, KHÔNG phải 3.11 như plan.md ghi
+
+Máy dev có 3.12 và 3.14, **không có 3.11**. Đã thống nhất với user dùng 3.12
+thay vì cài thêm runtime: mọi thư viện sidecar cần đều có wheel cho 3.12.
+
+```bash
+cd sidecar
+py -3.12 -m venv .venv        # 3.14 CHƯA kiểm, đừng dùng
+.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+```
+
+- venv nằm ở `sidecar/.venv/` (đã gitignore), **không** dùng chung với Node
+- Code không dùng cú pháp riêng 3.12 → vẫn chạy được 3.11 nếu bản đóng gói cần
+- `requirements.txt` chỉ có `fastapi` + `uvicorn` + `pydantic`. Piper và ONNX
+  Runtime thêm ở **P2.4**, cố ý chưa khai để `pip install` không kéo về 200 MB
+  wheel chưa dùng tới
+- Chạy pytest từ gốc: `pnpm test:sidecar`. Chưa dựng venv thì script **bỏ qua
+  và thoát 0**, không làm đỏ oan `pnpm test` của người chỉ đụng TypeScript
+- Trên Windows phải thêm `-X utf8` khi chạy python trực tiếp, nếu không tên
+  test tiếng Việt in ra bị mã hoá lung tung
 
 ### 5.3 Vị trí dữ liệu khi chạy
 
@@ -862,6 +1011,8 @@ packages/parsers/src/
                            Bù DOMMatrix + trỏ workerSrc (xem mục 4.19)
   probe/                   Script khảo sát trên file thật (KHÔNG chạy trong
                            pnpm test — xem probe/README.md)
+                           dump-segments: xuất segment thật ra JSON cho
+                           sidecar chạy normalize lên (mục 4.25)
 
 samples/                   File PDF/DOCX mẫu (KHÔNG commit — xem samples/README.md)
 
@@ -904,8 +1055,22 @@ apps/renderer/src/
   stores/library-store.ts  Danh sách sách + sách đang mở
   styles/theme.css         CSS variables — mọi màu lấy từ đây
 
+sidecar/                   Dịch vụ TTS Python (venv riêng — mục 5.4)
+  app/config.py            Đọc env do main đặt lúc spawn; models dir BẮT BUỘC
+  app/auth.py              Middleware X-Session-Token, so token thời gian hằng
+  app/main.py              FastAPI: /health (không token), /normalize
+  app/server.py            Bind socket + bắt tay stdout (hợp đồng — mục 4.26)
+  app/schemas.py           pydantic cho mọi biên vào-ra
+  app/text/normalize_vi.py 8 luật, mỗi luật một hàm thuần (thứ tự bắt buộc)
+  app/text/normalize_en.py Như trên; ngày tháng kiểu MỸ — không dùng chung VI
+  app/text/numbers_vi.py   Đọc số VI ("lăm"/"mốt"/"tư"/"lẻ" — mục dễ sai nhất)
+  app/text/numbers_en.py   Đọc số EN + năm kiểu Anh
+  app/text/__init__.py     Registry chọn normalizer theo lang
+  tests/                   pytest — KHÔNG chạy trong `pnpm test`
+
 scripts/
   copy-pdf-worker.mjs      Chép pdf.worker.mjs vào dist (BẮT BUỘC — mục 4.19)
+  sidecar-test.mjs         Chạy pytest từ gốc; thiếu venv thì bỏ qua, thoát 0
 ```
 
 ---
@@ -948,4 +1113,8 @@ scripts/
 | Segment dựng đồng bộ trong main | Thấp | 4817 segment mất ~400ms, chấp nhận được. Sách lớn hơn nhiều lần thì sẽ thấy đơ — lúc đó chuyển sang worker thread |
 | DOCX chưa xử lý ảnh và bảng | Thấp | `extractBlocks` chỉ nhận `<h1>`–`<h6>` và `<p>`. File mẫu A4 có 2 `<img>` bị bỏ qua — chấp nhận được vì TTS không đọc ảnh, nhưng bảng có nội dung thì sẽ mất |
 | DOCX không có outline | Thấp | mammoth không đọc bookmark/TOC field của Word. Chương chỉ nhận được qua heading style hoặc regex — đã đủ với 2 file mẫu |
+| Sidecar chưa vào `pnpm test` chung | Thấp | pytest cần venv Python mà CI chưa dựng. `pnpm test:sidecar` chạy riêng, thiếu venv thì bỏ qua. Khi thêm sidecar vào CI (P2.2) thì nối vào job `check` |
+| Sidecar chưa đóng gói / chưa vào CI | **TB** | Mới chạy từ mã nguồn bằng venv. `build.py` (PyInstaller onedir) chưa viết, `electron-builder.yml` chưa biết tới `sidecar/`. Rủi ro giống hệt mục 4.19 (pdfjs) — lỗi đóng gói không lộ ra ở unit test. Làm cùng P2.2 hoặc muộn nhất trước P2.4 |
+| Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
+| Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

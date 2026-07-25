@@ -1,0 +1,5 @@
+-r requirements.txt
+
+pytest==8.3.4
+# TestClient của FastAPI cần httpx
+httpx==0.28.1

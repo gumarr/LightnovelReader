@@ -1,0 +1,8 @@
+# Sidecar TTS — Python >= 3.11 (dev hiện chạy 3.12, xem PROGRESS.md mục 5.4)
+#
+# Chỉ những gì P2.1 thật sự cần. Piper/ONNX Runtime thêm ở P2.4 khi có engine
+# thật — không khai trước để `pip install` phiên này không kéo về 200 MB wheel
+# chưa dùng tới.
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4

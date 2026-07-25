@@ -151,8 +151,22 @@ describe('trường hợp biên', () => {
     expect(texts('chỉ một câu thôi')).toEqual(['chỉ một câu thôi']);
   });
 
-  it('nhiều dòng trong một câu', () => {
-    expect(texts('Dòng một\ndòng hai.')).toEqual(['Dòng một\ndòng hai.']);
+  it('xuống dòng là ranh giới câu cứng', () => {
+    // Đổi so với P1.1: hồi đó splitter nhận text THÔ nên `\n` là ngắt dòng
+    // ngẫu nhiên của PDF, nối lại là đúng. Giờ cleaner đã lo việc nối dòng
+    // (`mergeLines`), nên `\n` còn sót lại tới đây chỉ có thể là ranh giới
+    // đoạn cố ý — cắt là đúng.
+    expect(texts('Dòng một\ndòng hai.')).toEqual(['Dòng một', 'dòng hai.']);
+  });
+
+  it('không để lọt ký tự xuống dòng vào text câu', () => {
+    for (const sentence of splitSentences('A.\nB.\nC.')) {
+      expect(sentence.text).not.toContain('\n');
+    }
+  });
+
+  it('nhiều dòng trống liên tiếp không sinh câu rỗng', () => {
+    expect(texts('Một.\n\n\nHai.')).toEqual(['Một.', 'Hai.']);
   });
 
   it('văn bản dài không throw', () => {

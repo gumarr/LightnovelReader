@@ -21,7 +21,7 @@ pnpm dev                 # mở app
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P1.4 — Parser PDF/DOCX (xem mục 3).
+**Việc tiếp theo:** P1.5 — Màn xác nhận cấu trúc chương (xem mục 3).
 
 ---
 
@@ -96,11 +96,33 @@ Năm tín hiệu, mỗi tín hiệu một hàm thuần **trả điểm số** + 
 
 Biên giữa thật và nhiễu rất rộng ở cả hai file → ngưỡng 1.4 không phải may mắn.
 
+### Phase 1 — P1.4 Parser PDF + DOCX ✅
+
+| File | Vai trò | Test |
+|---|---|---|
+| `parser/types.ts` | Interface `DocumentParser`, `ParsedDocument`, `ParseError` | — |
+| `parser/pdf.ts` | pdfjs → Page[], đọc outline, phát hiện PDF scan | 32 |
+| `parser/docx.ts` | mammoth → HTML → khối → Page[] | 29 |
+| `parser/registry.ts` | Chọn parser theo đuôi file | 15 |
+| `parser/node-parsers.ts` | Nối thư viện thật (chỗ **duy nhất** chạm pdfjs/mammoth) | — |
+
+**Đã chạy thật trên cả 4 file mẫu, trọn đường đi file → parser → cleaner →
+detector → segmenter:**
+
+| File | format | hasRealPages | Chương | Segment |
+|---|---|---|---|---|
+| PDF VI có outline (270tr) | pdf | true | 10 | 4818 |
+| PDF EN không outline (140tr) | pdf | true | 3 | 2889 |
+| DOCX có heading (381 đoạn) | docx | false | 2 | 430 |
+| DOCX không heading (217 đoạn) | docx | false | 1 | 235 |
+
+Tìm ra **3 lỗi thật** khi nối các phần lại — xem mục 4.16.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **476 passed** (+88 từ P1.3) |
+| Unit test | **562 passed** (+86 từ P1.4) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Installer | 80.8 MB |
@@ -117,30 +139,34 @@ unit test riêng và chạy `pnpm typecheck && pnpm lint && pnpm test` trước 
 | P1.1 | Segmenter (tách câu, gom segment) | ✅ Xong |
 | P1.2 | Cleaner — header/footer lặp, de-hyphenate, merge dòng, cột đôi | ✅ Xong |
 | P1.3 | Chapter detector — mỗi tín hiệu 1 hàm thuần + test riêng, trả điểm số | ✅ Xong |
-| **P1.4** | **Parser PDF + DOCX**, interface `DocumentParser` chung | ⬅️ **Tiếp theo** |
-| P1.5 | Màn hình "Xác nhận cấu trúc chương" — merge/split/rename/xóa | ⬜ |
+| P1.4 | Parser PDF + DOCX, interface `DocumentParser` chung | ✅ Xong |
+| **P1.5** | **Màn hình "Xác nhận cấu trúc chương"** — merge/split/rename/xóa | ⬅️ **Tiếp theo** |
 | P1.6 | Viewer (PDF canvas + text layer, DOCX HTML) + Library grid + resume | ⬜ |
 
 **DoD Phase 1:** Mở PDF & DOCX, thấy danh sách chương đúng, sửa được, thấy segment.
 
-### Ghi chú cho P1.4 (Parser PDF + DOCX)
+### Ghi chú cho P1.5 (Màn xác nhận cấu trúc chương)
 
-Logic detect đã xong và **đã chạy đúng trên file thật**, nhưng phần đọc file
-hiện chỉ tồn tại trong `probe/` — P1.4 là đưa nó thành code sản phẩm.
+Toàn bộ tầng logic đã xong và chạy đúng trên 4 file thật. P1.5 là UI đầu tiên
+dùng tới nó.
 
-Trích thẳng từ `probe/detector-real.test.ts` (đã chạy được, đừng viết lại từ đầu):
+Dữ liệu sẵn có để dựng màn hình:
 
-- Gom `textContent.items` thành dòng theo `y` đã lượng tử hoá (`round(y/3)`)
-- pdfjs lấy gốc toạ độ góc **dưới**-trái → `yTop = viewport.height - y`
-- `fontSize` lấy từ `item.height`
-- Outline: `getOutline()` → `getDestination()` → `getPageIndex()` + 1
+- `detectChapters()` → `DetectedChapter[]` có `title`, `pageStart`, `pageEnd`,
+  `confidence`. Hiển thị `confidence` thấp để user biết chỗ nào cần soi kỹ.
+- `scoreCandidates()` → điểm **từng tín hiệu**, dùng cho chế độ "xem vì sao"
+- `ParsedDocument.hasRealPages` = false với DOCX → **đừng hiện "trang X–Y"**,
+  phải hiện "đoạn X–Y" hoặc ẩn hẳn
+- `CleanedPage.isTableOfContents` đánh dấu trang mục lục đã bị bỏ
 
-Việc cần làm:
+Thao tác bắt buộc có: merge, split, đổi tên, xoá chương, và preview 2 dòng đầu.
 
-- Interface `DocumentParser` chung; thêm format mới = thêm file, không sửa core
-- PDF: detect sớm file scan không có text layer → báo lỗi rõ, **không** crash
-- DOCX (`mammoth`): 2 file mẫu chưa đo lần nào, chạy `probe/` trước khi viết
-- pdfjs trong Electron cần `useSystemFonts` và tắt worker — kiểm ở bản đóng gói
+Nhớ: outline chứa cả "Bản quyền", "Lời bạt" — **user loại ở đây**, detector cố
+ý không tự đoán (mục 4.11a).
+
+Chạy IPC qua `packages/shared/src/ipc.ts`; parser chỉ được gọi từ main
+process — `node-parsers.ts` kéo pdfjs/mammoth vào nên **không** export từ
+`index.ts` của package.
 
 ### Dữ liệu thật đã có — cấu trúc quan sát được
 
@@ -150,8 +176,18 @@ Việc cần làm:
 |---|---|---|---|---|
 | `A1-A3-vietnamese-withbookmark.pdf` | 270 | ✅ 10 mục | số trang ở `y≈625` | 10pt, trang 432×648 |
 | `A2-A3-english-withoutbookmark.pdf` | 259 | ❌ không | `Page N \| Kuku Moms House` ở `y≈773` | 13pt, trang 612×792 |
-| `A4-docx-vietnamese.docx` | — | — | — | chưa đo |
-| `docx-noheading.docx` | — | — | — | chưa đo |
+| `A4-docx-vietnamese.docx` | 381 đoạn | 2 × `<h1>` | không có | heading style |
+| `B3-docx-noheading.docx` | 217 đoạn | ❌ không | không có | chỉ `<p>`, nhận bằng regex |
+
+Đo được ở DOCX (đã dùng cho P1.4):
+
+- mammoth chỉ sinh `<p>`, `<h1>`, `<img>`, `<br>` — **không** có `<strong>`
+  đứng riêng, nên tín hiệu "paragraph in đậm" mà plan.md nêu vô dụng với 2
+  file này. Vẫn cài đặt vì file khác có thể dùng.
+- File B3 có tiêu đề `"Chương 4 - Brocon và Siscon"` là `<p>` thường → chỉ
+  regex cứu được, đúng như PDF EN.
+- File A4 có `<p>` khớp regex nhưng là **false positive**:
+  `"Phần còn lại, tốt, cô ấy có…"` — lý do phải neo `^` + `looksLikeProse`.
 
 Điều đáng chú ý cho P1.3:
 
@@ -366,7 +402,55 @@ smoke test trên máy dev** trước khi push.
 NSIS + portable → smoke test PASS. Nghĩa là logic đã đúng; chỉ còn chờ CI
 xác nhận trên môi trường sạch.
 
-### 4.15 TypeScript project references — đã bỏ
+### 4.16 P1.4 — ba lỗi chỉ lộ ra khi nối các phần lại
+
+Từng phần đều xanh test riêng, nhưng ghép lại thì hỏng. Đây là lý do phải
+chạy trọn đường đi trên file thật.
+
+**a) `\n` lọt vào giữa segment.** Cleaner trả text nhiều khối ngăn bằng `\n`,
+nhưng segmenter (viết ở P1.1) chưa từng coi `\n` là ranh giới — nó nhận text
+liền mạch. Kết quả: một segment ôm cả khối nhiều dòng, TTS đọc dính tiêu đề
+vào thân bài.
+
+→ Sửa ở **cả ba tầng**: `splitSentences` cắt câu tại `\n`; `segmentText` xả
+buffer khi qua ranh giới đoạn; `mergeShortSegments` không gộp qua `\n` (nếu
+không nó dán lại đúng cái vừa tách).
+
+Đổi hợp đồng có chủ ý: test cũ ở P1.1 khẳng định `"Dòng một\ndòng hai."` là
+**một** câu. Hồi đó splitter nhận text THÔ nên `\n` là ngắt dòng ngẫu nhiên
+của PDF. Giờ `mergeLines` của cleaner đã lo việc nối dòng, nên `\n` còn sót
+tới segmenter chỉ có thể là ranh giới đoạn cố ý. Test đã cập nhật kèm lý do.
+
+**b) Cleaner vẫn nhả text mục lục.** Detector đã biết bỏ trang mục lục
+(mục 4.11c) nhưng cleaner thì không, nên segment đầu của sách VI là
+`"Mục lục / Bản quyền11 / Lời tác giả14…"` — TTS sẽ đọc to "Bản quyền mười
+một, Lời tác giả mười bốn".
+
+→ `cleanPages` dùng chung `isTableOfContents`, trả text rỗng + cờ
+`isTableOfContents`. Vẫn giữ trang để `pageNumber` không lệch. Tắt được bằng
+`skipTableOfContents: false`.
+
+**c) Gom dòng theo bucket cứng tách đôi một dòng chữ.** `round(y/3)` khiến
+hai item cách nhau 1pt vẫn rơi khác bucket nếu nằm sát ranh giới.
+
+→ Gom theo **khoảng cách thực tế** giữa các item đã sắp xếp. Test khoá cả ba
+độ lệch 0/1/2pt.
+
+### 4.17 pdfjs v6 đã bỏ `disableWorker` và `isEvalSupported`
+
+Hai tuỳ chọn này có ở bản cũ, v6 không còn. Đặt vào thì **typecheck báo lỗi**
+chứ không im lặng bỏ qua — may, vì nếu im lặng sẽ tưởng đã tắt worker.
+
+Danh sách hợp lệ trong `DocumentInitParameters` v6 (phần liên quan):
+`useSystemFonts`, `worker`, `useWorkerFetch`, `useWasm`, `wasmUrl`.
+
+Hiện chỉ đặt `useSystemFonts: true`. Bản `legacy` bắt buộc — bản mặc định
+cần `DOMMatrix`/`Path2D` mà Node và Electron main không có.
+
+**Chưa kiểm ở bản đóng gói** — asar có thể không nạp được worker file. Xem
+mục 8.
+
+### 4.18 TypeScript project references — đã bỏ
 
 `@ln/shared` trỏ thẳng vào `src/*.ts` (không build ra `dist`), nên project
 references gây lỗi `TS6305`. Đã bỏ `composite` và `references`, để TS resolve
@@ -449,6 +533,12 @@ packages/parsers/src/
     signals/position.ts    Đầu trang + khoảng trắng + trang thưa
     signals/toc.ts         Bộ lọc loại trang mục lục (xem mục 4.11c)
     detector.ts            Cộng điểm có trọng số, dựng chương, fallback
+  parser/
+    types.ts               DocumentParser, ParsedDocument, ParseError
+    pdf.ts                 pdfjs → Page[], outline, phát hiện PDF scan
+    docx.ts                mammoth → khối → Page[] (hasRealPages = false)
+    registry.ts            Chọn parser theo đuôi file
+    node-parsers.ts        Nối thư viện thật — KHÔNG export từ index.ts
   probe/                   Script khảo sát trên file thật (KHÔNG chạy trong
                            pnpm test — xem probe/README.md)
 
@@ -505,5 +595,7 @@ apps/renderer/src/
 | Ngưỡng cleaner mới kiểm trên 2 file | Thấp | `minRatio` 0.6, `maxLength` 80, `shortLineRatio` 0.6 đã chạy đúng trên 1 file VI + 1 file EN (60 trang). `minGutterRatio` 0.04 **vẫn chưa kiểm** — chưa có file 2 cột |
 | Chưa có file mẫu nhóm B/C | TB | Thiếu: **PDF 2 cột (B1)** — user xác nhận không có mẫu, `minGutterRatio` 0.04 vẫn chưa được kiểm lần nào. Còn thiếu PDF scan không text layer (C1). Xem `samples/README.md` |
 | Detector chỉ kiểm trên 2 file PDF | TB | Cả hai đều là LN dịch bố cục 1 cột, đánh số kiểu phương Tây. Chưa biết hành xử với sách đánh số kiểu `第一章`, sách nhiều chương nhỏ, hay chương không có tiêu đề |
-| Nhánh DOCX của detector chưa viết | TB | `detectChapters` mới chỉ nhận `Page[]` có toạ độ (từ PDF). DOCX dùng heading style — cần tín hiệu riêng ở P1.4, đừng ép DOCX vào model toạ độ |
+| pdfjs chưa kiểm ở bản đóng gói | **TB** | Chạy tốt dưới `pnpm test`/probe, nhưng asar có thể không nạp được worker file. Phải kiểm khi P1.5 gọi parser thật từ main process — đúng bài học mục 4.2 |
+| DOCX chưa xử lý ảnh và bảng | Thấp | `extractBlocks` chỉ nhận `<h1>`–`<h6>` và `<p>`. File mẫu A4 có 2 `<img>` bị bỏ qua — chấp nhận được vì TTS không đọc ảnh, nhưng bảng có nội dung thì sẽ mất |
+| DOCX không có outline | Thấp | mammoth không đọc bookmark/TOC field của Word. Chương chỉ nhận được qua heading style hoặc regex — đã đủ với 2 file mẫu |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

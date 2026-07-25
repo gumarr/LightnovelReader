@@ -38,7 +38,7 @@ trị, nhưng nhóm A là thứ đang thiếu nhất.
 |---|---|---|
 | **B1** | PDF **hai cột** | `detectColumnLayout`. Nếu sai thì câu đọc lên vô nghĩa hoàn toàn |
 | **B2** | PDF tiếng Anh (hoặc LN dịch còn lẫn tiếng Anh) | De-hyphenate — tiếng Anh ngắt từ cuối dòng nhiều hơn hẳn tiếng Việt |
-| **B3** | DOCX **không** dùng Heading style, chương chỉ là dòng in đậm | Nhánh fallback regex của DOCX |
+| **B3** | DOCX **không** dùng Heading style (chương là dòng thường hoặc in đậm) | Nhánh fallback regex của DOCX ✅ đã có |
 | **B4** | Sách có **nhiều hội thoại** `「」` `『』`, thán từ `"Ừ."` `"À."` | Sentence splitter + `startsNewBlock`. Sai ở đây là hỏng cả quyển |
 
 ### Nhóm C — trường hợp biên (để chắc app không vỡ)

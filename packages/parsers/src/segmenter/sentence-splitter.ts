@@ -126,41 +126,50 @@ const consumeTrailing = (text: string, index: number): number => {
  * Tách câu. `lang` hiện chỉ ảnh hưởng tới bảng viết tắt (đã gộp chung),
  * giữ tham số để mở rộng khi thêm ngôn ngữ mà không đổi chữ ký hàm.
  */
+/**
+ * Cắt `text[from..to)` thành một câu, bỏ khoảng trắng hai đầu nhưng giữ
+ * `start`/`end` trỏ đúng vào chuỗi gốc. Đoạn chỉ có khoảng trắng bị bỏ qua.
+ */
+const pushSentence = (out: Sentence[], text: string, from: number, to: number): void => {
+  const raw = text.slice(from, to);
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return;
+
+  const leading = raw.length - raw.trimStart().length;
+  out.push({
+    text: trimmed,
+    start: from + leading,
+    end: from + leading + trimmed.length,
+  });
+};
+
 export const splitSentences = (text: string, _lang: BookLang = 'vi'): Sentence[] => {
   const sentences: Sentence[] = [];
   let cursor = 0;
 
   for (let i = 0; i < text.length; i += 1) {
+    // Xuống dòng là ranh giới câu cứng.
+    //
+    // Sau cleaner, `\n` đánh dấu ranh giới đoạn đã xác định (tiêu đề, dòng
+    // hội thoại). Không cắt ở đây thì hai đoạn dính thành một câu và ký tự
+    // `\n` lọt vào giữa text của segment.
+    if (text[i] === '\n') {
+      pushSentence(sentences, text, cursor, i);
+      cursor = i + 1;
+      continue;
+    }
+
     if (!isSentenceEnd(text, i)) continue;
 
     const end = consumeTrailing(text, i);
-    const raw = text.slice(cursor, end);
-    const trimmed = raw.trim();
-
-    if (trimmed.length > 0) {
-      const leading = raw.length - raw.trimStart().length;
-      sentences.push({
-        text: trimmed,
-        start: cursor + leading,
-        end: cursor + leading + trimmed.length,
-      });
-    }
+    pushSentence(sentences, text, cursor, end);
 
     cursor = end;
     i = end - 1;
   }
 
   // Phần còn lại không kết thúc bằng dấu câu vẫn là một câu
-  const rest = text.slice(cursor);
-  const trimmedRest = rest.trim();
-  if (trimmedRest.length > 0) {
-    const leading = rest.length - rest.trimStart().length;
-    sentences.push({
-      text: trimmedRest,
-      start: cursor + leading,
-      end: cursor + leading + trimmedRest.length,
-    });
-  }
+  pushSentence(sentences, text, cursor, text.length);
 
   return sentences;
 };

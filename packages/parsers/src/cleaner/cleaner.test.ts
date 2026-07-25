@@ -78,6 +78,71 @@ describe('cleanPages — pipeline đầy đủ', () => {
     expect(cleanPages(pages).map((p) => p.pageNumber)).toEqual([7, 8, 9]);
   });
 
+  it('bỏ nội dung trang mục lục', () => {
+    // Không bỏ thì TTS đọc to "Bản quyền mười một, Lời tác giả mười bốn…"
+    const toc: Page = {
+      pageNumber: 2,
+      width: PAGE_WIDTH,
+      height: PAGE_HEIGHT,
+      lines: [
+        line('Mục lục', 60, 62),
+        line('Bản quyền11', 45, 98),
+        line('Lời tác giả14', 45, 119),
+        line('Mở đầu: Vầng trăng ngày ấy15', 45, 140),
+        line('Chương Một: Trời mưa17', 45, 161),
+        line('Chương Hai: Đá văng ảo tưởng77', 45, 182),
+      ],
+    };
+    const body: Page = {
+      pageNumber: 3,
+      width: PAGE_WIDTH,
+      height: PAGE_HEIGHT,
+      lines: [line('Hắn rút kiếm ra khỏi vỏ.', 45, 400)],
+    };
+
+    const cleaned = cleanPages([toc, body]);
+
+    expect(cleaned[0]?.text).toBe('');
+    expect(cleaned[0]?.isTableOfContents).toBe(true);
+    // Trang vẫn còn để pageNumber không lệch
+    expect(cleaned[0]?.pageNumber).toBe(2);
+    expect(cleaned[1]?.text).toContain('Hắn rút kiếm');
+  });
+
+  it('tắt được bằng skipTableOfContents', () => {
+    const toc: Page = {
+      pageNumber: 1,
+      width: PAGE_WIDTH,
+      height: PAGE_HEIGHT,
+      lines: [
+        line('Chương Một17', 45, 98),
+        line('Chương Hai77', 45, 119),
+        line('Chương Ba133', 45, 140),
+        line('Chương Bốn203', 45, 161),
+      ],
+    };
+
+    expect(cleanPages([toc], { skipTableOfContents: false })[0]?.text).toContain('Chương Một');
+  });
+
+  it('trang thân bài không bị nhận nhầm là mục lục', () => {
+    const body: Page = {
+      pageNumber: 1,
+      width: PAGE_WIDTH,
+      height: PAGE_HEIGHT,
+      lines: [
+        line('Hắn rút thanh kiếm ra khỏi vỏ.', 45, 100),
+        line('Ánh thép lạnh lẽo phản chiếu ánh trăng.', 45, 120),
+        line('Nàng ngẩng đầu nhìn bầu trời đêm.', 45, 140),
+        line('Không ai trả lời câu hỏi đó.', 45, 160),
+      ],
+    };
+
+    const cleaned = cleanPages([body]);
+    expect(cleaned[0]?.isTableOfContents).toBeUndefined();
+    expect(cleaned[0]?.text.length).toBeGreaterThan(0);
+  });
+
   it('trang không có dòng nào cho ra text rỗng', () => {
     const pages: Page[] = [{ pageNumber: 1, width: PAGE_WIDTH, height: PAGE_HEIGHT, lines: [] }];
     expect(cleanPages(pages)[0]?.text).toBe('');

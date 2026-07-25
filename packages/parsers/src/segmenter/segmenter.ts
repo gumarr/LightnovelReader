@@ -107,6 +107,16 @@ export const segmentText = (text: string, options: SegmenterOptions = {}): RawSe
   let buffer: Sentence[] = [];
   let bufferLength = 0;
 
+  /**
+   * Giữa hai câu có xuống dòng không.
+   *
+   * Sau cleaner, `\n` là **ranh giới đoạn đã xác định** (tiêu đề, dòng hội
+   * thoại, đoạn văn mới). Gộp hai đoạn vào một segment sẽ đọc dính tiêu đề
+   * vào thân bài, và khối text lọt vào segment vẫn còn ký tự `\n` bên trong.
+   */
+  const brokenBetween = (previous: Sentence, next: Sentence): boolean =>
+    text.slice(previous.end, next.start).includes('\n');
+
   const flush = (): void => {
     if (buffer.length === 0) return;
 
@@ -132,6 +142,12 @@ export const segmentText = (text: string, options: SegmenterOptions = {}): RawSe
       continue;
     }
 
+    // Ranh giới đoạn: xả buffer để không gộp hai đoạn vào một segment
+    const previous = buffer.at(-1);
+    if (previous !== undefined && brokenBetween(previous, sentence)) {
+      flush();
+    }
+
     // +1 cho khoảng trắng nối giữa hai câu
     const lengthIfAdded =
       buffer.length === 0 ? sentence.text.length : bufferLength + 1 + sentence.text.length;
@@ -148,7 +164,7 @@ export const segmentText = (text: string, options: SegmenterOptions = {}): RawSe
 
   flush();
 
-  return mergeShortSegments(segments, maxChars, maxSentences, minChars);
+  return mergeShortSegments(segments, maxChars, maxSentences, minChars, text);
 };
 
 /**
@@ -157,12 +173,16 @@ export const segmentText = (text: string, options: SegmenterOptions = {}): RawSe
  *
  * Chỉ gộp khi segment trước cũng chưa dùng hết hạn ngạch câu — nếu không
  * bước gộp sẽ phá vỡ giới hạn `maxSentences` mà bước gom vừa áp dụng.
+ *
+ * Cũng không gộp qua ranh giới đoạn (`\n`), nếu không bước này sẽ dán lại
+ * đúng những đoạn mà bước gom vừa cố ý tách ra.
  */
 const mergeShortSegments = (
   segments: readonly RawSegment[],
   maxChars: number,
   maxSentences: number,
   minChars: number,
+  source: string,
 ): RawSegment[] => {
   if (minChars <= 0) return [...segments];
 
@@ -179,7 +199,8 @@ const mergeShortSegments = (
       previous !== undefined &&
       segment.text.length < minChars &&
       previousCount + count <= maxSentences &&
-      previous.text.length + 1 + segment.text.length <= maxChars
+      previous.text.length + 1 + segment.text.length <= maxChars &&
+      !source.slice(previous.end, segment.start).includes('\n')
     ) {
       merged[merged.length - 1] = {
         text: `${previous.text} ${segment.text}`,

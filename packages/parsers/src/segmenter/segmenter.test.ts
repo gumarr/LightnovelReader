@@ -154,6 +154,38 @@ describe('vị trí start/end', () => {
   });
 });
 
+describe('ranh giới đoạn', () => {
+  it('không gộp hai đoạn vào cùng một segment', () => {
+    // Sau cleaner, `\n` là ranh giới đoạn đã xác định
+    const input = 'Chương Một: Trời mưa\nHắn bước vào phòng.';
+    expect(texts(input)).toEqual(['Chương Một: Trời mưa', 'Hắn bước vào phòng.']);
+  });
+
+  it('segment không bao giờ chứa ký tự xuống dòng', () => {
+    // Lỗi thật gặp khi nối parser vào cleaner: segment ôm cả khối nhiều dòng
+    const input = ['Mục lục', 'Bản quyền11', 'Lời tác giả14', 'Mở đầu15'].join('\n');
+    for (const segment of segmentText(input)) {
+      expect(segment.text).not.toContain('\n');
+    }
+  });
+
+  it('đoạn ngắn không bị gộp ngược lại ở bước merge', () => {
+    // mergeShortSegments phải tôn trọng ranh giới, nếu không nó dán lại
+    // đúng cái mà bước gom vừa tách ra
+    const input = 'A.\nB.\nC.';
+    expect(texts(input)).toEqual(['A.', 'B.', 'C.']);
+  });
+
+  it('vẫn gom bình thường trong cùng một đoạn', () => {
+    const input = 'Câu một. Câu hai. Câu ba.';
+    expect(texts(input)).toHaveLength(1);
+  });
+
+  it('nhận CRLF như ranh giới đoạn', () => {
+    expect(texts('Đoạn một.\r\nĐoạn hai.')).toEqual(['Đoạn một.', 'Đoạn hai.']);
+  });
+});
+
 describe('trường hợp biên', () => {
   it('chuỗi rỗng cho mảng rỗng', () => {
     expect(segmentText('')).toEqual([]);

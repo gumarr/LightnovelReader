@@ -27,12 +27,16 @@ Không có file trong `samples/pdf/` thì tự bỏ qua, không báo lỗi.
 |---|---|
 | `structure.test.ts` | Outline → trang, phân bố cỡ chữ, dòng lớn hơn thân bài |
 | `find-titles.test.ts` | Trang ít dòng bất thường, dòng khớp regex tiêu đề |
+| `docx-structure.test.ts` | Thẻ HTML mammoth sinh ra, heading, ứng viên tiêu đề |
 | `cleaner-real.test.ts` | Dòng thô → sau strip header/footer → số khối; dòng bị loại; text đã sạch |
 | `detector-real.test.ts` | Chương phát hiện + **bảng điểm từng tín hiệu** cho top ứng viên |
+| `parser-real.test.ts` | Trọn đường đi file → parser → cleaner → detector → segmenter, cả 4 file |
 
 ## Đã tìm ra lỗi gì
 
-Bốn lỗi thật mà unit test không lộ — đây là lý do thư mục này tồn tại:
+Bảy lỗi thật mà unit test không lộ — đây là lý do thư mục này tồn tại:
+
+**Từ P1.2–P1.3:**
 
 - **Luật "dòng ngắn" xé câu làm đôi** — dòng cuối mỗi đoạn văn cũng ngắn y
   hệt tiêu đề. Sửa: chỉ tách khối khi khối đang mở đã trọn ý.
@@ -42,5 +46,14 @@ Bốn lỗi thật mà unit test không lộ — đây là lý do thư mục nà
   không khớp. Sửa: `titleFor()` ưu tiên tiêu đề outline.
 - **Trang mục lục thành chương rỗng** — `"Mục lục"` 19pt ăn điểm y hệt tiêu
   đề thật. Sửa: thêm `signals/toc.ts` làm bộ lọc loại trừ.
+
+**Từ P1.4 (chỉ lộ ra khi nối các phần lại):**
+
+- **`\n` lọt vào giữa segment** — segmenter viết ở P1.1 chưa từng coi `\n` là
+  ranh giới. Sửa ở cả splitter, segmenter và bước merge.
+- **Cleaner vẫn nhả text mục lục** dù detector đã bỏ trang đó. Sửa:
+  `cleanPages` dùng chung `isTableOfContents`.
+- **Gom dòng theo bucket cứng tách đôi một dòng chữ** — `round(y/3)` khiến
+  hai item cách 1pt rơi khác bucket. Sửa: gom theo khoảng cách thực tế.
 
 Mỗi lỗi đều có test khoá lại trong `src/`, dùng đúng dữ liệu gặp trong file thật.

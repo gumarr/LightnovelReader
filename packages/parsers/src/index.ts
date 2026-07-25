@@ -51,3 +51,27 @@ export {
   looksLikeTocEntry,
   type TocOptions,
 } from './chapter-detector/signals/toc.js';
+
+export {
+  ParseError,
+  type DocumentParser,
+  type ParsedDocument,
+  type ParseErrorKind,
+  type ParseOptions,
+} from './parser/types.js';
+export {
+  createPdfParser,
+  groupItemsIntoLines,
+  hasTextLayer,
+  readOutline,
+  type PdfLoader,
+} from './parser/pdf.js';
+export {
+  blocksToPages,
+  createDocxParser,
+  extractBlocks,
+  stripHtml,
+  type DocxBlock,
+  type DocxConverter,
+} from './parser/docx.js';
+export { createRegistry, extensionOf, type ParserRegistry } from './parser/registry.js';

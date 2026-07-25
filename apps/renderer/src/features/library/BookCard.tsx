@@ -31,8 +31,9 @@ export const BookCard = ({ entry, now, onOpen, onRemove }: BookCardProps): JSX.E
           aria-hidden="true"
           className="flex aspect-[3/4] w-full items-center justify-center text-3xl font-semibold text-accent"
           // Sắc độ suy từ tên sách để phân biệt bằng mắt. Dùng độ mờ của
-          // `--accent` nên vẫn đúng ở cả dark lẫn light.
-          style={{ backgroundColor: `color-mix(in srgb, var(--accent) ${coverShade(book.title) * 100}%, var(--bg-subtle))` }}
+          // `--accent` chồng lên nền nên vẫn đúng ở cả dark lẫn light.
+          // Biến lưu kênh RGB rời nên phải bọc `rgb(...)`.
+          style={{ backgroundColor: `rgb(var(--accent) / ${coverShade(book.title)})` }}
         >
           {coverInitials(book.title)}
         </span>

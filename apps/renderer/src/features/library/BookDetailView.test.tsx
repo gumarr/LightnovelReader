@@ -26,28 +26,31 @@ const detail = (overrides: Partial<BookDetail> = {}): BookDetail => ({
 
 const items = (): HTMLElement[] => screen.queryAllByTestId('chapter-item');
 
+/** Alias cho những phép thử không quan tâm tới việc mở trình đọc */
+const renderView = render;
+
 describe('hiển thị', () => {
   it('hiện tên sách và tổng số liệu', () => {
-    render(<BookDetailView detail={detail()} onBack={vi.fn()} />);
+    renderView(<BookDetailView detail={detail()} onBack={vi.fn()} />);
 
     expect(screen.getByText('Kiếm Vực Thần Đế')).toBeInTheDocument();
     expect(screen.getByText(/3 chương · 300 segment/)).toBeInTheDocument();
   });
 
   it('liệt kê chương theo thứ tự', () => {
-    render(<BookDetailView detail={detail()} onBack={vi.fn()} />);
+    renderView(<BookDetailView detail={detail()} onBack={vi.fn()} />);
 
     expect(items()).toHaveLength(3);
     expect(within(items()[0]!).getByText('Chương 1')).toBeInTheDocument();
   });
 
   it('PDF hiện "Trang X–Y"', () => {
-    render(<BookDetailView detail={detail()} onBack={vi.fn()} />);
+    renderView(<BookDetailView detail={detail()} onBack={vi.fn()} />);
     expect(within(items()[0]!).getByText(/Trang 1–10/)).toBeInTheDocument();
   });
 
   it('DOCX hiện "Đoạn" chứ không phải "Trang"', () => {
-    render(
+    renderView(
       <BookDetailView
         detail={detail({ book: fakeBook({ format: 'docx' }) })}
         onBack={vi.fn()}
@@ -63,12 +66,12 @@ describe('hiển thị', () => {
     delete noPages.pageStart;
     delete noPages.pageEnd;
 
-    render(<BookDetailView detail={detail({ chapters: [noPages] })} onBack={vi.fn()} />);
+    renderView(<BookDetailView detail={detail({ chapters: [noPages] })} onBack={vi.fn()} />);
     expect(within(items()[0]!).getByText(/100 segment/)).toBeInTheDocument();
   });
 
   it('sách chưa có chương nào không làm vỡ giao diện', () => {
-    render(<BookDetailView detail={detail({ chapters: [] })} onBack={vi.fn()} />);
+    renderView(<BookDetailView detail={detail({ chapters: [] })} onBack={vi.fn()} />);
 
     expect(items()).toHaveLength(0);
     expect(screen.getByText(/chưa có chương nào/)).toBeInTheDocument();
@@ -77,17 +80,51 @@ describe('hiển thị', () => {
 
 describe('resume', () => {
   it('đánh dấu chương đang đọc dở', () => {
-    render(<BookDetailView detail={detail({ resumeChapterId: 'c2' })} onBack={vi.fn()} />);
+    renderView(<BookDetailView detail={detail({ resumeChapterId: 'c2' })} onBack={vi.fn()} />);
 
     expect(items()[1]?.dataset['resume']).toBe('true');
     expect(within(items()[1]!).getByText('Đang đọc')).toBeInTheDocument();
   });
 
   it('chưa đọc lần nào thì không chương nào được đánh dấu', () => {
-    render(<BookDetailView detail={detail()} onBack={vi.fn()} />);
+    renderView(<BookDetailView detail={detail()} onBack={vi.fn()} />);
 
     expect(items().every((i) => i.dataset['resume'] === 'false')).toBe(true);
     expect(screen.queryByText('Đang đọc')).toBeNull();
+  });
+});
+
+describe('mở trình đọc', () => {
+  it('bấm một chương mở đúng chương đó', async () => {
+    const user = userEvent.setup();
+    const onRead = vi.fn();
+    render(<BookDetailView detail={detail()} onBack={vi.fn()} onRead={onRead} />);
+
+    await user.click(screen.getByRole('button', { name: 'Đọc Chương 2' }));
+    expect(onRead).toHaveBeenCalledWith('c2');
+  });
+
+  it('nút đọc ở đầu màn không chỉ định chương — để trình đọc tự chọn chỗ dở', async () => {
+    const user = userEvent.setup();
+    const onRead = vi.fn();
+    render(
+      <BookDetailView detail={detail({ resumeChapterId: 'c2' })} onBack={vi.fn()} onRead={onRead} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Đọc tiếp' }));
+    expect(onRead).toHaveBeenCalledWith();
+  });
+
+  it('sách chưa từng đọc thì nút ghi "Đọc"', () => {
+    render(<BookDetailView detail={detail()} onBack={vi.fn()} onRead={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Đọc' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Đọc tiếp' })).toBeNull();
+  });
+
+  it('sách không có chương thì không hiện nút đọc', () => {
+    render(<BookDetailView detail={detail({ chapters: [] })} onBack={vi.fn()} onRead={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /^Đọc/ })).toBeNull();
   });
 });
 
@@ -95,7 +132,7 @@ describe('quay lại', () => {
   it('bấm nút quay lại gọi onBack', async () => {
     const user = userEvent.setup();
     const onBack = vi.fn();
-    render(<BookDetailView detail={detail()} onBack={onBack} />);
+    renderView(<BookDetailView detail={detail()} onBack={onBack} />);
 
     await user.click(screen.getByRole('button', { name: /Thư viện/ }));
     expect(onBack).toHaveBeenCalledTimes(1);

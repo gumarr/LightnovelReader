@@ -57,6 +57,9 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.library.openBook('book-1'),
     () => api.library.setProgress({ bookId: 'book-1', segmentId: 'seg-1' }),
     () => api.library.removeBook('book-1'),
+    () => api.reader.getBookFile('book-1'),
+    () => api.reader.getBookHtml('book-1'),
+    () => api.reader.listSegments('ch-1'),
     () => api.window.minimize(),
     () => api.window.toggleMaximize(),
     () => api.window.close(),
@@ -90,7 +93,14 @@ describe('bề mặt window.api', () => {
   it('không expose ipcRenderer thô cho renderer', () => {
     const surface = JSON.stringify(Object.keys(api));
     expect(surface).not.toContain('ipcRenderer');
-    expect(Object.keys(api).sort()).toEqual(['app', 'import', 'library', 'settings', 'window']);
+    expect(Object.keys(api).sort()).toEqual([
+      'app',
+      'import',
+      'library',
+      'reader',
+      'settings',
+      'window',
+    ]);
   });
 
   it('truyền input xuống đúng channel', async () => {

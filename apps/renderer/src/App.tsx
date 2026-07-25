@@ -3,13 +3,14 @@ import { TitleBar } from '@/features/titlebar/TitleBar';
 import { ImportScreen } from '@/features/import/ImportScreen';
 import { LibraryGrid } from '@/features/library/LibraryGrid';
 import { BookDetailView } from '@/features/library/BookDetailView';
+import { ReaderScreen } from '@/features/reader/ReaderScreen';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useLibraryStore } from '@/stores/library-store';
 
 /**
- * Điều hướng giữa ba màn: thư viện → nhập sách → chi tiết sách.
+ * Điều hướng: thư viện → nhập sách → chi tiết sách → trình đọc.
  *
- * Chưa dùng router: ba màn, không có URL cần chia sẻ, và Electron không có
+ * Chưa dùng router: ít màn, không có URL cần chia sẻ, và Electron không có
  * thanh địa chỉ. Thêm router lúc này là thêm phụ thuộc mà chưa cần.
  */
 type Screen = 'library' | 'import';
@@ -28,6 +29,9 @@ export const App = (): JSX.Element => {
   const loadLibrary = useLibraryStore((s) => s.load);
 
   const [screen, setScreen] = useState<Screen>('library');
+  // Chương đang đọc. `null` = đang xem mục lục; `undefined` bên trong nghĩa là
+  // mở chỗ đọc dở. Reset khi đóng sách để lần mở sau vào lại mục lục.
+  const [reading, setReading] = useState<{ chapterId?: string } | null>(null);
 
   useEffect(() => {
     void load();
@@ -37,7 +41,26 @@ export const App = (): JSX.Element => {
 
   const body = (): JSX.Element => {
     if (opened !== null) {
-      return <BookDetailView detail={opened} onBack={closeBook} />;
+      if (reading !== null) {
+        return (
+          <ReaderScreen
+            detail={opened}
+            {...(reading.chapterId === undefined ? {} : { startChapterId: reading.chapterId })}
+            onBack={() => setReading(null)}
+          />
+        );
+      }
+
+      return (
+        <BookDetailView
+          detail={opened}
+          onBack={() => {
+            setReading(null);
+            closeBook();
+          }}
+          onRead={(chapterId) => setReading(chapterId === undefined ? {} : { chapterId })}
+        />
+      );
     }
 
     if (screen === 'import') {

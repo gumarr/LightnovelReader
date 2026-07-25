@@ -3,17 +3,22 @@ import { rangeLabel } from '@/features/import/confidence';
 import { formatLabel } from './format';
 
 /**
- * Màn chi tiết sách: danh sách chương, chỉ ra chương đang đọc dở.
+ * Màn chi tiết sách: mục lục chương, chỉ ra chương đang đọc dở.
  *
- * P1.6c thay phần bên phải bằng viewer thật; hiện tại mới là mục lục.
+ * Bấm một chương là mở trình đọc (`ReaderScreen`).
  */
 
 export type BookDetailViewProps = {
   detail: BookDetail;
   onBack: () => void;
+  /**
+   * Mở trình đọc. Gọi không kèm chương = mở chỗ đọc dở.
+   * Vắng mặt thì mục lục chỉ để xem — dùng khi chưa nối trình đọc.
+   */
+  onRead?: (chapterId?: string) => void;
 };
 
-export const BookDetailView = ({ detail, onBack }: BookDetailViewProps): JSX.Element => {
+export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps): JSX.Element => {
   const { book, chapters, resumeChapterId } = detail;
 
   // DOCX không có trang giấy — `pageStart` khi đó là chỉ số đoạn văn
@@ -37,6 +42,16 @@ export const BookDetailView = ({ detail, onBack }: BookDetailViewProps): JSX.Ele
             {formatLabel(book.format)} · {chapters.length} chương · {totalSegments} segment
           </p>
         </div>
+
+        {chapters.length > 0 && onRead !== undefined ? (
+          <button
+            type="button"
+            onClick={() => onRead()}
+            className="ml-auto shrink-0 rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90"
+          >
+            {resumeChapterId === undefined ? 'Đọc' : 'Đọc tiếp'}
+          </button>
+        ) : null}
       </header>
 
       {chapters.length === 0 ? (
@@ -47,33 +62,37 @@ export const BookDetailView = ({ detail, onBack }: BookDetailViewProps): JSX.Ele
             const isResume = chapter.id === resumeChapterId;
 
             return (
-              <li
-                key={chapter.id}
-                data-testid="chapter-item"
-                data-resume={isResume}
-                className={`flex items-center gap-3 rounded border px-3 py-2 ${
-                  isResume ? 'border-accent bg-accent/5' : 'border-border bg-bg-elevated'
-                }`}
-              >
-                <span className="w-6 shrink-0 text-right text-sm tabular-nums text-fg-muted">
-                  {chapter.index + 1}
-                </span>
-
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-fg">{chapter.title}</span>
-                  <span className="text-xs text-fg-muted">
-                    {chapter.pageStart !== undefined && chapter.pageEnd !== undefined
-                      ? `${rangeLabel(chapter.pageStart, chapter.pageEnd, hasRealPages)} · `
-                      : ''}
-                    {chapter.segmentCount} segment
+              <li key={chapter.id} data-testid="chapter-item" data-resume={isResume}>
+                <button
+                  type="button"
+                  onClick={() => onRead?.(chapter.id)}
+                  aria-label={`Đọc ${chapter.title}`}
+                  className={`flex w-full items-center gap-3 rounded border px-3 py-2 text-left transition-colors ${
+                    isResume
+                      ? 'border-accent bg-accent/5 hover:bg-accent/10'
+                      : 'border-border bg-bg-elevated hover:border-accent'
+                  }`}
+                >
+                  <span className="w-6 shrink-0 text-right text-sm tabular-nums text-fg-muted">
+                    {chapter.index + 1}
                   </span>
-                </span>
 
-                {isResume ? (
-                  <span className="shrink-0 rounded bg-accent/10 px-2 py-0.5 text-xs text-accent">
-                    Đang đọc
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-fg">{chapter.title}</span>
+                    <span className="text-xs text-fg-muted">
+                      {chapter.pageStart !== undefined && chapter.pageEnd !== undefined
+                        ? `${rangeLabel(chapter.pageStart, chapter.pageEnd, hasRealPages)} · `
+                        : ''}
+                      {chapter.segmentCount} segment
+                    </span>
                   </span>
-                ) : null}
+
+                  {isResume ? (
+                    <span className="shrink-0 rounded bg-accent/10 px-2 py-0.5 text-xs text-accent">
+                      Đang đọc
+                    </span>
+                  ) : null}
+                </button>
               </li>
             );
           })}
@@ -81,7 +100,7 @@ export const BookDetailView = ({ detail, onBack }: BookDetailViewProps): JSX.Ele
       )}
 
       <footer className="shrink-0 border-t border-border px-4 py-2 text-xs text-fg-muted">
-        Trình đọc và phát audio thuộc P1.6c / Phase 2 — chưa nối vào đây.
+        Phát audio và phụ đề đồng bộ thuộc Phase 2 — chưa nối vào đây.
       </footer>
     </div>
   );

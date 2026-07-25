@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-25 · commit `62b8f9c`
+> **Cập nhật lần cuối:** 2026-07-25 · commit `<đang chờ>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -21,7 +21,7 @@ pnpm dev                 # mở app
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P1.6c — Viewer PDF/DOCX (xem mục 3).
+**Việc tiếp theo:** Phase 2 — TTS sidecar + player (xem mục 3). **Phase 1 xong.**
 
 ---
 
@@ -213,11 +213,43 @@ Nút xoá có hộp thoại xác nhận, nói rõ mất bao nhiêu chương và 
 còn: xoá sách là mất luôn cấu trúc chương user đã sửa tay ở màn xác nhận,
 một cú bấm nhầm không được phép huỷ công đó.
 
+### Phase 1 — P1.6c Viewer PDF + DOCX ✅
+
+| File | Vai trò | Test |
+|---|---|---|
+| `main/services/docx-html.ts` | Sanitize + đánh số khối HTML của mammoth | 19 |
+| `main/ipc/handlers/reader.ts` | `getBookFile` / `getBookHtml` / `listSegments` | 14 |
+| `renderer/features/reader/windowing.ts` | Ảo hoá: offset cộng dồn, tìm nhị phân, cuộn tới | 26 |
+| `renderer/features/reader/pdf-document.ts` | Nạp pdfjs, đo trang, vẽ canvas | — |
+| `renderer/features/reader/PdfViewer.tsx` | Cuộn liên tục, chỉ render trang trong tầm nhìn | — |
+| `renderer/features/reader/PdfPage.tsx` | Canvas một trang + lớp phủ `rects` | — |
+| `renderer/features/reader/DocxViewer.tsx` | Render HTML, tô khối theo `nodePath` | 8 |
+| `renderer/features/reader/docx-anchor.ts` | Đọc `p:<index>` → phần tử | 9 |
+| `renderer/features/reader/SegmentList.tsx` | Danh sách segment có ảo hoá | 7 |
+| `renderer/features/reader/ReaderScreen.tsx` | Ghép viewer + panel + ghi tiến độ | 12 |
+| `renderer/stores/reader-store.ts` | Nội dung sách + segment đang chọn | 15 |
+
+**Phạm vi đã thống nhất với user:** chỉ viewer full-width, panel segment bật/tắt
+được. **Chưa** dựng khung 2/3–1/3 với subtitle pane như mockup `plan.md`: pane đó
+chỉ có nghĩa khi đã có timing từng từ (Phase 2), dựng sẵn khung rỗng là đúng thứ
+CLAUDE.md cấm.
+
+**Đã chạy thật trên bản đóng gói, cả dark lẫn light:**
+
+- PDF 270 trang: cuộn liên tục, mỗi lúc chỉ 2–3 canvas sống, vùng cuộn cao
+  179 280px. Canvas vẽ ở 864×1296 (đã nhân `devicePixelRatio`), đo được
+  29 733 pixel khác trắng — tức nội dung thật chứ không phải canvas trắng.
+- **Neo đúng trên sách thật:** bấm segment ở chương 2 → nhảy tới trang 77, vẽ
+  4 ô highlight phủ đúng đoạn văn của segment đó, nằm trong khung nhìn.
+- DOCX: 388 khối, giữ 2 `<h1>`, **không** còn `<script>` hay thuộc tính lạ nào
+  sau sanitize. Bấm segment → tô đúng khối `data-block="2"`.
+- Ghi tiến độ đọc chạy thật: mở lại sách thì nút đổi từ "Đọc" sang "Đọc tiếp".
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test | **894 passed** (+77 từ P1.6b) |
+| Unit test | **1008 passed** (+114 từ P1.6c) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Installer | 82 MB |
@@ -238,30 +270,29 @@ unit test riêng và chạy `pnpm typecheck && pnpm lint && pnpm test` trước 
 | P1.5 | Màn hình "Xác nhận cấu trúc chương" — merge/split/rename/xóa | ✅ Xong |
 | P1.6a | Lưu sách + dựng segment vào DB | ✅ Xong |
 | P1.6b | Library grid + resume | ✅ Xong |
-| **P1.6c** | **Viewer (PDF canvas + text layer, DOCX HTML)** | ⬅️ **Tiếp theo** |
+| P1.6c | Viewer (PDF canvas + neo highlight, DOCX HTML) | ✅ Xong |
 
 **DoD Phase 1:** Mở PDF & DOCX, thấy danh sách chương đúng, sửa được, thấy segment.
+→ **Đạt đủ.** Kiểm trên bản đóng gói với 2 sách thật (PDF 270 trang/4817 segment,
+DOCX 388 khối/430 segment), cả dark lẫn light.
 
-### Ghi chú cho P1.6c (Viewer)
+**Tiếp theo: Phase 2** — sidecar Python (Piper TTS), queue generate persist trong
+SQLite, player, subtitle pane highlight từng từ. Xem `plan.md` mục Phase 2.
 
-Đã thống nhất với user: **pdfjs chạy trong renderer**, main chỉ cấp bytes qua
-IPC. Lý do: renderer có `DOMMatrix`/`Path2D` thật của Chromium nên không dính
-hai lỗi ở mục 4.19; renderer vẫn không chạm `fs`.
+### Ghi chú cho Phase 2 (TTS + player)
 
-Cần thêm một kênh IPC đọc file sách trả `ArrayBuffer` — chưa có. Nhớ kiểm
-đường dẫn qua `services/paths.ts`, đừng đọc path tuỳ ý từ renderer.
+Những gì P1.6c để lại sẵn cho Phase 2:
 
-- Neo đã sẵn sàng: `SegmentAnchor` PDF có `page` + `rects` (toạ độ trong không
-  gian trang, gốc góc **trên**-trái). Nhân với scale của viewport là ra vị trí
-  trên canvas. Đo trên sách thật: 4817/4817 segment có rects.
-- DOCX có `nodePath = "p:<index>"` — index chính là thứ tự paragraph mammoth
-  sinh ra, viewer render theo đúng thứ tự đó là khớp.
-- `library:setProgress` đã có và đã test; viewer chỉ cần gọi khi user đọc tới
-  segment mới. `BookDetail.resumeChapterId` cho biết mở vào chương nào.
-- `scoreCandidates()` → điểm **từng tín hiệu**, chưa dùng ở UI. Để dành cho
+- **Đổi segment đang đọc chỉ là gọi `setActiveSegment(id)`** ở `reader-store`.
+  Cả hai viewer đã tự cuộn tới và tô đúng chỗ, `SegmentList` tự đưa dòng vào
+  tầm nhìn. Player chỉ cần gọi hàm đó mỗi lần audio sang segment kế.
+- **Tiến độ đọc tự ghi** khi `activeSegmentId` đổi (`ReaderScreen`), có chặn
+  ghi trùng. Player không phải lo.
+- `windowing.ts` là hàm thuần, dùng lại được cho danh sách job của queue.
+- Subtitle pane + splitter 2/3–1/3 **chưa dựng**. `viewerPaneRatio` đã có sẵn
+  trong `AppSettings` (kèm `VIEWER_PANE_RATIO_MIN/MAX`) nhưng chưa ai đọc.
+- `scoreCandidates()` → điểm **từng tín hiệu**, vẫn chưa dùng ở UI. Để dành cho
   chế độ "vì sao chương này được nhận" nếu user cần soi.
-- Danh sách segment dài (chương lớn nhất 1353 segment) → **cần virtualization**
-  theo đúng CLAUDE.md.
 
 ### Dữ liệu thật đã có — cấu trúc quan sát được
 
@@ -658,6 +689,91 @@ dòng", dùng đúng câu hội thoại gặp trong file thật.
 references gây lỗi `TS6305`. Đã bỏ `composite` và `references`, để TS resolve
 qua `node_modules`.
 
+### 4.22 pdfjs ở renderer cũng phải dùng bản `legacy` — nhưng vì lý do khác
+
+Kế hoạch ban đầu (ghi ở mục 4.19) là: renderer dùng bản **thường** vì có
+`DOMMatrix`/`Path2D` thật của Chromium. Suy luận đó đúng nhưng **chưa đủ**.
+
+Bản đóng gói mở PDF nào cũng lỗi:
+
+```
+Không mở được file PDF: a.toHex is not a function
+```
+
+Dò trong app đang chạy:
+
+| API | Chromium 130 (Electron 33) |
+|---|---|
+| `Uint8Array.prototype.toHex` | ❌ `undefined` |
+| `Uint8Array.fromHex` | ❌ `undefined` |
+| `Uint8Array.prototype.toBase64` | ❌ `undefined` |
+| `Promise.withResolvers` | ✅ có |
+
+pdfjs 6 gọi **thẳng** `Uint8Array.prototype.toHex()` (ES2025, mãi Chromium 140
+mới có). So hai bản build:
+
+```bash
+grep -c toHex build/pdf.min.mjs         # 0  → không polyfill, gọi trần
+grep -c toHex legacy/build/pdf.min.mjs  # 1  → "toHex||!function(...)"
+```
+
+Bản `legacy` có kiểm tra rồi mới bù. → renderer cũng import từ
+`pdfjs-dist/legacy/build/pdf.mjs`, worker lấy `legacy/build/pdf.worker.min.mjs`.
+`DOMMatrix` không thành vấn đề vì renderer là Chromium thật.
+
+**Bài học lặp lại lần thứ ba:** "Electron là Chromium nên API web đều có" là
+suy luận sai. Electron khoá ở một phiên bản Chromium **cũ hơn** trình duyệt
+người dùng đang chạy nhiều tháng. Thư viện nhắm "trình duyệt hiện đại" vẫn có
+thể dùng API Electron chưa có. Cách duy nhất biết chắc là **dò trong app đang
+chạy**, không phải đọc bảng tương thích.
+
+Kèm theo: jsdom cũng không có `DOMMatrix`, mà `pdf-document.ts` chỉ cần được
+*import* là nổ — `App.test.tsx` fail dù không đụng gì tới PDF. Đã bù trong
+`test/setup.ts` cùng nhóm với `ResizeObserver` / `scrollIntoView` / `scrollTo`.
+
+### 4.23 Biến màu phải lưu KÊNH RGB, không phải hex — `bg-accent/30` âm thầm mất màu
+
+Lỗi nặng nhất của P1.6c, và nó đã nằm sẵn trong code từ P1.6b mà không ai thấy.
+
+Ô highlight trên trang PDF **không hiện gì**. Kiểm trong app đang chạy:
+
+```js
+getComputedStyle(hl).backgroundColor  // "rgba(0, 0, 0, 0)"  ← trong suốt hoàn toàn
+```
+
+Nguyên nhân: `theme.css` lưu `--accent: #818cf8`, mà Tailwind cần **kênh rời**
+mới ghép được `<alpha-value>`. Gặp hex, `bg-accent/30` sinh ra CSS không hợp lệ
+rồi trình duyệt bỏ qua — **không lỗi, không cảnh báo, chỉ là màu biến mất**.
+
+Cả 5 chỗ dùng `/opacity` trong app đều đã hỏng sẵn, gồm hai chỗ của P1.6b mà
+tôi đã "kiểm bằng ảnh chụp" và không nhận ra:
+
+| Lớp | Chỗ dùng | Hậu quả |
+|---|---|---|
+| `bg-accent/30` | Ô highlight trang PDF | Vô hình |
+| `bg-accent/10` | Dòng segment đang chọn, nhãn "Đang đọc" | Không nền |
+| `bg-accent/5` | Chương đọc dở ở mục lục | Không nền |
+| `bg-bg/80` | Nền mờ hộp thoại xoá sách | **Không mờ** |
+
+→ Đổi sang kênh rời (`--accent: 129 140 248`) + `rgb(var(--accent) / <alpha-value>)`
+trong `tailwind.config.js`. Chỗ nào dùng biến trong CSS thường phải bọc
+`rgb(var(--x))`; muốn màu mờ thì `rgb(var(--x) / 0.18)` thay cho `color-mix`.
+
+Hai bài học:
+
+1. **Màu trong suốt không báo lỗi.** Test đếm được class `bg-accent/30` có mặt,
+   nhưng không ai kiểm màu *tính ra được*. Muốn chắc phải đọc `getComputedStyle`
+   trong app thật.
+2. **Nhìn ảnh chụp không đủ để coi là đã kiểm.** P1.6b tôi xem ảnh hộp thoại
+   xoá và thấy "ổn" — trong khi nền mờ hoàn toàn không hoạt động. Nền tối làm
+   một lớp phủ mất tích trông chẳng khác gì có.
+
+### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
+
+Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
+nền — nền trang PDF là **trắng** (1.0) nên phép nhân gần như không đổi gì.
+Đổi sang phủ thẳng `bg-accent/[0.28]`: thấy rõ mà chữ bên dưới vẫn đọc được.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -819,7 +935,12 @@ scripts/
 | Chưa có file mẫu nhóm B/C | Thấp | Còn thiếu **PDF 2 cột (B1)** — user xác nhận không có mẫu, `minGutterRatio` 0.04 vẫn chưa được kiểm lần nào. C1 (PDF scan) **đã có** và đã kiểm ở bản đóng gói: báo `PDF_NO_TEXT_LAYER` đúng như thiết kế |
 | Detector chỉ kiểm trên 2 file PDF | TB | Cả hai đều là LN dịch bố cục 1 cột, đánh số kiểu phương Tây. Chưa biết hành xử với sách đánh số kiểu `第一章`, sách nhiều chương nhỏ, hay chương không có tiêu đề |
 | ~~pdfjs chưa kiểm ở bản đóng gói~~ | ✅ Xong | Đã kiểm ở P1.5 và **lộ ra 2 lỗi thật** (mục 4.19). Nay chạy đúng trên `.exe` với cả 5 file mẫu, gọi qua IPC thật |
-| Kiểm bản đóng gói vẫn làm thủ công | TB | Quy trình CDP ở mục 4.19 chạy tay. Nên đưa vào CI như bước smoke test hiện có, nếu không lỗi kiểu 4.19 sẽ lại lọt |
+| Kiểm bản đóng gói vẫn làm thủ công | **Cao** | Quy trình CDP ở mục 4.19 chạy tay. P1.6c lại lộ thêm 2 lỗi nữa mà 1008 test không thấy (4.22, 4.23) — đây là lần thứ ba. Nên có ít nhất một script CDP chạy được bằng một lệnh, kiểm: mở PDF ra canvas có pixel, `getComputedStyle` của lớp `/opacity` khác `rgba(0,0,0,0)` |
+| Không có test nào chặn lỗi màu trong suốt | **TB** | Lỗi 4.23 nằm im từ P1.6b. Test hiện chỉ kiểm class có mặt, không kiểm màu tính ra được. jsdom không tính CSS thật nên phải kiểm ở app đang chạy |
+| Viewer PDF chưa có text layer | TB | Neo highlight vẽ bằng `rects` nên **không cần** text layer. Nhưng vậy user không bôi chọn hay copy chữ được. plan.md có nhắc "canvas + text layer" — để lại tới khi thật sự cần |
+| Chưa có zoom / xoay trang | Thấp | Scale tính vừa bề ngang khung, trần 2×. Đủ đọc nhưng chưa cho user phóng to |
+| HTML DOCX cache một sách trong RAM | Thấp | `reader.ts` giữ đúng một `BookHtml`; mở sách khác là convert lại (~200ms). Đổi lại là không phình `.db`, không migrate schema |
+| Ảnh trong DOCX bị bỏ khi render | Thấp | `sanitizeDocxHtml` bỏ `<img>` (danh sách trắng không có). LN có minh hoạ sẽ mất ảnh ở viewer DOCX — PDF không bị vì vẽ cả trang |
 | `import:*` chưa chặn đường dẫn tuỳ ý | TB | Renderer gọi `parseFile` với path bất kỳ và main sẽ đọc. Hiện chưa lộ ra ngoài (chỉ dialog gọi tới), nhưng khi thêm kéo-thả thì phải kiểm path qua `services/paths.ts` |
 | Ngôn ngữ sách hardcode `'vi'` | **TB** | `import-store.save()` luôn gửi `lang: 'vi'`. Sách EN sẽ nhận voice sai ở Phase 2. Cần cho user chọn ở màn xác nhận — xem ghi chú P1.6b |
 | Xoá sách không xoá file đã copy | TB | `library:removeBook` xoá bản ghi DB (chương/segment theo CASCADE) nhưng để lại file trong `libraryDir`. Cố ý dồn cho Storage Manager (Phase 2) xử lý cùng audio — một chỗ duy nhất chịu trách nhiệm dọn file |

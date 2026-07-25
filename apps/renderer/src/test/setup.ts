@@ -42,6 +42,46 @@ vi.stubGlobal(
   })),
 );
 
+/**
+ * jsdom thiếu `DOMMatrix`, mà pdfjs có `new DOMMatrix()` ở cấp module — chỉ
+ * cần *import* `pdf-document.ts` là nổ, kể cả test không đụng tới PDF.
+ *
+ * Trùng nguyên nhân với lỗi đóng gói ở PROGRESS mục 4.19, khác chỗ: ở đây là
+ * jsdom thiếu thật, còn Electron main thì bị pdfjs nhận nhầm là trình duyệt.
+ * Renderer thật chạy trên Chromium nên luôn có sẵn.
+ */
+if (!('DOMMatrix' in globalThis)) {
+  vi.stubGlobal(
+    'DOMMatrix',
+    class {
+      a = 1;
+      b = 0;
+      c = 0;
+      d = 1;
+      e = 0;
+      f = 0;
+    },
+  );
+}
+
+/**
+ * jsdom không dựng layout nên thiếu hẳn nhóm API cuộn. Trình đọc dùng chúng
+ * để đưa segment đang đọc vào tầm nhìn — giả lập ở đây thay vì bọc `?.` trong
+ * component, vì trên Electron thật chúng luôn có.
+ */
+Element.prototype.scrollIntoView = vi.fn();
+Element.prototype.scrollTo = vi.fn();
+
+/** Ảo hoá danh sách dài cần `ResizeObserver` để biết chiều cao khung */
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  },
+);
+
 afterEach(() => {
   cleanup();
   listeners.clear();

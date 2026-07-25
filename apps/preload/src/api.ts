@@ -6,6 +6,8 @@ import {
   type AppSettings,
   type AppSettingsPatch,
   type BookDetail,
+  type BookFileBytes,
+  type BookHtml,
   type ChapterPreview,
   type ChapterPreviewRequest,
   type ImportPreview,
@@ -14,6 +16,7 @@ import {
   type ReadingProgress,
   type SaveBookRequest,
   type SaveBookResponse,
+  type Segment,
   type IpcEventName,
   type IpcEventPayload,
   type IpcInput,
@@ -93,6 +96,15 @@ export const api = {
     setProgress: (progress: ReadingProgress): Promise<Result<void>> =>
       invoke('library:setProgress', progress),
     removeBook: (bookId: string): Promise<Result<void>> => invoke('library:removeBook', bookId),
+  },
+
+  reader: {
+    getBookFile: (bookId: string): Promise<Result<BookFileBytes>> =>
+      invoke('reader:getBookFile', bookId),
+    getBookHtml: (bookId: string): Promise<Result<BookHtml>> =>
+      invoke('reader:getBookHtml', bookId),
+    listSegments: (chapterId: string): Promise<Result<Segment[]>> =>
+      invoke('reader:listSegments', chapterId),
   },
 
   window: {

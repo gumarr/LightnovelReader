@@ -5,6 +5,7 @@ import type {
   BookFormat,
   BookLang,
   Chapter,
+  Segment,
   ThemeMode,
 } from './types.js';
 import type { ChapterDraft } from './chapter-draft.js';
@@ -119,6 +120,39 @@ export type ReadingProgress = {
   segmentId: string;
 };
 
+/**
+ * Nội dung thô của sách để viewer dựng lại trang.
+ *
+ * PDF trả bytes vì pdfjs chạy **ở renderer** — renderer có `DOMMatrix`/`Path2D`
+ * thật của Chromium nên không dính hai lỗi đóng gói ở mục 4.19 của PROGRESS.
+ * Renderer vẫn không chạm `fs`: đường dẫn do main tra từ DB, renderer chỉ đưa
+ * `bookId`.
+ */
+export type BookFileBytes = {
+  bookId: string;
+  format: BookFormat;
+  /** Nội dung file. Đi qua IPC dưới dạng `ArrayBuffer` (structured clone) */
+  bytes: ArrayBuffer;
+};
+
+/**
+ * HTML của sách DOCX, đã sanitize ở main.
+ *
+ * DOCX không lưu HTML trong DB — main convert lại bằng mammoth từ bản copy
+ * trong `libraryDir` mỗi lần mở sách, rồi cache trong bộ nhớ. Đổi lại là
+ * không phải migrate schema và file `.db` không phình theo nội dung sách.
+ */
+export type BookHtml = {
+  bookId: string;
+  /** HTML đã lọc, chỉ còn thẻ văn bản. Xem `sanitizeDocxHtml` ở main */
+  html: string;
+  /**
+   * Số khối `<p>`/`<h1..6>` trong `html`, theo đúng thứ tự mammoth sinh ra.
+   * `SegmentAnchor.nodePath = "p:<index>"` trỏ vào chỉ số này.
+   */
+  blockCount: number;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -146,6 +180,13 @@ export type IpcContract = {
   'library:setProgress': { in: ReadingProgress; out: Result<void> };
   /** Xoá sách khỏi thư viện, kèm chương và segment */
   'library:removeBook': { in: string; out: Result<void> };
+
+  /** Bytes file sách để pdfjs dựng trang ở renderer */
+  'reader:getBookFile': { in: string; out: Result<BookFileBytes> };
+  /** HTML đã sanitize của sách DOCX */
+  'reader:getBookHtml': { in: string; out: Result<BookHtml> };
+  /** Segment của một chương — nguồn để highlight và seek */
+  'reader:listSegments': { in: string; out: Result<Segment[]> };
 
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
@@ -188,6 +229,9 @@ export const IPC_CHANNELS = [
   'library:openBook',
   'library:setProgress',
   'library:removeBook',
+  'reader:getBookFile',
+  'reader:getBookHtml',
+  'reader:listSegments',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',

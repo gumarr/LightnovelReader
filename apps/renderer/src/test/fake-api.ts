@@ -6,6 +6,8 @@ import {
   type AppSettings,
   type Book,
   type BookDetail,
+  type BookFileBytes,
+  type BookHtml,
   type Chapter,
   type ChapterPreviewRequest,
   type ImportPreview,
@@ -13,6 +15,7 @@ import {
   type ReadingProgress,
   type Result,
   type SaveBookRequest,
+  type Segment,
   type WindowState,
 } from '@ln/shared';
 
@@ -30,7 +33,27 @@ export type FakeApiOptions = {
   importPreview?: ImportPreview;
   /** Sách trong thư viện. Mặc định rỗng — test nào cần thì truyền vào. */
   library?: LibraryEntry[];
+  /** Segment trả về cho `reader.listSegments` */
+  segments?: Segment[];
+  /** HTML trả về cho `reader.getBookHtml` */
+  bookHtml?: string;
 };
+
+/** HTML DOCX mẫu — đã đánh số khối như main làm */
+const DEFAULT_BOOK_HTML =
+  '<h1 data-block="0">Chương 1</h1><p data-block="1">Nội dung đoạn đầu.</p>';
+
+/** Segment mẫu cho một chương */
+export const fakeSegments = (chapterId: string, count = 3): Segment[] =>
+  Array.from({ length: count }, (_, i) => ({
+    id: `${chapterId}-s${i + 1}`,
+    chapterId,
+    index: i,
+    text: `Câu thứ ${i + 1} của đoạn văn.`,
+    anchor: { kind: 'pdf' as const, page: i + 1, rects: [{ x: 10, y: 20, width: 300, height: 14 }] },
+    status: 'pending' as const,
+    alignStatus: 'none' as const,
+  }));
 
 /** Sách mẫu để test Library grid */
 export const fakeBook = (overrides: Partial<Book> = {}): Book => ({
@@ -161,6 +184,21 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       }),
       setProgress: vi.fn(async (_progress: ReadingProgress) => ok(undefined)),
       removeBook: vi.fn(async (_bookId: string) => ok(undefined)),
+    },
+
+    reader: {
+      getBookFile: vi.fn(
+        async (bookId: string): Promise<Result<BookFileBytes>> =>
+          ok({ bookId, format: 'pdf' as const, bytes: new ArrayBuffer(8) }),
+      ),
+      getBookHtml: vi.fn(
+        async (bookId: string): Promise<Result<BookHtml>> =>
+          ok({ bookId, html: options.bookHtml ?? DEFAULT_BOOK_HTML, blockCount: 2 }),
+      ),
+      listSegments: vi.fn(
+        async (chapterId: string): Promise<Result<Segment[]>> =>
+          ok(options.segments ?? fakeSegments(chapterId)),
+      ),
     },
 
     window: {

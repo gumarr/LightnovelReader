@@ -12,8 +12,8 @@
   }
 
   body {
-    background-color: var(--bg);
-    color: var(--fg);
+    background-color: rgb(var(--bg));
+    color: rgb(var(--fg));
     font-family:
       'Segoe UI', system-ui, -apple-system, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
     /* App desktop: không cho kéo bật như trang web */
@@ -22,7 +22,7 @@
 
   /* Chỉ hiện viền focus khi điều hướng bằng bàn phím */
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid rgb(var(--accent));
     outline-offset: 2px;
   }
 }
@@ -35,5 +35,59 @@
 
   .no-drag {
     -webkit-app-region: no-drag;
+  }
+
+  /*
+   * Kiểu chữ cho HTML của sách DOCX.
+   *
+   * Nội dung đến từ mammoth và đã bị bỏ sạch thuộc tính lúc sanitize, nên mọi
+   * định dạng phải đặt lại ở đây. Nhắm theo thẻ vì không còn class nào.
+   */
+  .ln-docx {
+    line-height: 1.75;
+  }
+
+  .ln-docx p {
+    margin-bottom: 1em;
+    text-align: justify;
+  }
+
+  .ln-docx h1,
+  .ln-docx h2,
+  .ln-docx h3,
+  .ln-docx h4,
+  .ln-docx h5,
+  .ln-docx h6 {
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .ln-docx h1 {
+    font-size: 1.5rem;
+  }
+
+  .ln-docx h2 {
+    font-size: 1.25rem;
+  }
+
+  .ln-docx h3 {
+    font-size: 1.125rem;
+  }
+
+  .ln-docx blockquote {
+    margin: 1em 0;
+    padding-left: 1em;
+    border-left: 3px solid rgb(var(--border));
+    color: rgb(var(--fg-muted));
+  }
+
+  /* Khối chứa segment đang chọn */
+  .ln-active-block {
+    background-color: rgb(var(--accent) / 0.18);
+    border-radius: 0.25rem;
+    /* Nới vùng nền ra ngoài lề chữ mà không đẩy dòng */
+    box-shadow: 0 0 0 0.35rem rgb(var(--accent) / 0.18);
   }
 }

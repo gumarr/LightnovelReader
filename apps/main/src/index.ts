@@ -1,6 +1,7 @@
 import { app, type BrowserWindow } from 'electron';
 import { join } from 'node:path';
 import { appendFileSync, mkdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import Store from 'electron-store';
 import type { AppSettings } from '@ln/shared';
 import { closeDatabase, initDatabase } from './db/connection.js';
@@ -11,6 +12,7 @@ import { registerHandler, clearRegisteredChannels } from './ipc/registry.js';
 import { getAppInfo } from './ipc/handlers/app.js';
 import { createImportHandlers } from './ipc/handlers/import.js';
 import { createLibraryHandlers } from './ipc/handlers/library.js';
+import { createReaderHandlers } from './ipc/handlers/reader.js';
 import { createSettingsHandlers } from './ipc/handlers/settings.js';
 import { createImportSessionStore } from './services/import-session.js';
 import { createLibraryService } from './services/library.js';
@@ -19,7 +21,7 @@ import { createChapterRepository } from './db/repositories/chapters.js';
 import { createSegmentRepository } from './db/repositories/segments.js';
 import { createWindowHandlers, readWindowState } from './ipc/handlers/window.js';
 import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './window.js';
-import { createNodeParserRegistry } from '@ln/parsers/node';
+import { createNodeParserRegistry, nodeDocxConverter } from '@ln/parsers/node';
 
 /**
  * Entry point của Electron main process.
@@ -121,6 +123,15 @@ const start = (): void => {
     logError: (message, detail) => logger.error(message, detail),
   });
 
+  const readerHandlers = createReaderHandlers({
+    books: bookRepo,
+    chapters: chapterRepo,
+    segments: segmentRepo,
+    // `readFile` của fs/promises trả Buffer — handler tự cắt sang ArrayBuffer riêng
+    readFile: (filePath) => readFile(filePath),
+    convertDocx: async (filePath) => (await nodeDocxConverter(filePath)).html,
+  });
+
   registerHandler('app:getInfo', getAppInfo, logger);
   registerHandler('settings:getAll', settingsHandlers.getAll, logger);
   registerHandler('settings:update', settingsHandlers.update, logger);
@@ -135,6 +146,9 @@ const start = (): void => {
   registerHandler('library:openBook', libraryHandlers.openBook, logger);
   registerHandler('library:setProgress', libraryHandlers.setProgress, logger);
   registerHandler('library:removeBook', libraryHandlers.removeBook, logger);
+  registerHandler('reader:getBookFile', readerHandlers.getBookFile, logger);
+  registerHandler('reader:getBookHtml', readerHandlers.getBookHtml, logger);
+  registerHandler('reader:listSegments', readerHandlers.listSegments, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);

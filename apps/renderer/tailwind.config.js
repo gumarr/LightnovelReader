@@ -11,17 +11,19 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
-      // Màu lấy từ CSS variable — component không hardcode hex
+      // Màu lấy từ CSS variable — component không hardcode hex.
+      // Biến lưu kênh RGB rời nên phải bọc `rgb(... / <alpha-value>)`:
+      // đó là cách duy nhất để `bg-accent/30` ra đúng màu mờ 30%.
       colors: {
-        bg: 'var(--bg)',
-        'bg-elevated': 'var(--bg-elevated)',
-        'bg-subtle': 'var(--bg-subtle)',
-        fg: 'var(--fg)',
-        'fg-muted': 'var(--fg-muted)',
-        accent: 'var(--accent)',
-        'accent-fg': 'var(--accent-fg)',
-        border: 'var(--border)',
-        danger: 'var(--danger)',
+        bg: 'rgb(var(--bg) / <alpha-value>)',
+        'bg-elevated': 'rgb(var(--bg-elevated) / <alpha-value>)',
+        'bg-subtle': 'rgb(var(--bg-subtle) / <alpha-value>)',
+        fg: 'rgb(var(--fg) / <alpha-value>)',
+        'fg-muted': 'rgb(var(--fg-muted) / <alpha-value>)',
+        accent: 'rgb(var(--accent) / <alpha-value>)',
+        'accent-fg': 'rgb(var(--accent-fg) / <alpha-value>)',
+        border: 'rgb(var(--border) / <alpha-value>)',
+        danger: 'rgb(var(--danger) / <alpha-value>)',
       },
     },
   },

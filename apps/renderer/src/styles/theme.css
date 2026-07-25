@@ -3,18 +3,27 @@
  * `bg-bg`, `text-fg`, ...), không hardcode hex.
  *
  * Theme áp bằng class `.dark` trên <html> — khớp `darkMode: 'class'`.
+ *
+ * Giá trị lưu dạng **kênh RGB rời** ("79 70 229") chứ không phải hex, để
+ * Tailwind ghép được `<alpha-value>` — tức là `bg-accent/30` mới ra màu.
+ * Trước đây để hex thì mọi lớp có `/opacity` âm thầm cho `rgba(0,0,0,0)`:
+ * không lỗi, không cảnh báo, chỉ là màu biến mất. Phát hiện ở bản đóng gói,
+ * xem PROGRESS mục 4.
+ *
+ * Cần màu thật trong CSS thường (không qua Tailwind) thì bọc `rgb(...)`,
+ * ví dụ `rgb(var(--border))`.
  */
 
 :root {
-  --bg: #ffffff;
-  --bg-elevated: #f7f7f8;
-  --bg-subtle: #eeeef1;
-  --fg: #18181b;
-  --fg-muted: #6b7280;
-  --accent: #4f46e5;
-  --accent-fg: #ffffff;
-  --border: #e4e4e7;
-  --danger: #dc2626;
+  --bg: 255 255 255;
+  --bg-elevated: 247 247 248;
+  --bg-subtle: 238 238 241;
+  --fg: 24 24 27;
+  --fg-muted: 107 114 128;
+  --accent: 79 70 229;
+  --accent-fg: 255 255 255;
+  --border: 228 228 231;
+  --danger: 220 38 38;
 
   /* Highlight phụ đề: từ đã đọc dịu, từ hiện tại nổi, từ chưa đọc nhạt */
   --subtitle-past: #9ca3af;
@@ -25,15 +34,15 @@
 }
 
 .dark {
-  --bg: #0f0f11;
-  --bg-elevated: #17171a;
-  --bg-subtle: #1f1f23;
-  --fg: #f4f4f5;
-  --fg-muted: #a1a1aa;
-  --accent: #818cf8;
-  --accent-fg: #0f0f11;
-  --border: #2a2a30;
-  --danger: #f87171;
+  --bg: 15 15 17;
+  --bg-elevated: 23 23 26;
+  --bg-subtle: 31 31 35;
+  --fg: 244 244 245;
+  --fg-muted: 161 161 170;
+  --accent: 129 140 248;
+  --accent-fg: 15 15 17;
+  --border: 42 42 48;
+  --danger: 248 113 113;
 
   --subtitle-past: #71717a;
   --subtitle-current: #a5b4fc;

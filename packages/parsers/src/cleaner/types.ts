@@ -15,6 +15,11 @@ export type TextLine = {
   y: number;
   width: number;
   height: number;
+  /**
+   * Cỡ chữ lớn nhất trong dòng (point). Optional vì cleaner không cần tới —
+   * chỉ chapter detector dùng để so với cỡ chữ thân bài.
+   */
+  fontSize?: number;
 };
 
 export type Page = {

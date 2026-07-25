@@ -22,3 +22,32 @@ export {
   type ColumnLayout,
   type ColumnOptions,
 } from './cleaner/columns.js';
+
+export type {
+  DetectSource,
+  DetectedChapter,
+  OutlineEntry,
+  ScoredCandidate,
+  SignalScores,
+  TitleCandidate,
+} from './chapter-detector/types.js';
+export {
+  detectChapters,
+  fallbackByPage,
+  scoreCandidates,
+  type DetectOptions,
+  type SignalWeights,
+} from './chapter-detector/detector.js';
+export { bodyFontSize, scoreFontSize } from './chapter-detector/signals/font-size.js';
+export {
+  normalizeOutline,
+  scoreOutline,
+  isUsableEntry,
+} from './chapter-detector/signals/outline.js';
+export { scorePattern } from './chapter-detector/signals/pattern.js';
+export { scorePosition, scoreSparsePage } from './chapter-detector/signals/position.js';
+export {
+  isTableOfContents,
+  looksLikeTocEntry,
+  type TocOptions,
+} from './chapter-detector/signals/toc.js';

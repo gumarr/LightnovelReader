@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-25 · commit `<đang chờ>`
+> **Cập nhật lần cuối:** 2026-07-25 · commit `161bf65`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).

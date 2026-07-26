@@ -10,8 +10,13 @@ import {
   type BookHtml,
   type Chapter,
   type ChapterPreviewRequest,
+  type EnqueueChapterRequest,
+  type EnqueueResult,
+  type GenerateEstimateInfo,
   type ImportPreview,
+  type Job,
   type LibraryEntry,
+  type QueueStatusInfo,
   type ReadingProgress,
   type Result,
   type InstalledVoice,
@@ -45,6 +50,10 @@ export type FakeApiOptions = {
   sidecarStatus?: SidecarStatus;
   /** Voice trong catalog. Mặc định một VI chưa cài + một EN đã cài */
   voices?: VoiceCatalogItem[];
+  /** Trạng thái hàng đợi generate. Mặc định rỗng và rỗi */
+  queueStatus?: Partial<QueueStatusInfo>;
+  /** Ước lượng trả về cho `queue:estimate*`. Mặc định một chương nhỏ */
+  estimate?: Partial<GenerateEstimateInfo>;
 };
 
 /** Voice mẫu cho test voice manager */
@@ -150,6 +159,29 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
     restarts: 0,
     port: 54757,
     engineReady: false,
+  };
+
+  const queueStatusListeners = new Set<(s: QueueStatusInfo) => void>();
+  const segmentUpdateListeners = new Set<(s: Segment) => void>();
+
+  let queueStatus: QueueStatusInfo = {
+    state: 'idle',
+    queued: 0,
+    running: 0,
+    done: 0,
+    error: 0,
+    cancelled: 0,
+    ...options.queueStatus,
+  };
+
+  const estimate: GenerateEstimateInfo = {
+    segmentCount: 3,
+    totalChars: 150,
+    audioDurationMs: 10_000,
+    audioBytes: 30_000,
+    processingMs: 1_500,
+    existingBytes: 0,
+    ...options.estimate,
   };
 
   const catalogVoices: VoiceCatalogItem[] = options.voices ?? [
@@ -276,6 +308,57 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       }),
     },
 
+    queue: {
+      enqueueSegments: vi.fn(
+        async (request: { segmentIds: string[] }): Promise<Result<EnqueueResult>> =>
+          ok({ added: request.segmentIds.length }),
+      ),
+      enqueueChapter: vi.fn(
+        async (_request: EnqueueChapterRequest): Promise<Result<EnqueueResult>> => ok({ added: 3 }),
+      ),
+      enqueueBook: vi.fn(
+        async (_bookId: string): Promise<Result<EnqueueResult>> => ok({ added: 10 }),
+      ),
+      estimateChapter: vi.fn(
+        async (_chapterId: string): Promise<Result<GenerateEstimateInfo>> => ok(estimate),
+      ),
+      estimateBook: vi.fn(
+        async (_bookId: string): Promise<Result<GenerateEstimateInfo>> => ok(estimate),
+      ),
+      getStatus: vi.fn(async (): Promise<Result<QueueStatusInfo>> => ok(queueStatus)),
+      listPending: vi.fn(async (): Promise<Result<Job[]>> => ok([])),
+      pause: vi.fn(async (): Promise<Result<QueueStatusInfo>> => {
+        queueStatus = { ...queueStatus, state: 'paused' };
+        return ok(queueStatus);
+      }),
+      resume: vi.fn(async (): Promise<Result<QueueStatusInfo>> => {
+        queueStatus = { ...queueStatus, state: 'running' };
+        return ok(queueStatus);
+      }),
+      cancelJob: vi.fn(async (_jobId: string): Promise<Result<void>> => ok(undefined)),
+      cancelBook: vi.fn(
+        async (_bookId: string): Promise<Result<EnqueueResult>> => ok({ added: 2 }),
+      ),
+      cancelAll: vi.fn(async (): Promise<Result<EnqueueResult>> => {
+        queueStatus = {
+          ...queueStatus,
+          state: 'idle',
+          cancelled: queueStatus.cancelled + queueStatus.queued + queueStatus.running,
+          queued: 0,
+          running: 0,
+        };
+        return ok({ added: 2 });
+      }),
+      onStatusChanged: vi.fn((listener: (s: QueueStatusInfo) => void) => {
+        queueStatusListeners.add(listener);
+        return () => queueStatusListeners.delete(listener);
+      }),
+      onSegmentUpdated: vi.fn((listener: (s: Segment) => void) => {
+        segmentUpdateListeners.add(listener);
+        return () => segmentUpdateListeners.delete(listener);
+      }),
+    },
+
     window: {
       minimize: vi.fn(async () => ok(undefined)),
       toggleMaximize: vi.fn(async () => {
@@ -319,6 +402,18 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       const voice = catalogVoices.find((v) => v.id === voiceId);
       if (voice !== undefined) voice.installed = installed;
     },
+
+    /** Mô phỏng main đẩy event queue:statusChanged */
+    emitQueueStatus: (next: QueueStatusInfo) => {
+      queueStatus = next;
+      for (const l of queueStatusListeners) l(next);
+    },
+    /** Mô phỏng main đẩy event queue:segmentUpdated */
+    emitSegmentUpdated: (segment: Segment) => {
+      for (const l of segmentUpdateListeners) l(segment);
+    },
+    queueStatusListenerCount: () => queueStatusListeners.size,
+    segmentUpdateListenerCount: () => segmentUpdateListeners.size,
   };
 };
 

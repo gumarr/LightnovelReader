@@ -88,3 +88,51 @@ describe('chọn segment', () => {
     expect(onSelect).toHaveBeenCalledWith('s2');
   });
 });
+
+describe('trạng thái audio (P2.6)', () => {
+  const withStatus = (statuses: readonly Segment['status'][]): Segment[] =>
+    segments(statuses.length).map((s, i) => ({ ...s, status: statuses[i]! }));
+
+  it('segment chưa generate KHÔNG có dấu — đó là mặc định của gần như mọi segment', () => {
+    render(
+      <SegmentList segments={withStatus(['pending'])} activeSegmentId={null} onSelect={vi.fn()} />,
+    );
+
+    expect(screen.queryByTestId('segment-status-dot')).not.toBeInTheDocument();
+  });
+
+  it('segment đã có audio hiện dấu kèm nhãn đọc được', () => {
+    render(
+      <SegmentList segments={withStatus(['ready'])} activeSegmentId={null} onSelect={vi.fn()} />,
+    );
+
+    expect(screen.getByTestId('segment-status-dot')).toHaveAttribute('aria-label', 'Đã có audio');
+  });
+
+  it('phân biệt được bốn trạng thái có dấu', () => {
+    render(
+      <SegmentList
+        segments={withStatus(['ready', 'generating', 'queued', 'error'])}
+        activeSegmentId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByTestId('segment-status-dot')).toHaveLength(4);
+    expect(rows().map((r) => r.dataset['status'])).toEqual([
+      'ready',
+      'generating',
+      'queued',
+      'error',
+    ]);
+  });
+
+  it('màu lấy từ CSS variable, không hardcode hex', () => {
+    // Xem PROGRESS 4.23 — hardcode màu là lỗi đã gặp một lần ở P1.6b
+    render(
+      <SegmentList segments={withStatus(['error'])} activeSegmentId={null} onSelect={vi.fn()} />,
+    );
+
+    expect(screen.getByTestId('segment-status-dot').getAttribute('style')).toContain('var(--danger)');
+  });
+});

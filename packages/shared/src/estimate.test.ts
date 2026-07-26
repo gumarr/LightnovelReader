@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateGenerate, formatBytes, formatDuration } from './estimate.js';
+import { estimateFromTotals, estimateGenerate, formatBytes, formatDuration } from './estimate.js';
 import { CHARS_PER_SECOND_ESTIMATE, bytesPerSecondAt } from './constants.js';
 
 describe('estimateGenerate', () => {
@@ -84,5 +84,38 @@ describe('formatDuration', () => {
   it('xử lý giá trị không hợp lệ mà không throw', () => {
     expect(formatDuration(-100)).toBe('0:00');
     expect(formatDuration(Number.NaN)).toBe('0:00');
+  });
+});
+
+describe('estimateFromTotals', () => {
+  it('cho kết quả GIỐNG HỆT estimateGenerate với cùng dữ liệu', () => {
+    // Hai đường tính phải không bao giờ lệch: main đếm ký tự bằng SQL, renderer
+    // đếm từ mảng text. Lệch công thức là hộp ước lượng nói khác thực tế.
+    const texts = ['Câu một.', 'Câu hai dài hơn một chút.', 'Ba.'];
+    const totalChars = texts.reduce((sum, t) => sum + t.length, 0);
+
+    expect(estimateFromTotals(texts.length, totalChars, 24)).toEqual(
+      estimateGenerate(texts, 24),
+    );
+  });
+
+  it('không có gì để generate thì mọi số là 0', () => {
+    expect(estimateFromTotals(0, 0, 24)).toEqual({
+      totalChars: 0,
+      segmentCount: 0,
+      audioDurationMs: 0,
+      audioBytes: 0,
+      processingMs: 0,
+    });
+  });
+
+  it('bitrate cao gấp đôi thì dung lượng gấp đôi', () => {
+    const low = estimateFromTotals(10, 1500, 16);
+    const high = estimateFromTotals(10, 1500, 32);
+
+    expect(high.audioBytes).toBe(low.audioBytes * 2);
+    // Nhưng thời lượng và thời gian xử lý không đổi theo bitrate
+    expect(high.audioDurationMs).toBe(low.audioDurationMs);
+    expect(high.processingMs).toBe(low.processingMs);
   });
 });

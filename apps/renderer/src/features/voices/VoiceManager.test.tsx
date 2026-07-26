@@ -1,8 +1,9 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { installFakeApi, type FakeApi } from '@/test/fake-api';
+import { fakeVoice, installFakeApi, type FakeApi } from '@/test/fake-api';
 import { useVoiceStore } from '@/stores/voice-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { VoiceManager } from './VoiceManager';
 
 /**
@@ -23,6 +24,10 @@ const renderManager = async (options: Parameters<typeof installFakeApi>[0] = {})
     error: null,
     sidecar: null,
   });
+
+  // Từ P2.6 màn này đọc `AppSettings.voiceVi/voiceEn` để biết giọng nào đang dùng
+  useSettingsStore.setState({ settings: null, error: null, loading: false });
+  await useSettingsStore.getState().load();
 
   const onBack = vi.fn();
   await act(async () => {
@@ -260,5 +265,121 @@ describe('điều hướng', () => {
 
     await user.click(screen.getByRole('button', { name: /Quay lại/ }));
     expect(onBack).toHaveBeenCalled();
+  });
+});
+
+describe('chọn giọng đọc (P2.6)', () => {
+  it('voice đã cài có nút "Dùng giọng này"', async () => {
+    await renderManager();
+
+    await waitFor(() => expect(screen.getAllByTestId('voice-row')).toHaveLength(2));
+    // Trong catalog mẫu chỉ voice EN đã cài
+    expect(screen.getAllByTestId('voice-select')).toHaveLength(1);
+  });
+
+  it('voice CHƯA cài thì không cho chọn', async () => {
+    // Chọn voice chưa tải sẽ ghi vào settings một id mà hàng đợi không nạp được
+    await renderManager({ voices: [fakeVoice({ installed: false })] });
+
+    await waitFor(() => expect(screen.getAllByTestId('voice-row')).toHaveLength(1));
+    expect(screen.queryByTestId('voice-select')).not.toBeInTheDocument();
+  });
+
+  it('bấm chọn thì ghi vào settings theo NGÔN NGỮ của voice', async () => {
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+
+    await waitFor(() => expect(screen.getByTestId('voice-select')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('voice-select'));
+
+    await waitFor(() => {
+      expect(fake.api.settings.update).toHaveBeenCalledWith({
+        voiceVi: 'vi_VN-vais1000-medium',
+      });
+    });
+  });
+
+  it('voice EN ghi vào voiceEn, không đè lên voiceVi', async () => {
+    // Một `voiceId` dùng chung sẽ khiến sách EN bị đọc bằng giọng Việt
+    await renderManager({
+      voices: [fakeVoice({ id: 'en_US-lessac-medium', lang: 'en', installed: true })],
+    });
+
+    await waitFor(() => expect(screen.getByTestId('voice-select')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('voice-select'));
+
+    await waitFor(() => {
+      expect(fake.api.settings.update).toHaveBeenCalledWith({ voiceEn: 'en_US-lessac-medium' });
+    });
+  });
+
+  it('giọng đang dùng hiện nhãn thay cho nút', async () => {
+    await renderManager({
+      voices: [fakeVoice({ installed: true })],
+      settings: { voiceVi: 'vi_VN-vais1000-medium' },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('voice-selected')).toBeInTheDocument());
+    expect(screen.queryByTestId('voice-select')).not.toBeInTheDocument();
+    expect(screen.getByTestId('voice-row').dataset['selected']).toBe('true');
+  });
+
+  it('nhắc khi đã cài mà chưa chọn — cái bẫy hàng đợi dừng ngay', async () => {
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('voice-unselected-hint')).toBeInTheDocument();
+    });
+  });
+
+  it('đã chọn rồi thì không nhắc nữa', async () => {
+    await renderManager({
+      voices: [fakeVoice({ installed: true })],
+      settings: { voiceVi: 'vi_VN-vais1000-medium' },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('voice-selected')).toBeInTheDocument());
+    expect(screen.queryByTestId('voice-unselected-hint')).not.toBeInTheDocument();
+  });
+
+  it('chưa cài voice nào thì không nhắc chọn', async () => {
+    await renderManager({ voices: [fakeVoice({ installed: false })] });
+
+    await waitFor(() => expect(screen.getAllByTestId('voice-row')).toHaveLength(1));
+    expect(screen.queryByTestId('voice-unselected-hint')).not.toBeInTheDocument();
+  });
+
+  it('xoá giọng ĐANG dùng thì bỏ chọn luôn', async () => {
+    // Để nguyên thì settings trỏ tới model không còn trên đĩa, và lỗi chỉ lộ ra
+    // tới lúc generate
+    await renderManager({
+      voices: [fakeVoice({ installed: true })],
+      settings: { voiceVi: 'vi_VN-vais1000-medium' },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('voice-selected')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Xoá' }));
+
+    await waitFor(() => {
+      expect(fake.api.settings.update).toHaveBeenCalledWith({ voiceVi: '' });
+    });
+    expect(fake.api.voices.remove).toHaveBeenCalledWith('vi_VN-vais1000-medium');
+  });
+
+  it('xoá giọng KHÔNG dùng thì không đụng vào settings', async () => {
+    await renderManager({
+      voices: [
+        fakeVoice({ installed: true }),
+        fakeVoice({ id: 'vi_VN-other-medium', name: 'Khác', installed: true }),
+      ],
+      settings: { voiceVi: 'vi_VN-other-medium' },
+    });
+
+    await waitFor(() => expect(screen.getAllByTestId('voice-row')).toHaveLength(2));
+    const rows = screen.getAllByTestId('voice-row');
+    const notSelected = rows.find((r) => r.dataset['selected'] === 'false');
+    await userEvent.click(within(notSelected!).getByRole('button', { name: 'Xoá' }));
+
+    expect(fake.api.settings.update).not.toHaveBeenCalled();
+    expect(fake.api.voices.remove).toHaveBeenCalledWith('vi_VN-vais1000-medium');
   });
 });

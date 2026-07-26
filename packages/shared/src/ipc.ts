@@ -211,6 +211,23 @@ export type EnqueueResult = {
   added: number;
 };
 
+/**
+ * Ước lượng trước khi generate — CLAUDE.md **bắt buộc** hiện cái này trước khi
+ * chạy "generate cả sách".
+ *
+ * Chỉ đếm segment **chưa có audio**: hiện tổng cả sách khi 9/10 chương đã xong
+ * sẽ báo một con số mà user không phải chờ.
+ */
+export type GenerateEstimateInfo = {
+  segmentCount: number;
+  totalChars: number;
+  audioDurationMs: number;
+  audioBytes: number;
+  processingMs: number;
+  /** Dung lượng audio đã sinh rồi — để UI nói rõ "thêm bao nhiêu nữa" */
+  existingBytes: number;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -268,6 +285,11 @@ export type IpcContract = {
   'queue:enqueueSegments': { in: EnqueueSegmentsRequest; out: Result<EnqueueResult> };
   /** Xếp cả chương — main tự tra segment chưa có audio */
   'queue:enqueueChapter': { in: EnqueueChapterRequest; out: Result<EnqueueResult> };
+  /** Xếp cả sách. UI **phải** hiện `queue:estimateBook` trước khi gọi kênh này */
+  'queue:enqueueBook': { in: string; out: Result<EnqueueResult> };
+  /** Ước lượng thời lượng/dung lượng của phần chưa generate */
+  'queue:estimateChapter': { in: string; out: Result<GenerateEstimateInfo> };
+  'queue:estimateBook': { in: string; out: Result<GenerateEstimateInfo> };
   'queue:getStatus': { in: void; out: Result<QueueStatusInfo> };
   /** Job đang chờ/chạy, ưu tiên cao trước. Dùng khi user mở bảng hàng đợi */
   'queue:listPending': { in: void; out: Result<Job[]> };
@@ -354,6 +376,9 @@ export const IPC_CHANNELS = [
   'voices:remove',
   'queue:enqueueSegments',
   'queue:enqueueChapter',
+  'queue:enqueueBook',
+  'queue:estimateChapter',
+  'queue:estimateBook',
   'queue:getStatus',
   'queue:listPending',
   'queue:pause',

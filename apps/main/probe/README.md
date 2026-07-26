@@ -41,6 +41,20 @@ tự bỏ qua chứ không hỏng.
 | Bitrate 16 vs 32 | Tham số từ `AppSettings` đi tới tận libsndfile, không bị bỏ quên giữa đường |
 | Khôi phục job mồ côi | Job kẹt `running` sau khi app bị kill chạy lại và xong thật |
 | Huỷ giữa chừng | Cắt được request đang bay; **không** segment nào kẹt ở `generating`/`queued` |
+| Estimate vs reality (P2.6) | The estimate shown to the user before "generate whole book" is checked against bytes actually written. Unit tests stub both the char count and the bitrate, so they only prove the multiplication — they cannot tell whether `CHARS_PER_SECOND_ESTIMATE` and `SYNTHESIS_RTF_ESTIMATE` describe real Piper output at all |
+| `enqueueBook` skips finished work (P2.6) | Generates one segment, then queues the whole book: only the remaining segments get jobs, and `chapters.audio_bytes` still matches the sum on disk |
+
+Measured on 3 real Vietnamese segments at 24 kbps (2026-07-26):
+
+| | Estimated | Real | Off by |
+|---|---|---|---|
+| Audio bytes | 33 600 B | 28 498 B | −15% |
+| Audio duration | 11 200 ms | 8 533 ms | −24% |
+| Processing time | 1 680 ms | 2 045 ms | +22% |
+
+Real RTF was **0.24** including model load, against the `SYNTHESIS_RTF_ESTIMATE = 0.15`
+constant. All three are close enough that the constants stay as they are — the
+estimate is a forecast, not a measurement, and the dialog says so.
 
 ## Vì sao phải có
 

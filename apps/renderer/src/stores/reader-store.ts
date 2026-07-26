@@ -27,13 +27,21 @@ export type ReaderState = {
   loadBook: (bookId: string, format: 'pdf' | 'docx' | 'epub') => Promise<void>;
   loadChapter: (chapterId: string) => Promise<void>;
   setActiveSegment: (segmentId: string) => void;
+  /**
+   * Thay một segment vừa đổi trạng thái (hàng đợi generate xong).
+   *
+   * Chỉ thay tại chỗ, **không** tải lại cả danh sách: một chương có tới 1353
+   * segment, mà generate cả sách thì mỗi vài giây lại xong một cái.
+   * Segment thuộc chương khác bị bỏ qua.
+   */
+  applySegmentUpdate: (segment: Segment) => void;
   reset: () => void;
 };
 
 /** State ban đầu, dùng lại cho `reset()`. Hàm để mỗi lần gọi là một mảng mới. */
 const emptyState = (): Omit<
   ReaderState,
-  'loadBook' | 'loadChapter' | 'setActiveSegment' | 'reset'
+  'loadBook' | 'loadChapter' | 'setActiveSegment' | 'applySegmentUpdate' | 'reset'
 > => ({
   pdfBytes: null,
   html: null,
@@ -97,6 +105,18 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   setActiveSegment: (segmentId) => set({ activeSegmentId: segmentId }),
+
+  applySegmentUpdate: (segment) => {
+    const { segments } = get();
+    const index = segments.findIndex((s) => s.id === segment.id);
+    // Segment của chương khác (generate cả sách chạy nền) — không chen vào
+    // danh sách đang mở.
+    if (index === -1) return;
+
+    const next = [...segments];
+    next[index] = segment;
+    set({ segments: next });
+  },
 
   reset: () => set(emptyState()),
 }));

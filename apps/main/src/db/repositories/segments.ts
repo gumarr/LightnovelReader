@@ -50,6 +50,20 @@ const toSegment = (row: SegmentRow): Segment => ({
   ...(row.error_message === null ? {} : { errorMessage: row.error_message }),
 });
 
+/**
+ * Số liệu để ước lượng trước khi generate.
+ *
+ * Trả **tổng số ký tự** chứ không phải danh sách text: một vol cho ~4800 segment,
+ * kéo hết text lên chỉ để cộng độ dài là vài MB đi qua IPC cho một con số.
+ * `estimateGenerate` bên `shared` nhận mảng text, nên phần cộng làm ngay trong
+ * SQL rồi mới đưa vào công thức.
+ */
+export type PendingStats = {
+  /** Số segment CHƯA có audio — đúng những segment sẽ được xếp vào hàng đợi */
+  segmentCount: number;
+  totalChars: number;
+};
+
 /** Kết quả một lượt generate, ghi lại sau khi sidecar trả về */
 export type SegmentAudioResult = {
   audioPath: string;
@@ -86,6 +100,11 @@ export type SegmentRepository = {
   findBookId(segmentId: string): string | undefined;
   /** Segment chưa có audio của một chương, theo thứ tự đọc — nguồn để enqueue */
   listPendingByChapter(chapterId: string): Segment[];
+  /** Segment chưa có audio của cả sách, theo thứ tự chương rồi thứ tự đọc */
+  listPendingByBook(bookId: string): Segment[];
+  /** Số liệu ước lượng cho một chương — chỉ tính segment chưa có audio */
+  pendingStatsByChapter(chapterId: string): PendingStats;
+  pendingStatsByBook(bookId: string): PendingStats;
 };
 
 export const createSegmentRepository = (db: Database): SegmentRepository => {
@@ -154,6 +173,29 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
     SELECT * FROM segments
     WHERE chapter_id = ? AND status != 'ready'
     ORDER BY idx
+  `);
+
+  // Thứ tự chương rồi thứ tự đọc: hàng đợi chạy tuần tự nên segment sinh trước
+  // cũng là segment user gặp trước — generate cả sách thì chương 1 nghe được
+  // ngay trong khi chương cuối còn đang chờ.
+  const pendingByBook = db.prepare(`
+    SELECT s.* FROM segments s
+    JOIN chapters c ON c.id = s.chapter_id
+    WHERE c.book_id = ? AND s.status != 'ready'
+    ORDER BY c.idx, s.idx
+  `);
+
+  const statsByChapter = db.prepare(`
+    SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(text)), 0) AS chars
+    FROM segments
+    WHERE chapter_id = ? AND status != 'ready'
+  `);
+
+  const statsByBook = db.prepare(`
+    SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(s.text)), 0) AS chars
+    FROM segments s
+    JOIN chapters c ON c.id = s.chapter_id
+    WHERE c.book_id = ? AND s.status != 'ready'
   `);
 
   /**
@@ -239,6 +281,20 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
 
     listPendingByChapter(chapterId) {
       return (pendingByChapter.all(chapterId) as SegmentRow[]).map(toSegment);
+    },
+
+    listPendingByBook(bookId) {
+      return (pendingByBook.all(bookId) as SegmentRow[]).map(toSegment);
+    },
+
+    pendingStatsByChapter(chapterId) {
+      const row = statsByChapter.get(chapterId) as { n: number; chars: number };
+      return { segmentCount: row.n, totalChars: row.chars };
+    },
+
+    pendingStatsByBook(bookId) {
+      const row = statsByBook.get(bookId) as { n: number; chars: number };
+      return { segmentCount: row.n, totalChars: row.chars };
     },
   };
 };

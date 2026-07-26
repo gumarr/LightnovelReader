@@ -206,6 +206,7 @@ export const voiceCatalogSchema = z.object({
  * hàng đợi vô hạn.
  */
 export const segmentIdSchema = z.string().min(1).max(64);
+export const chapterIdSchema = z.string().min(1).max(64);
 
 export const enqueueSegmentsSchema = z.object({
   segmentIds: z.array(segmentIdSchema).min(1).max(5000),

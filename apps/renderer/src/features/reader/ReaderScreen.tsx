@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { BookDetail } from '@ln/shared';
-import { errorMessage } from '@ln/shared';
+import { errorMessage, PREFETCH_THRESHOLD } from '@ln/shared';
 import { useReaderStore, activeSegmentOf } from '@/stores/reader-store';
 import { useLibraryStore } from '@/stores/library-store';
+import { useQueueStore } from '@/stores/queue-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { GenerateControls } from '@/features/generate/GenerateControls';
+import { nextChapterToPrefetch } from '@/features/generate/format';
 import { loadPdf } from './pdf-document';
 import { PdfViewer } from './PdfViewer';
 import { DocxViewer } from './DocxViewer';
@@ -42,9 +46,20 @@ export const ReaderScreen = ({
   const loadBook = useReaderStore((s) => s.loadBook);
   const loadChapter = useReaderStore((s) => s.loadChapter);
   const setActiveSegment = useReaderStore((s) => s.setActiveSegment);
+  const applySegmentUpdate = useReaderStore((s) => s.applySegmentUpdate);
   const reset = useReaderStore((s) => s.reset);
 
   const saveProgress = useLibraryStore((s) => s.saveProgress);
+
+  const loadQueueStatus = useQueueStore((s) => s.loadStatus);
+  const applyQueueStatus = useQueueStore((s) => s.applyStatus);
+  const prefetchChapter = useQueueStore((s) => s.prefetchChapter);
+
+  // Giọng đọc theo ngôn ngữ sách. Rỗng thì hàng đợi dừng ngay ở job đầu — chặn
+  // nút ngay tại đây thay vì để user chờ rồi mới thấy lỗi (xem PROGRESS 4.36).
+  const voiceReady = useSettingsStore(
+    (s) => ((book.lang === 'vi' ? s.settings?.voiceVi : s.settings?.voiceEn) ?? '') !== '',
+  );
 
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -66,6 +81,38 @@ export const ReaderScreen = ({
   useEffect(() => {
     if (initialChapterId !== undefined) void loadChapter(initialChapterId);
   }, [initialChapterId, loadChapter]);
+
+  // Hàng đợi generate: nạp trạng thái một lần rồi nghe event. Hai nguồn đẩy —
+  // số đếm cho thanh tiến độ, và segment vừa xong để đổi trạng thái trong danh
+  // sách. Cả hai phải huỷ đăng ký khi rời trình đọc, nếu không là rò listener.
+  useEffect(() => {
+    void loadQueueStatus();
+    const offStatus = window.api.queue.onStatusChanged(applyQueueStatus);
+    const offSegment = window.api.queue.onSegmentUpdated(applySegmentUpdate);
+    return () => {
+      offStatus();
+      offSegment();
+    };
+  }, [loadQueueStatus, applyQueueStatus, applySegmentUpdate]);
+
+  // Prefetch chương kế khi đọc tới 80% chương hiện tại. Tiến độ đo bằng segment
+  // đang đọc chứ không bằng cuộn — xem `nextChapterToPrefetch`.
+  const activeIndex = useMemo(
+    () => segments.findIndex((segment) => segment.id === activeSegmentId),
+    [segments, activeSegmentId],
+  );
+  useEffect(() => {
+    if (!voiceReady) return;
+
+    const target = nextChapterToPrefetch(
+      chapters.map((chapter) => chapter.id),
+      chapterId,
+      activeIndex,
+      segments.length,
+      PREFETCH_THRESHOLD,
+    );
+    if (target !== undefined) void prefetchChapter(target);
+  }, [voiceReady, chapters, chapterId, activeIndex, segments.length, prefetchChapter]);
 
   // Dựng tài liệu pdfjs từ bytes. Tách khỏi store vì `PDFDocumentProxy` là đối
   // tượng có vòng đời (phải `destroy`), không phải state thuần.
@@ -178,6 +225,16 @@ export const ReaderScreen = ({
             data-testid="segment-panel"
             className="flex w-72 shrink-0 flex-col border-l border-border bg-bg-elevated"
           >
+            <div className="shrink-0 border-b border-border p-2.5">
+              <GenerateControls
+                bookId={book.id}
+                bookTitle={book.title}
+                {...(chapterId === null ? {} : { chapterId })}
+                {...(currentChapter === undefined ? {} : { chapterTitle: currentChapter.title })}
+                voiceReady={voiceReady}
+              />
+            </div>
+
             <SegmentList
               segments={segments}
               activeSegmentId={activeSegmentId}

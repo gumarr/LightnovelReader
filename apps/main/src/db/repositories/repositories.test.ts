@@ -379,3 +379,151 @@ describe('SegmentRepository — vòng đời generate (P2.5)', () => {
     expect(segments.findBookId('không-có')).toBeUndefined();
   });
 });
+
+describe('SegmentRepository — số liệu ước lượng (P2.6)', () => {
+  beforeEach(() => {
+    books.insert(book());
+    chapters.insertMany([
+      chapter({ id: 'chap-1', index: 0 }),
+      chapter({ id: 'chap-2', index: 1 }),
+    ]);
+  });
+
+  it('đếm ký tự bằng SQL, không kéo text lên', () => {
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0, text: '12345' }),
+      segment({ id: 'seg-2', chapterId: 'chap-1', index: 1, text: '1234567890' }),
+    ]);
+
+    expect(segments.pendingStatsByChapter('chap-1')).toEqual({
+      segmentCount: 2,
+      totalChars: 15,
+    });
+  });
+
+  it('LENGTH đếm KÝ TỰ tiếng Việt, không đếm byte UTF-8', () => {
+    // "Đường" là 5 ký tự nhưng 8 byte UTF-8. Đếm byte thì mọi ước lượng cho
+    // sách tiếng Việt sẽ phồng lên gần gấp đôi.
+    segments.insertMany([segment({ id: 'seg-1', chapterId: 'chap-1', text: 'Đường' })]);
+
+    expect(segments.pendingStatsByChapter('chap-1').totalChars).toBe(5);
+  });
+
+  it('segment đã `ready` KHÔNG tính vào phần phải generate', () => {
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0, text: 'chưa xong' }),
+      segment({ id: 'seg-2', chapterId: 'chap-1', index: 1, text: 'đã xong rồi' }),
+    ]);
+    segments.markReady('seg-2', {
+      audioPath: 'D:/audio/book-1/seg-2.ogg',
+      durationMs: 1000,
+      audioBytes: 4096,
+      alignStatus: 'estimated',
+    });
+
+    expect(segments.pendingStatsByChapter('chap-1')).toEqual({
+      segmentCount: 1,
+      totalChars: 'chưa xong'.length,
+    });
+  });
+
+  it('thống kê cả sách gộp mọi chương', () => {
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0, text: '12345' }),
+      segment({ id: 'seg-2', chapterId: 'chap-2', index: 0, text: '12345' }),
+    ]);
+
+    expect(segments.pendingStatsByBook('book-1')).toEqual({
+      segmentCount: 2,
+      totalChars: 10,
+    });
+  });
+
+  it('sách khác không lẫn vào thống kê', () => {
+    books.insert(book({ id: 'book-2', fileHash: 'hash-2' }));
+    chapters.insertMany([chapter({ id: 'chap-x', bookId: 'book-2' })]);
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', text: '12345' }),
+      segment({ id: 'seg-9', chapterId: 'chap-x', text: '123456789' }),
+    ]);
+
+    expect(segments.pendingStatsByBook('book-1').totalChars).toBe(5);
+  });
+
+  it('sách rỗng trả 0 chứ không phải NULL', () => {
+    // COALESCE: SUM trên tập rỗng cho NULL, mà NULL đi tới UI thành "NaN B".
+    expect(segments.pendingStatsByBook('book-1')).toEqual({ segmentCount: 0, totalChars: 0 });
+  });
+
+  it('listPendingByBook theo thứ tự chương rồi thứ tự đọc', () => {
+    // Chèn ngược để chứng minh ORDER BY thật sự sắp lại, không ăn may thứ tự chèn
+    segments.insertMany([
+      segment({ id: 'seg-c2-1', chapterId: 'chap-2', index: 1 }),
+      segment({ id: 'seg-c2-0', chapterId: 'chap-2', index: 0 }),
+      segment({ id: 'seg-c1-1', chapterId: 'chap-1', index: 1 }),
+      segment({ id: 'seg-c1-0', chapterId: 'chap-1', index: 0 }),
+    ]);
+
+    expect(segments.listPendingByBook('book-1').map((s) => s.id)).toEqual([
+      'seg-c1-0',
+      'seg-c1-1',
+      'seg-c2-0',
+      'seg-c2-1',
+    ]);
+  });
+
+  it('listPendingByBook bỏ segment đã có audio', () => {
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0 }),
+      segment({ id: 'seg-2', chapterId: 'chap-1', index: 1 }),
+    ]);
+    segments.markReady('seg-1', {
+      audioPath: 'D:/audio/book-1/seg-1.ogg',
+      durationMs: 1000,
+      audioBytes: 4096,
+      alignStatus: 'estimated',
+    });
+
+    expect(segments.listPendingByBook('book-1').map((s) => s.id)).toEqual(['seg-2']);
+  });
+});
+
+describe('ChapterRepository — dung lượng audio cả sách (P2.6)', () => {
+  it('cộng audio_bytes của mọi chương', () => {
+    books.insert(book());
+    chapters.insertMany([
+      chapter({ id: 'chap-1', index: 0 }),
+      chapter({ id: 'chap-2', index: 1 }),
+    ]);
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1' }),
+      segment({ id: 'seg-2', chapterId: 'chap-2' }),
+    ]);
+
+    segments.markReady('seg-1', {
+      audioPath: 'D:/audio/book-1/seg-1.ogg',
+      durationMs: 1000,
+      audioBytes: 4000,
+      alignStatus: 'estimated',
+    });
+    segments.markReady('seg-2', {
+      audioPath: 'D:/audio/book-1/seg-2.ogg',
+      durationMs: 1000,
+      audioBytes: 6000,
+      alignStatus: 'estimated',
+    });
+
+    expect(chapters.audioBytesByBook('book-1')).toBe(10_000);
+  });
+
+  it('sách chưa generate trả 0', () => {
+    books.insert(book());
+    chapters.insertMany([chapter()]);
+
+    expect(chapters.audioBytesByBook('book-1')).toBe(0);
+  });
+
+  it('sách không tồn tại trả 0 chứ không NULL', () => {
+    expect(chapters.audioBytesByBook('book-khong-co')).toBe(0);
+  });
+});

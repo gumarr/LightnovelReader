@@ -33,6 +33,14 @@ export type ChapterRepository = {
   findById(id: string): Chapter | undefined;
   /** Cập nhật số segment sau khi dựng xong — dùng cho UI và storage manager */
   setSegmentCount(id: string, count: number): void;
+  /**
+   * Tổng dung lượng audio đã sinh của cả sách.
+   *
+   * Cộng từ `chapters.audio_bytes` chứ không quét lại `segments`: cột đó đã được
+   * `markReady` tính lại từ segment con trong cùng transaction, nên đây vẫn là
+   * cùng một nguồn sự thật mà không phải đọc hàng nghìn hàng.
+   */
+  audioBytesByBook(bookId: string): number;
 };
 
 export const createChapterRepository = (db: Database): ChapterRepository => {
@@ -67,6 +75,9 @@ export const createChapterRepository = (db: Database): ChapterRepository => {
   const byBook = db.prepare('SELECT * FROM chapters WHERE book_id = ? ORDER BY idx');
   const byId = db.prepare('SELECT * FROM chapters WHERE id = ?');
   const setCount = db.prepare('UPDATE chapters SET segment_count = ? WHERE id = ?');
+  const bytesOfBook = db.prepare(
+    'SELECT COALESCE(SUM(audio_bytes), 0) AS bytes FROM chapters WHERE book_id = ?',
+  );
 
   return {
     insertMany(chapters) {
@@ -85,6 +96,10 @@ export const createChapterRepository = (db: Database): ChapterRepository => {
 
     setSegmentCount(id, count) {
       setCount.run(count, id);
+    },
+
+    audioBytesByBook(bookId) {
+      return (bytesOfBook.get(bookId) as { bytes: number }).bytes;
     },
   };
 };

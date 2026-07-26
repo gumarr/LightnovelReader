@@ -27,6 +27,7 @@ import { createSegmentRepository } from '../src/db/repositories/segments.js';
 import { createJobRepository } from '../src/db/repositories/jobs.js';
 import { createGenerateQueue } from '../src/services/queue.js';
 import { createTimingsStore } from '../src/services/timings-store.js';
+import { createQueueHandlers } from '../src/ipc/handlers/queue.js';
 import { createSidecarSupervisor } from '../src/services/sidecar-supervisor.js';
 import { nodeSpawnSidecar } from '../src/services/sidecar-spawn.js';
 import { VENV_PYTHON_RELATIVE } from '../src/services/sidecar-paths.js';
@@ -61,7 +62,10 @@ type Harness = {
   db: Database.Database;
   queue: ReturnType<typeof createGenerateQueue>;
   segments: ReturnType<typeof createSegmentRepository>;
+  chapters: ReturnType<typeof createChapterRepository>;
   jobs: ReturnType<typeof createJobRepository>;
+  /** Handler thật, dựng như `index.ts` — để kiểm cả đường ước lượng của P2.6 */
+  handlers: ReturnType<typeof createQueueHandlers>;
   supervisor: ReturnType<typeof createSidecarSupervisor>;
   cleanup: () => Promise<void>;
 };
@@ -137,12 +141,22 @@ const setup = async (bitrate: AudioBitrate = 24): Promise<Harness> => {
     logger,
   });
 
+  const handlers = createQueueHandlers({
+    queue,
+    jobs,
+    segments,
+    chapters,
+    getBitrate: () => bitrate,
+  });
+
   return {
     audioDir,
     db,
     queue,
     segments,
+    chapters,
     jobs,
+    handlers,
     supervisor,
     cleanup: async () => {
       await supervisor.stop();
@@ -322,4 +336,113 @@ describe.skipIf(!canRun)('hàng đợi thật + sidecar thật + model thật', 
       await harness.cleanup();
     }
   });
+
+  /**
+   * P2.6: ước lượng phải bám sát số THẬT.
+   *
+   * Unit test của `estimateChapter` giả cả `pendingStats` lẫn bitrate nên chỉ
+   * chứng minh phép nhân đúng — nó không thể biết `CHARS_PER_SECOND_ESTIMATE`
+   * và `bytesPerSecondAt` có mô tả đúng Piper thật hay không. Hộp ước lượng lệch
+   * mười lần thì user tin sai về dung lượng đĩa mà mọi test vẫn xanh.
+   */
+  it('ước lượng bám sát dung lượng thật sau khi generate', async () => {
+    const harness = await setup();
+    try {
+      const before = harness.handlers.estimateChapter('probe-chap');
+      expect(before.ok).toBe(true);
+      if (!before.ok) return;
+
+      // Chưa generate gì: phải đếm đủ mọi segment và chưa có byte nào
+      expect(before.data.segmentCount).toBe(TEXTS.length);
+      expect(before.data.existingBytes).toBe(0);
+
+      const started = Date.now();
+      harness.queue.enqueueSegments({
+        segmentIds: TEXTS.map((_, i) => `probe-seg-${String(i)}`),
+      });
+      harness.queue.start();
+      await waitForIdle(harness, 120_000);
+      const realProcessingMs = Date.now() - started;
+
+      const after = harness.handlers.estimateChapter('probe-chap');
+      expect(after.ok).toBe(true);
+      if (!after.ok) return;
+
+      // Generate xong thì không còn gì để ước lượng nữa
+      expect(after.data.segmentCount).toBe(0);
+      expect(after.data.audioBytes).toBe(0);
+
+      // `existingBytes` phải khớp tổng byte THẬT trên đĩa
+      const realBytes = TEXTS.reduce(
+        (sum, _, i) =>
+          sum + statSync(join(harness.audioDir, 'probe-book', `probe-seg-${String(i)}.ogg`)).size,
+        0,
+      );
+      expect(after.data.existingBytes).toBe(realBytes);
+
+      const ratio = realBytes / before.data.audioBytes;
+      console.log(
+        `  Ước lượng ${String(before.data.audioBytes)} B vs thật ${String(realBytes)} B ` +
+          `(lệch ${(ratio * 100 - 100).toFixed(0)}%)`,
+      );
+      const realDurationMs = harness.segments
+        .listByChapter('probe-chap')
+        .reduce((sum, seg) => sum + (seg.durationMs ?? 0), 0);
+      console.log(
+        `  Thời lượng ước ${String(before.data.audioDurationMs)} ms vs thật ` +
+          `${String(realDurationMs)} ms`,
+      );
+      // `SYNTHESIS_RTF_ESTIMATE` là hằng số đặt từ Phase 0 theo plan.md, chưa ai
+      // đo lại. In cả hai số để biết nó còn hợp lý không (mục 8).
+      console.log(
+        `  Thời gian xử lý ước ${String(before.data.processingMs)} ms vs thật ` +
+          `${String(realProcessingMs)} ms (gồm nạp model) · RTF thật ` +
+          `${(realProcessingMs / realDurationMs).toFixed(2)}`,
+      );
+
+      // Ngưỡng rộng: đây là ước lượng, không phải phép đo. Nhưng lệch quá 4 lần
+      // thì hằng số đã sai bản chất, không còn là sai số.
+      expect(ratio).toBeGreaterThan(0.25);
+      expect(ratio).toBeLessThan(4);
+    } finally {
+      await harness.cleanup();
+    }
+  }, 180_000);
+
+  /**
+   * P2.6: `enqueueBook` phải xếp đúng mọi segment chưa có audio của cả sách,
+   * kể cả khi một phần đã generate rồi — và không tạo job thứ hai cho segment
+   * đã nằm trong hàng đợi.
+   */
+  it('xếp cả sách bỏ qua segment đã có audio', async () => {
+    const harness = await setup();
+    try {
+      // Generate trước một segment
+      harness.queue.enqueueSegments({ segmentIds: ['probe-seg-0'] });
+      harness.queue.start();
+      await waitForIdle(harness, 120_000);
+      expect(harness.segments.findById('probe-seg-0')?.status).toBe('ready');
+
+      const result = harness.handlers.enqueueBook('probe-book');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Chỉ 2 segment còn lại được xếp, không tổng hợp lại cái đã xong
+      expect(result.data.added).toBe(TEXTS.length - 1);
+      console.log(`  Xếp lại cả sách: thêm ${String(result.data.added)} job`);
+
+      await waitForIdle(harness, 120_000);
+
+      const statuses = harness.segments.listByChapter('probe-chap').map((s) => s.status);
+      expect(statuses).toEqual(['ready', 'ready', 'ready']);
+
+      // Chương phải báo `complete` và dung lượng khớp đĩa
+      const chapter = harness.chapters.findById('probe-chap');
+      expect(chapter?.generateStatus).toBe('complete');
+      expect(harness.chapters.audioBytesByBook('probe-book')).toBe(chapter?.audioBytes);
+      console.log(`  Dung lượng cả sách: ${String(chapter?.audioBytes ?? 0)} B`);
+    } finally {
+      await harness.cleanup();
+    }
+  }, 240_000);
 });

@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { BookDetail, Chapter } from '@ln/shared';
-import { installFakeApi, fakeBook, type FakeApi } from '@/test/fake-api';
+import type { AppSettings, BookDetail, Chapter } from '@ln/shared';
+import { JOB_PRIORITY_PREFETCH } from '@ln/shared';
+import { installFakeApi, fakeBook, fakeSegments, type FakeApi } from '@/test/fake-api';
 import { useReaderStore } from '@/stores/reader-store';
+import { useQueueStore } from '@/stores/queue-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { ReaderScreen } from './ReaderScreen';
 
 /**
@@ -58,7 +61,14 @@ const setup = async (
   return { onBack };
 };
 
-beforeEach(() => {
+/** Nạp settings để `voiceReady` đúng — mặc định đã chọn giọng VI */
+const loadSettings = async (settings: Partial<AppSettings> = {}): Promise<void> => {
+  fake = installFakeApi({ settings: { voiceVi: 'vi_VN-vais1000-medium', ...settings } });
+  useSettingsStore.setState({ settings: null, error: null, loading: false });
+  await useSettingsStore.getState().load();
+};
+
+beforeEach(async () => {
   vi.clearAllMocks();
   useReaderStore.setState({
     pdfBytes: null,
@@ -69,7 +79,8 @@ beforeEach(() => {
     loading: false,
     error: null,
   });
-  fake = installFakeApi();
+  useQueueStore.setState({ status: null, error: null, prefetched: [] });
+  await loadSettings();
 });
 
 describe('nạp sách', () => {
@@ -177,5 +188,155 @@ describe('lỗi', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Không tìm thấy file sách.'),
     );
+  });
+});
+
+describe('tạo audio trong trình đọc (P2.6)', () => {
+  it('hiện nút tạo audio cho chương đang mở và cho cả sách', async () => {
+    await setup();
+
+    await waitFor(() => expect(screen.getByTestId('generate-chapter')).toBeInTheDocument());
+    expect(screen.getByTestId('generate-book')).toBeInTheDocument();
+  });
+
+  it('chưa chọn giọng thì chặn nút và nói rõ lý do', async () => {
+    await loadSettings({ voiceVi: '' });
+    await setup();
+
+    await waitFor(() => expect(screen.getByTestId('generate-no-voice')).toBeInTheDocument());
+    expect(screen.getByTestId('generate-chapter')).toBeDisabled();
+  });
+
+  it('sách EN đọc voiceEn, không phải voiceVi', async () => {
+    // Một `voiceId` dùng chung sẽ cho sách EN chạy bằng giọng Việt mà vẫn báo
+    // "generate thành công" — xem PROGRESS 4.36.
+    await loadSettings({ voiceVi: 'vi_VN-vais1000-medium', voiceEn: '' });
+    await setup({ detail: detail({ book: fakeBook({ lang: 'en' }) }) });
+
+    await waitFor(() => expect(screen.getByTestId('generate-no-voice')).toBeInTheDocument());
+  });
+
+  it('nạp trạng thái hàng đợi khi mở trình đọc', async () => {
+    await setup();
+
+    await waitFor(() => expect(fake.api.queue.getStatus).toHaveBeenCalled());
+  });
+
+  it('huỷ đăng ký cả hai listener hàng đợi khi rời trình đọc', async () => {
+    const { unmount } = render(<ReaderScreen detail={detail()} onBack={vi.fn()} />);
+    await waitFor(() => expect(fake.queueStatusListenerCount()).toBe(1));
+    expect(fake.segmentUpdateListenerCount()).toBe(1);
+
+    unmount();
+
+    expect(fake.queueStatusListenerCount()).toBe(0);
+    expect(fake.segmentUpdateListenerCount()).toBe(0);
+  });
+
+  it('segment vừa xong đổi trạng thái trong danh sách, không tải lại cả chương', async () => {
+    await setup();
+    await waitFor(() => expect(useReaderStore.getState().segments).toHaveLength(3));
+
+    const before = fake.api.reader.listSegments.mock.calls.length;
+    const target = useReaderStore.getState().segments[0]!;
+
+    act(() => {
+      fake.emitSegmentUpdated({ ...target, status: 'ready', alignStatus: 'estimated' });
+    });
+
+    await waitFor(() => {
+      expect(useReaderStore.getState().segments[0]?.status).toBe('ready');
+    });
+    // Một chương có tới 1353 segment — tải lại cả danh sách mỗi lần xong một cái
+    // là hàng nghìn lần gửi IPC vô ích.
+    expect(fake.api.reader.listSegments.mock.calls.length).toBe(before);
+  });
+
+  it('segment của chương khác KHÔNG chen vào danh sách đang mở', async () => {
+    await setup();
+    await waitFor(() => expect(useReaderStore.getState().segments).toHaveLength(3));
+
+    act(() => {
+      fake.emitSegmentUpdated({
+        ...fakeSegments('ch-khac', 1)[0]!,
+        status: 'ready',
+      });
+    });
+
+    expect(useReaderStore.getState().segments).toHaveLength(3);
+  });
+});
+
+describe('prefetch chương kế (P2.6)', () => {
+  it('chưa đọc tới 80% thì KHÔNG prefetch', async () => {
+    await setup();
+    await waitFor(() => expect(useReaderStore.getState().segments).toHaveLength(3));
+
+    // Segment 1/3 = 33%
+    act(() => {
+      useReaderStore.getState().setActiveSegment('ch-1-s1');
+    });
+
+    expect(fake.api.queue.enqueueChapter).not.toHaveBeenCalled();
+  });
+
+  it('đọc tới segment cuối thì xếp trước chương kế với priority prefetch', async () => {
+    await setup();
+    await waitFor(() => expect(useReaderStore.getState().segments).toHaveLength(3));
+
+    // Segment 3/3 = 100%
+    act(() => {
+      useReaderStore.getState().setActiveSegment('ch-1-s3');
+    });
+
+    await waitFor(() => {
+      expect(fake.api.queue.enqueueChapter).toHaveBeenCalledWith({
+        chapterId: 'ch-2',
+        priority: JOB_PRIORITY_PREFETCH,
+      });
+    });
+  });
+
+  it('không prefetch khi chưa chọn giọng — mọi job sẽ hỏng như nhau', async () => {
+    await loadSettings({ voiceVi: '' });
+    await setup();
+    await waitFor(() => expect(useReaderStore.getState().segments).toHaveLength(3));
+
+    act(() => {
+      useReaderStore.getState().setActiveSegment('ch-1-s3');
+    });
+
+    expect(fake.api.queue.enqueueChapter).not.toHaveBeenCalled();
+  });
+
+  it('chương cuối sách thì không có gì để prefetch', async () => {
+    await setup({ startChapterId: 'ch-3' });
+    await waitFor(() => expect(useReaderStore.getState().chapterId).toBe('ch-3'));
+
+    act(() => {
+      useReaderStore.getState().setActiveSegment('ch-3-s3');
+    });
+
+    expect(fake.api.queue.enqueueChapter).not.toHaveBeenCalled();
+  });
+
+  it('đọc qua lại quanh mốc 80% chỉ prefetch MỘT lần', async () => {
+    await setup();
+    await waitFor(() => expect(useReaderStore.getState().segments).toHaveLength(3));
+
+    act(() => {
+      useReaderStore.getState().setActiveSegment('ch-1-s3');
+    });
+    await waitFor(() => expect(fake.api.queue.enqueueChapter).toHaveBeenCalledTimes(1));
+
+    // Cuộn lùi rồi tiến lại — mỗi lần đổi segment là một lượt effect
+    act(() => {
+      useReaderStore.getState().setActiveSegment('ch-1-s1');
+    });
+    act(() => {
+      useReaderStore.getState().setActiveSegment('ch-1-s3');
+    });
+
+    expect(fake.api.queue.enqueueChapter).toHaveBeenCalledTimes(1);
   });
 });

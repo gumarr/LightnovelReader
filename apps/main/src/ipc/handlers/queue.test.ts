@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Job, Segment } from '@ln/shared';
+import type { AudioBitrate, Chapter, Job, Segment } from '@ln/shared';
 import { JOB_PRIORITY_URGENT } from '@ln/shared';
 import { createQueueHandlers, toQueueStatusInfo } from './queue.js';
 import type { GenerateQueue, QueueStatus } from '../../services/queue.js';
 import type { JobRepository } from '../../db/repositories/jobs.js';
-import type { SegmentRepository } from '../../db/repositories/segments.js';
+import type { ChapterRepository } from '../../db/repositories/chapters.js';
+import type { PendingStats, SegmentRepository } from '../../db/repositories/segments.js';
 import { InvalidInputError } from '../wrap.js';
 
 /**
@@ -30,11 +31,29 @@ const segment = (id: string): Segment => ({
   alignStatus: 'none',
 });
 
+const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
+  id: 'chap-1',
+  bookId: 'book-1',
+  index: 0,
+  title: 'Chương Một',
+  segmentCount: 3,
+  audioBytes: 0,
+  generateStatus: 'none',
+  ...overrides,
+});
+
 const setup = (
   overrides: {
     queue?: Partial<GenerateQueue>;
     pending?: Segment[];
+    pendingBook?: Segment[];
     jobs?: Job[];
+    chapter?: Chapter | undefined;
+    chapterList?: Chapter[];
+    statsChapter?: PendingStats;
+    statsBook?: PendingStats;
+    bookBytes?: number;
+    bitrate?: AudioBitrate;
   } = {},
 ) => {
   let current = status();
@@ -68,9 +87,28 @@ const setup = (
 
   const segments = {
     listPendingByChapter: vi.fn(() => overrides.pending ?? []),
+    listPendingByBook: vi.fn(() => overrides.pendingBook ?? []),
+    pendingStatsByChapter: vi.fn(
+      () => overrides.statsChapter ?? { segmentCount: 0, totalChars: 0 },
+    ),
+    pendingStatsByBook: vi.fn(() => overrides.statsBook ?? { segmentCount: 0, totalChars: 0 }),
   } as unknown as SegmentRepository;
 
-  return { handlers: createQueueHandlers({ queue, jobs, segments }), queue, jobs, segments };
+  const chapters = {
+    findById: vi.fn(() => ('chapter' in overrides ? overrides.chapter : chapter())),
+    listByBook: vi.fn(() => overrides.chapterList ?? [chapter()]),
+    audioBytesByBook: vi.fn(() => overrides.bookBytes ?? 0),
+  } as unknown as ChapterRepository;
+
+  const handlers = createQueueHandlers({
+    queue,
+    jobs,
+    segments,
+    chapters,
+    getBitrate: () => overrides.bitrate ?? 24,
+  });
+
+  return { handlers, queue, jobs, segments, chapters };
 };
 
 describe('queue:enqueueSegments', () => {
@@ -273,5 +311,140 @@ describe('queue:cancel', () => {
     const { handlers } = setup();
 
     expect(handlers.cancelAll()).toEqual({ ok: true, data: { added: 3 } });
+  });
+});
+
+describe('queue:enqueueBook', () => {
+  it('xếp mọi segment chưa có audio của cả sách', () => {
+    const { handlers, queue } = setup({
+      pendingBook: [segment('seg-1'), segment('seg-2'), segment('seg-3')],
+    });
+
+    const result = handlers.enqueueBook('book-1');
+
+    expect(result).toEqual({ ok: true, data: { added: 3 } });
+    expect(queue.enqueueSegments).toHaveBeenCalledWith({
+      segmentIds: ['seg-1', 'seg-2', 'seg-3'],
+    });
+  });
+
+  it('sách đã generate xong thì không xếp gì', () => {
+    const { handlers, queue } = setup({ pendingBook: [] });
+
+    expect(handlers.enqueueBook('book-1')).toEqual({ ok: true, data: { added: 0 } });
+    expect(queue.enqueueSegments).not.toHaveBeenCalled();
+    // Không có việc thì cũng không đánh thức worker
+    expect(queue.start).not.toHaveBeenCalled();
+  });
+
+  it('tôn trọng việc user đã tạm dừng — không tự chạy lại', () => {
+    const { handlers, queue } = setup({
+      pendingBook: [segment('seg-1')],
+      queue: { getStatus: vi.fn(() => status({ state: 'paused' })) },
+    });
+
+    handlers.enqueueBook('book-1');
+
+    expect(queue.start).not.toHaveBeenCalled();
+  });
+
+  it('bookId sai bị từ chối', () => {
+    const { handlers } = setup();
+
+    expect(() => handlers.enqueueBook('')).toThrow(InvalidInputError);
+    expect(() => handlers.enqueueBook(null)).toThrow(InvalidInputError);
+  });
+});
+
+describe('queue:estimateChapter', () => {
+  it('ước lượng từ số ký tự chưa generate', () => {
+    const { handlers } = setup({
+      statsChapter: { segmentCount: 10, totalChars: 1500 },
+      chapter: chapter({ audioBytes: 4096 }),
+    });
+
+    const result = handlers.estimateChapter('chap-1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 1500 ký tự / 15 ký tự mỗi giây = 100 giây audio
+    expect(result.data.segmentCount).toBe(10);
+    expect(result.data.audioDurationMs).toBe(100_000);
+    // 100 giây × 3000 B/s ở 24 kbps
+    expect(result.data.audioBytes).toBe(300_000);
+    expect(result.data.existingBytes).toBe(4096);
+  });
+
+  it('bitrate đổi thì dung lượng ước lượng đổi theo', () => {
+    const stats = { segmentCount: 1, totalChars: 150 };
+    const low = setup({ statsChapter: stats, bitrate: 16 }).handlers.estimateChapter('chap-1');
+    const high = setup({ statsChapter: stats, bitrate: 32 }).handlers.estimateChapter('chap-1');
+
+    expect(low.ok && high.ok).toBe(true);
+    if (!low.ok || !high.ok) return;
+    expect(high.data.audioBytes).toBe(low.data.audioBytes * 2);
+  });
+
+  it('chương không tồn tại trả NOT_FOUND', () => {
+    const { handlers } = setup({ chapter: undefined });
+
+    const result = handlers.estimateChapter('chap-mat-tich');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('chapterId sai bị từ chối', () => {
+    const { handlers } = setup();
+
+    expect(() => handlers.estimateChapter('')).toThrow(InvalidInputError);
+  });
+});
+
+describe('queue:estimateBook', () => {
+  it('cộng dung lượng đã có từ chương', () => {
+    const { handlers } = setup({
+      statsBook: { segmentCount: 100, totalChars: 15_000 },
+      bookBytes: 1_000_000,
+    });
+
+    const result = handlers.estimateBook('book-1');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.segmentCount).toBe(100);
+    expect(result.data.existingBytes).toBe(1_000_000);
+  });
+
+  it('sách đã generate xong KHÔNG bị coi là không tồn tại', () => {
+    // Đây là chỗ dễ sai: 0 segment chờ và "sách không có" cho cùng con số 0.
+    const { handlers } = setup({
+      statsBook: { segmentCount: 0, totalChars: 0 },
+      chapterList: [chapter({ generateStatus: 'complete' })],
+      bookBytes: 500,
+    });
+
+    const result = handlers.estimateBook('book-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.segmentCount).toBe(0);
+  });
+
+  it('sách không có chương nào trả NOT_FOUND', () => {
+    const { handlers } = setup({
+      statsBook: { segmentCount: 0, totalChars: 0 },
+      chapterList: [],
+    });
+
+    const result = handlers.estimateBook('book-khong-co');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('bookId sai bị từ chối', () => {
+    const { handlers } = setup();
+
+    expect(() => handlers.estimateBook(undefined)).toThrow(InvalidInputError);
   });
 });

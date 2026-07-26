@@ -12,6 +12,28 @@ import { cumulativeOffsets, scrollTopFor, visibleRange } from './windowing';
 /** Chiều cao cố định mỗi dòng. Ảo hoá cần biết trước, nên text bị cắt bằng CSS. */
 const ROW_HEIGHT = 64;
 
+/**
+ * Màu + nhãn cho trạng thái audio của segment.
+ *
+ * Lấy từ CSS variable, không hardcode hex — xem CLAUDE.md mục Renderer. `pending`
+ * trả `undefined`: chưa generate là trạng thái mặc định của gần như mọi segment,
+ * gắn dấu cho tất cả thì dấu không còn nghĩa gì.
+ */
+const statusDot = (status: Segment['status']): { color: string; label: string } | undefined => {
+  switch (status) {
+    case 'ready':
+      return { color: 'rgb(var(--accent))', label: 'Đã có audio' };
+    case 'generating':
+      return { color: 'rgb(var(--accent))', label: 'Đang tạo audio' };
+    case 'queued':
+      return { color: 'rgb(var(--fg-muted))', label: 'Đang chờ trong hàng đợi' };
+    case 'error':
+      return { color: 'rgb(var(--danger))', label: 'Tạo audio lỗi' };
+    default:
+      return undefined;
+  }
+};
+
 export type SegmentListProps = {
   segments: readonly Segment[];
   activeSegmentId: string | null;
@@ -77,6 +99,7 @@ export const SegmentList = ({
         <ul style={{ transform: `translateY(${range.offsetTop}px)` }}>
           {segments.slice(range.start, range.end).map((segment, index) => {
             const isActive = segment.id === activeSegmentId;
+            const dot = statusDot(segment.status);
 
             return (
               <li key={segment.id} style={{ height: ROW_HEIGHT }}>
@@ -84,6 +107,7 @@ export const SegmentList = ({
                   type="button"
                   data-testid="segment-row"
                   data-active={isActive}
+                  data-status={segment.status}
                   onClick={() => onSelect(segment.id)}
                   className={`flex h-full w-full items-start gap-2 border-b border-border px-3 py-2 text-left transition-colors ${
                     isActive ? 'bg-accent/10' : 'hover:bg-bg-subtle'
@@ -93,12 +117,23 @@ export const SegmentList = ({
                     {range.start + index + 1}
                   </span>
                   <span
-                    className={`line-clamp-2 text-sm leading-snug ${
+                    className={`line-clamp-2 flex-1 text-sm leading-snug ${
                       isActive ? 'text-fg' : 'text-fg-muted'
                     }`}
                   >
                     {segment.text}
                   </span>
+                  {dot !== undefined && (
+                    <span
+                      data-testid="segment-status-dot"
+                      title={dot.label}
+                      aria-label={dot.label}
+                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                        segment.status === 'generating' ? 'animate-pulse' : ''
+                      }`}
+                      style={{ backgroundColor: dot.color }}
+                    />
+                  )}
                 </button>
               </li>
             );

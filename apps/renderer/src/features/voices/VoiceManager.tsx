@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
+import type { BookLang } from '@ln/shared';
 import { useVoiceStore } from '@/stores/voice-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { SidecarBadge } from './SidecarBadge';
 import { VoiceRow } from './VoiceRow';
 
@@ -31,6 +33,24 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
   const setSidecar = useVoiceStore((s) => s.setSidecar);
   const clearError = useVoiceStore((s) => s.clearError);
 
+  const settings = useSettingsStore((s) => s.settings);
+  const updateSettings = useSettingsStore((s) => s.update);
+
+  /** Giọng đang chọn cho một ngôn ngữ. Rỗng = chưa chọn. */
+  const selectedFor = (lang: BookLang): string =>
+    (lang === 'vi' ? settings?.voiceVi : settings?.voiceEn) ?? '';
+
+  const selectVoice = (lang: BookLang, voiceId: string): void => {
+    void updateSettings(lang === 'vi' ? { voiceVi: voiceId } : { voiceEn: voiceId });
+  };
+
+  const removeVoice = (lang: BookLang, voiceId: string): void => {
+    // Xoá voice đang chọn thì phải bỏ chọn luôn: để nguyên thì settings trỏ tới
+    // model không còn trên đĩa, và hàng đợi chỉ báo lỗi tới lúc generate.
+    if (selectedFor(lang) === voiceId) selectVoice(lang, '');
+    void remove(voiceId);
+  };
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -49,6 +69,11 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
   // Tải model cần sidecar sống, nhưng **không** cần `engineReady` — engine chỉ
   // nạp ở P2.4, chặn theo nó thì không bao giờ tải được voice nào.
   const canDownload = sidecar?.state === 'ready';
+
+  // Có voice đã cài mà ngôn ngữ của nó chưa chọn giọng nào
+  const hasInstalledUnselected = catalog.some(
+    (voice) => voice.installed && selectedFor(voice.lang) === '',
+  );
 
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
@@ -88,6 +113,18 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
         </div>
       )}
 
+      {/*
+        Cài rồi mà chưa bấm chọn là cái bẫy dễ gặp nhất: hàng đợi dừng ngay với
+        "Chưa cài giọng đọc nào" trong khi màn này hiện rõ "Đã cài". Nhắc đúng ở
+        chỗ sửa được.
+      */}
+      {hasInstalledUnselected && (
+        <p data-testid="voice-unselected-hint" className="text-xs text-fg-muted">
+          Đã cài giọng nhưng chưa chọn dùng. Bấm <strong className="text-fg">Dùng giọng này</strong>{' '}
+          ở giọng bạn muốn, nếu không mọi lượt tạo audio sẽ dừng ngay.
+        </p>
+      )}
+
       {loading && catalog.length === 0 ? (
         <p className="text-sm text-fg-muted">Đang tải danh sách giọng đọc…</p>
       ) : catalog.length === 0 ? (
@@ -103,9 +140,11 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
               voice={voice}
               progress={progress[voice.id]}
               canDownload={canDownload}
+              selected={selectedFor(voice.lang) === voice.id}
               onDownload={() => void download(voice.id)}
               onCancel={() => void cancel(voice.id)}
-              onRemove={() => void remove(voice.id)}
+              onRemove={() => removeVoice(voice.lang, voice.id)}
+              onSelect={() => selectVoice(voice.lang, voice.id)}
             />
           ))}
         </ul>

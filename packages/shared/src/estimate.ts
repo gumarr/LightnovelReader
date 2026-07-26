@@ -26,11 +26,26 @@ export const estimateGenerate = (
   let totalChars = 0;
   for (const text of segmentTexts) totalChars += text.length;
 
+  return estimateFromTotals(segmentTexts.length, totalChars, bitrate);
+};
+
+/**
+ * Cùng công thức nhưng nhận sẵn con số tổng.
+ *
+ * Main đếm ký tự bằng `SUM(LENGTH(text))` ngay trong SQL — một vol có ~4800
+ * segment, kéo hết text ra khỏi DB chỉ để cộng độ dài là vài MB cho một phép
+ * cộng. Giữ chung một chỗ tính để hai đường không lệch công thức.
+ */
+export const estimateFromTotals = (
+  segmentCount: number,
+  totalChars: number,
+  bitrate: AudioBitrate,
+): GenerateEstimate => {
   const audioSeconds = totalChars / CHARS_PER_SECOND_ESTIMATE;
 
   return {
     totalChars,
-    segmentCount: segmentTexts.length,
+    segmentCount,
     audioDurationMs: Math.round(audioSeconds * 1000),
     audioBytes: Math.round(audioSeconds * bytesPerSecondAt(bitrate)),
     processingMs: Math.round(audioSeconds * SYNTHESIS_RTF_ESTIMATE * 1000),

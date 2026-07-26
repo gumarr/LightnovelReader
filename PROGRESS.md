@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-26 · commit `0339c19`
+> **Cập nhật lần cuối:** 2026-07-26 · commit `<P2.6>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -33,8 +33,8 @@ pnpm build:sidecar
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P2.6 — Generate theo chương + prefetch + ước lượng (xem mục 3).
-**Phase 1 xong. P2.1, P2.2, P2.3, P2.4, P2.5 xong.**
+**Việc tiếp theo:** P2.7 — Storage Manager (xem mục 3).
+**Phase 1 xong. P2.1 → P2.6 xong.**
 
 ---
 
@@ -442,13 +442,54 @@ Bảng `jobs` đã có sẵn từ schema v1 nên **không cần migration mới*
 
 Tìm ra **1 lỗi thật mà 1319 unit test không lộ** — xem mục 4.35.
 
+### Phase 2 — P2.6 Generate theo chương + prefetch + ước lượng ✅
+
+Lần đầu renderer bấm được vào hàng đợi. Trước P2.6 cả 9 channel `queue:*` đã
+chạy thật qua probe nhưng **không có nút nào** — đây là phần nối UI vào.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `main/db/repositories/segments.ts` | `pendingStats*` đếm ký tự bằng SQL, `listPendingByBook` | +9 |
+| `main/db/repositories/chapters.ts` | `audioBytesByBook` — dung lượng đã sinh | +3 |
+| `main/ipc/handlers/queue.ts` | `enqueueBook`, `estimateChapter`, `estimateBook` | +12 |
+| `shared/estimate.ts` | `estimateFromTotals` — cùng công thức, nhận số tổng | +3 |
+| `renderer/stores/queue-store.ts` | Status + event, prefetch chống trùng | 27 |
+| `renderer/features/generate/format.ts` | `queuePercent`, nhãn, mốc prefetch (thuần) | 20 |
+| `renderer/features/generate/GenerateEstimateDialog.tsx` | Hộp xác nhận **bắt buộc** trước generate | 11 |
+| `renderer/features/generate/QueueProgress.tsx` | Thanh tiến độ + pause/resume/huỷ | ↑ |
+| `renderer/features/generate/GenerateControls.tsx` | Nút theo chương + cả sách | 15 |
+| `renderer/features/voices/VoiceRow.tsx` | Nút **"Dùng giọng này"** — nợ P2.5 | +10 |
+| `renderer/features/reader/ReaderScreen.tsx` | Nối generate + prefetch 80% + event | +11 |
+| `renderer/features/reader/SegmentList.tsx` | Dấu trạng thái audio từng segment | +4 |
+| `renderer/features/library/BookDetailView.tsx` | Nút cả sách + dung lượng theo chương | +6 |
+
+**Đã chạy thật với sidecar + model 63 MB + SQLite + đĩa thật**
+(`probe/queue-real.test.ts`, 2 kịch bản mới):
+
+| | Kết quả |
+|---|---|
+| Ước lượng dung lượng vs đĩa thật | ✅ 33 600 B ước · **28 498 B thật** (lệch −15%) |
+| Ước lượng thời lượng vs đo thật | ✅ 11 200 ms ước · 8 533 ms thật (−24%) |
+| Ước lượng thời gian xử lý | ✅ 1 680 ms ước · 2 045 ms thật (+22%), **RTF thật 0.24** |
+| `existingBytes` sau khi generate | ✅ khớp tổng byte trên đĩa từng byte |
+| `enqueueBook` bỏ segment đã xong | ✅ 1 segment sẵn có → chỉ thêm 2 job |
+| `chapters.audio_bytes` vs segment con | ✅ khớp, chương lên `complete` |
+
+Ba con số ước lượng đều lệch dưới 25% so với thật → **giữ nguyên hằng số**
+`CHARS_PER_SECOND_ESTIMATE = 15` và `SYNTHESIS_RTF_ESTIMATE = 0.15`. Đây là
+lần đầu chúng được đối chiếu với số đo thật (nợ mục 8 đã trả).
+
+**Chưa chạy trên bản đóng gói.** Toàn bộ phần UI ở đây mới chỉ có unit test +
+probe qua handler thật; chưa mở app thật để xem hộp ước lượng và thanh tiến độ
+ở cả dark lẫn light. Xem mục 8.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1323 passed** (+131 ở P2.5) |
-| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.5 không đụng sidecar) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | 9 kịch bản (+4 ở P2.5) |
+| Unit test TypeScript | **1454 passed** (+131 ở P2.6) |
+| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.6 không đụng sidecar) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | 11 kịch bản (+2 ở P2.6) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
@@ -473,35 +514,37 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 | — | *(kèm P2.3)* Đóng gói sidecar `.exe` + catalog vào installer | ✅ Xong |
 | P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | ✅ Xong |
 | P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | ✅ Xong |
-| P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | ⬅️ **Tiếp theo** |
-| P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | Chưa |
+| P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | ✅ Xong |
+| P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | ⬅️ **Tiếp theo** |
 
 **DoD Phase 2:** Generate chương 1 → có audio, phát được, xem & xoá được dung lượng.
 
-### Ghi chú cho P2.6 (Generate theo chương + prefetch + ước lượng)
+### Ghi chú cho P2.7 (Storage Manager)
 
-Những gì P2.5 để lại sẵn:
+What P2.6 leaves ready:
 
-- **Xếp cả chương chỉ là một lời gọi**: `queue:enqueueChapter` đã tự lọc segment
-  chưa có audio (`listPendingByChapter`) rồi tự `start()`. P2.6 chỉ cần nối nút
-  bấm vào, **không** phải tự dựng danh sách segment.
-- **Prefetch dùng priority, không dùng hàng đợi riêng.** `enqueueSegments` nhận
-  `priority`; đọc tới 80% thì xếp chương kế với `JOB_PRIORITY_PREFETCH`, còn
-  segment sắp phát dùng `JOB_PRIORITY_URGENT`. Enqueue lại một segment đã nằm
-  trong hàng đợi chỉ **nâng** priority chứ không tạo job thứ hai — bấm bao nhiêu
-  lần cũng an toàn.
-- **Ước lượng "cả sách"**: `estimate.ts` bên `shared` đã có `bytesPerSecondAt()`
-  và `CHARS_PER_SECOND_ESTIMATE`. Số đo thật ở P2.5: **3 segment VI ~2.8s
-  audio, mỗi file ~9.3 KB ở 24 kbps**, tổng hợp 1.83s cho cả 3 (~0.22 RTF gồm
-  cả nạp model). `SYNTHESIS_RTF_ESTIMATE = 0.15` vẫn hợp lý.
-- **UI đã có nguồn dữ liệu**: `queue:getStatus` cho số đếm, `queue:statusChanged`
-  đẩy mỗi lần đổi, `queue:segmentUpdated` cho biết segment nào vừa xong. Không
-  cần hỏi vòng.
-- **Chưa có màn hình nào gọi `queue:*`** — toàn bộ 9 channel đã nối tới main và
-  chạy thật, nhưng renderer chưa có nút. Đây là việc chính của P2.6.
-- **Chọn giọng đọc chưa có UI.** `AppSettings.voiceVi`/`voiceEn` mặc định rỗng,
-  mà rỗng thì hàng đợi **dừng** và báo "Chưa cài giọng đọc nào" (xem 4.36). Phải
-  làm màn chọn giọng trong Settings, nếu không P2.6 chạy thử sẽ luôn dừng ngay.
+- **Byte totals are already correct and self-healing.** `chapters.audio_bytes` is
+  recomputed with `SELECT SUM(...)` from its segments inside the same transaction
+  as `markReady` (see 4.35's neighbour in `segments.ts`), and
+  `chapters.audioBytesByBook()` sums those. Verified against real files: the DB
+  figure matched bytes on disk exactly. P2.7 must **not** add a second counter —
+  read these.
+- **Per-scope "pending" queries exist**: `pendingStatsByChapter/ByBook` and
+  `listPendingByChapter/ByBook`. Deleting audio only needs the inverse (segments
+  that *are* `ready`), which is the same query with `status = 'ready'`.
+- **`formatBytes` + `storageWarnBytes` are already wired.** The estimate dialog
+  warns on `existingBytes + audioBytes > storageWarnBytes`; reuse that same
+  comparison so the two screens never disagree.
+- **Deleting audio must reset segment state.** `resetToPending` only moves
+  `queued`/`generating` rows — a `ready` segment whose `.ogg` was deleted needs
+  its own path, or the reader keeps showing a play button for a missing file.
+  This is the same class of bug as 4.35.
+- **Timings live next to the audio.** `timings-store.remove()` is already
+  idempotent; deleting a segment's audio must delete its `{segmentId}.json` too,
+  otherwise orphan JSON accumulates. `bookAudioDir()` gives the directory.
+- **Two debts belong to P2.7** (see section 8): `library:removeBook` leaves the
+  copied source file behind, and there is still no cover-image generation. The
+  first one is explicitly deferred here so one place owns file cleanup.
 
 ### Ghi chú cho Phase 2 (TTS + player)
 
@@ -1366,6 +1409,40 @@ khó hiểu, trong khi rỗng cho ra đúng câu user cần đọc: *"Chưa cài
 Vào màn Giọng đọc để tải."* — và hàng đợi **dừng hẳn** thay vì đốt sạch 3 lượt
 thử của từng job vào cùng một nguyên nhân.
 
+### 4.37 Prefetch progress is measured in segments, not scroll position
+
+`plan.md` says "prefetch the next chapter when reading reaches 80%", which sounds
+like a scroll ratio. It is not implemented that way.
+
+`activeSegmentId` is the position the app already tracks and already persists to
+`book.lastSegmentId`. Using it means one pure function
+(`nextChapterToPrefetch`) works identically for PDF and DOCX, and it is unit
+testable without mounting a viewer. Scroll position would have needed plumbing
+`onScroll` through both viewers, and each measures differently — `PdfViewer` on a
+cumulative-offset virtual list, `DocxViewer` on real DOM blocks.
+
+It is also the more honest signal: scrolling fast to the end of a chapter to look
+at an illustration is not the same as having read it, but selecting a segment is a
+deliberate act.
+
+The count is `(segmentIndex + 1) / segmentCount`. The `+1` matters — without it a
+10-segment chapter never reaches 100%, so its successor is prefetched one segment
+later than intended, and a 1-segment chapter never triggers at all.
+
+### 4.38 Every generate goes through the estimate dialog, chapter included
+
+CLAUDE.md only requires the estimate before "generate whole book". Both buttons go
+through it anyway.
+
+A single LN chapter measured on real files is 300–1350 segments — at ~0.24 RTF
+that is minutes of CPU and tens of MB. There is no meaningful line between "a
+chapter" and "a book" that would justify asking about one and not the other, and a
+user who has seen the numbers once can dismiss the dialog in one click.
+
+The dialog also covers the *nothing to do* case explicitly: when everything is
+already generated it says so and offers only "Đóng", rather than showing a
+"Bắt đầu tạo" button that would queue zero jobs and look broken.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -1499,6 +1576,8 @@ apps/main/src/
   db/migrator.ts           Runner theo PRAGMA user_version
   db/connection.ts         Instance dùng chung, WAL
   db/repositories/         MỌI SQL nằm ở đây — books / chapters / segments / jobs
+                           segments: pendingStats* đếm ký tự bằng SQL, không kéo
+                           text lên (một vol ~4800 segment)
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
   ipc/handlers/            app / settings / window / import / library / sidecar
@@ -1541,6 +1620,12 @@ apps/renderer/src/
   stores/import-store.ts   Bản nháp chương + hoàn tác
   stores/library-store.ts  Danh sách sách + sách đang mở
   stores/voice-store.ts    Catalog + tiến độ tải theo voiceId
+  stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng
+  features/generate/
+    GenerateControls.tsx   Nút tạo audio chương/cả sách (chỗ DUY NHẤT gọi queue:*)
+    GenerateEstimateDialog.tsx  Hộp ước lượng BẮT BUỘC trước khi generate (4.38)
+    QueueProgress.tsx      Thanh tiến độ + tạm dừng/huỷ
+    format.ts              queuePercent, nhãn, mốc prefetch (thuần — 4.37)
   features/voices/
     VoiceManager.tsx       Màn quản lý giọng đọc
     VoiceRow.tsx           Một voice: thông tin + tải/huỷ/xoá + thanh tiến trình
@@ -1631,17 +1716,21 @@ scripts/
 | Nút "Giọng đọc" chỉ có ở màn thư viện | Thấp | Vào đọc sách rồi thì phải quay ra mới tải voice được. Hợp lý cho tới khi có nút generate trong reader (P2.6) |
 | Supervisor chưa có backoff luỹ tiến | Thấp | Chờ cố định `SIDECAR_RESTART_DELAY_MS` (1s) giữa các lần thử. Với trần 3 lượt thì đủ; nếu sau này nới trần thì nên tăng dần để không dội liên tục |
 | ~~**`timings` chưa ghi ra đĩa**~~ | ✅ Xong | `services/timings-store.ts` ghi `{audioDir}/{bookId}/{segmentId}.json` (ghi `.part` rồi rename). **Đã kiểm thật**: 3 segment × 13–14 từ, `durationMs` khớp DB |
-| Chưa có màn hình nào gọi `queue:*` | **TB** | 9 channel đã nối tới main và **chạy thật** qua probe, nhưng renderer chưa có nút generate nào. Việc chính của P2.6 |
-| Chưa có UI chọn giọng đọc | **TB** | `AppSettings.voiceVi`/`voiceEn` đã có và hàng đợi đọc thật, nhưng mặc định rỗng và **không có màn nào để đặt**. Rỗng thì hàng đợi dừng với "Chưa cài giọng đọc nào" — P2.6 chạy thử sẽ luôn dừng ngay nếu chưa làm phần này (xem 4.36) |
+| ~~Chưa có màn hình nào gọi `queue:*`~~ | ✅ Xong | `GenerateControls` gọi 8/12 channel từ trình đọc và màn chi tiết sách. Còn `queue:listPending` và `queue:cancelJob` chưa có UI — xem hàng dưới |
+| ~~Chưa có UI chọn giọng đọc~~ | ✅ Xong | Nút "Dùng giọng này" ở `VoiceRow`, chỉ hiện với voice **đã cài**. Xoá voice đang chọn thì tự bỏ chọn, nên settings không bao giờ trỏ tới model đã mất |
+| P2.6 UI chưa kiểm trên bản đóng gói | **Cao** | Hộp ước lượng, thanh tiến độ, dấu trạng thái segment mới chỉ có unit test (jsdom) + probe qua handler thật. **Chưa mở app thật lần nào** để xem cả dark lẫn light. Đây đúng chỗ đã lộ lỗi 4.22/4.23 trước đây — jsdom không tính CSS nên màu trong suốt vẫn lọt |
+| Không có UI cho bảng hàng đợi | TB | `queue:listPending` (trần 200 job) và `queue:cancelJob` (huỷ **một** job) vẫn chưa ai gọi. Hiện chỉ huỷ được cả sách hoặc tất cả. Đủ dùng cho P2.6 nhưng user không thấy được job nào đang hỏng |
+| Prefetch không huỷ khi rời sách | Thấp | Đọc tới 80% chương 3 rồi đóng sách thì chương 4 vẫn generate xong trong nền. Không sai — audio đó vẫn dùng được sau này — nhưng tốn CPU cho việc user không còn cần. `queue:cancelBook` đã có sẵn nếu muốn đổi |
+| `prefetched` mất khi reload renderer | Thấp | Danh sách chương đã prefetch giữ trong store, không persist. Reload thì prefetch lại chương đó — nhưng `enqueueChapter` tự lọc segment đã `ready` nên chỉ tốn một lượt IPC, không sinh job trùng |
 | ~~Bitrate trong settings chưa ai đọc~~ | ✅ Xong | Hàng đợi truyền `AppSettings.bitrate` xuống mỗi job. **Đo trên file thật**: 16 kbps → 6797 B, 32 kbps → 12574 B cho cùng một câu |
 | Sidecar `.exe` 29 → 145 MB | TB | ONNX Runtime + espeak-ng data (mọi ngôn ngữ, gồm `ru_dict` 9 MB) + numpy. Installer sẽ vượt mốc 200 MB của plan.md. Cắt được: loại bớt `espeak-ng-data/*_dict` không dùng (chỉ cần `vi`, `en`) — nhưng phải chắc piper không nạp động cái nào khác trước khi cắt |
 | Hàng đợi không tự chạy lại sau khi sidecar hồi phục | TB | `index.ts` gọi `queue.resume()` khi sidecar về `ready`, nhưng **chưa kiểm thật** đường này: probe dựng queue riêng chứ không qua `index.ts`. Kiểm khi P2.6 có UI để giết sidecar giữa lúc generate |
 | Retry không có backoff | Thấp | Job hỏng quay lại hàng đợi và có thể được `claimNext` ngay lượt sau — 3 lượt thử cháy hết trong vài chục ms nếu lỗi là tức thời (sidecar từ chối luôn). Đủ dùng vì `markError` vẫn đếm đúng, nhưng lỗi tạm thời (mạng, khoá file) sẽ không kịp qua cơn |
-| `queue:listPending` chưa ai gọi | Thấp | Trần 200 job đã đặt, nhưng bảng hàng đợi ở UI thì P2.6/P2.7 mới dựng |
+| Nút "Giọng đọc" vẫn phải quay ra thư viện | Thấp | Trình đọc đã có nút generate (P2.6) nhưng khi báo "chưa chọn giọng" thì user phải tự quay ra màn thư viện rồi vào Giọng đọc. Nên có đường tắt ngay từ thông báo đó |
 | Job `align` khai trong schema nhưng chưa dùng | Thấp | `JobType` có `'align'` từ schema v1, hàng đợi hiện chỉ tạo job `'synthesize'`. Dành cho CTC forced alignment ở Phase 4 — `findActiveBySegment` đã nhận `type` nên không phải sửa gì thêm lúc đó |
 | Engine chỉ giữ MỘT voice trong RAM | Thấp | Sách VI và EN xen kẽ sẽ nạp lại model mỗi lần đổi (~1.5 s). Giữ hai model là ~400 MB RAM. Chấp nhận được vì generate thường chạy theo cả chương cùng một giọng |
 | Timing chưa kiểm trên giọng EN | TB | Cách gộp phoneme → từ mới đo thật trên `vi_VN-vais1000-medium`. Voice EN chưa tải nên chưa biết espeak tách từ tiếng Anh có khớp regex `\w+` không (viết tắt `Mr.`, sở hữu cách `John's`). Có lưới an toàn nên không vỡ, nhưng có thể rơi về `estimate` nhiều hơn cần thiết |
-| `SYNTHESIS_RTF_ESTIMATE` chưa hiệu chỉnh | Thấp | Hằng số 0.15 đặt từ Phase 0 theo plan.md. Đo thật: ~0.76 lần đầu (gồm nạp model), ~0.04 các lần sau. Ước lượng "generate cả sách" ở P2.6 sẽ hơi lệch — đo lại rồi chỉnh khi làm phần đó |
+| ~~`SYNTHESIS_RTF_ESTIMATE` chưa hiệu chỉnh~~ | ✅ Xong | Đã đối chiếu với số đo thật ở P2.6: ước 1680 ms vs thật 2045 ms (**RTF thật 0.24** gồm nạp model). Lệch +22% → giữ nguyên 0.15. Dung lượng lệch −15%, thời lượng −24%. Probe khoá lại ngưỡng 0.25–4× để hằng số không âm thầm sai bản chất |
 | Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

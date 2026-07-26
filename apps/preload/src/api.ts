@@ -13,6 +13,7 @@ import {
   type EnqueueChapterRequest,
   type EnqueueResult,
   type EnqueueSegmentsRequest,
+  type GenerateEstimateInfo,
   type ImportPreview,
   type InstalledVoice,
   type IpcChannel,
@@ -142,6 +143,13 @@ export const api = {
       invoke('queue:enqueueSegments', request),
     enqueueChapter: (request: EnqueueChapterRequest): Promise<Result<EnqueueResult>> =>
       invoke('queue:enqueueChapter', request),
+    enqueueBook: (bookId: string): Promise<Result<EnqueueResult>> =>
+      invoke('queue:enqueueBook', bookId),
+    /** Ước lượng phần chưa generate — UI phải hiện trước khi xếp cả sách */
+    estimateChapter: (chapterId: string): Promise<Result<GenerateEstimateInfo>> =>
+      invoke('queue:estimateChapter', chapterId),
+    estimateBook: (bookId: string): Promise<Result<GenerateEstimateInfo>> =>
+      invoke('queue:estimateBook', bookId),
     getStatus: (): Promise<Result<QueueStatusInfo>> => invoke('queue:getStatus', undefined),
     listPending: (): Promise<Result<Job[]>> => invoke('queue:listPending', undefined),
     pause: (): Promise<Result<QueueStatusInfo>> => invoke('queue:pause', undefined),

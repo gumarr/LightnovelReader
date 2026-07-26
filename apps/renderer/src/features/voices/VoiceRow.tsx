@@ -11,18 +11,23 @@ export type VoiceRowProps = {
   progress: VoiceDownloadProgress | undefined;
   /** Chặn nút tải khi sidecar chưa sẵn sàng — tải cần sidecar sống */
   canDownload: boolean;
+  /** Voice này đang được chọn cho ngôn ngữ của nó (`AppSettings.voiceVi/voiceEn`) */
+  selected: boolean;
   onDownload: () => void;
   onCancel: () => void;
   onRemove: () => void;
+  onSelect: () => void;
 };
 
 export const VoiceRow = ({
   voice,
   progress,
   canDownload,
+  selected,
   onDownload,
   onCancel,
   onRemove,
+  onSelect,
 }: VoiceRowProps): JSX.Element => {
   const downloading = progress !== undefined;
   // `totalBytes` của khung SSE đầu tiên có thể là 0 (sidecar chưa kịp đọc
@@ -37,7 +42,11 @@ export const VoiceRow = ({
       data-testid="voice-row"
       data-voice-id={voice.id}
       data-installed={voice.installed}
+      data-selected={selected}
       className="flex flex-col gap-2 rounded-lg border border-border bg-bg-elevated p-3"
+      // Viền nhấn cho giọng đang dùng: đây là thứ quyết định mọi lượt generate
+      // sau đó, phải nhìn ra ngay chứ không phải đọc từng dòng chữ.
+      style={selected ? { borderColor: 'rgb(var(--accent))' } : undefined}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -63,6 +72,32 @@ export const VoiceRow = ({
               Đã cài
             </span>
           )}
+
+          {/*
+            Chọn giọng chỉ có nghĩa khi voice đã nằm trên đĩa: chọn một voice
+            chưa tải sẽ ghi vào settings một id mà hàng đợi không nạp được, và
+            lỗi chỉ lộ ra lúc generate.
+          */}
+          {voice.installed &&
+            !downloading &&
+            (selected ? (
+              <span
+                data-testid="voice-selected"
+                className="rounded px-2 py-0.5 text-xs font-medium text-accent-fg"
+                style={{ backgroundColor: 'rgb(var(--accent))' }}
+              >
+                Đang dùng
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onSelect}
+                data-testid="voice-select"
+                className="rounded border border-border px-2.5 py-1 text-xs text-fg transition-colors hover:bg-bg-subtle"
+              >
+                Dùng giọng này
+              </button>
+            ))}
 
           {downloading ? (
             <button

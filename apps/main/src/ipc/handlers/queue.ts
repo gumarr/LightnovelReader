@@ -1,18 +1,23 @@
 import {
   bookIdSchema,
+  chapterIdSchema,
   enqueueChapterSchema,
   enqueueSegmentsSchema,
   err,
+  estimateFromTotals,
   jobIdSchema,
   ok,
+  type AudioBitrate,
   type EnqueueResult,
+  type GenerateEstimateInfo,
   type Job,
   type QueueStatusInfo,
   type Result,
 } from '@ln/shared';
 import type { GenerateQueue, QueueStatus } from '../../services/queue.js';
+import type { ChapterRepository } from '../../db/repositories/chapters.js';
 import type { JobRepository } from '../../db/repositories/jobs.js';
-import type { SegmentRepository } from '../../db/repositories/segments.js';
+import type { PendingStats, SegmentRepository } from '../../db/repositories/segments.js';
 import { InvalidInputError } from '../wrap.js';
 
 /**
@@ -26,6 +31,9 @@ import { InvalidInputError } from '../wrap.js';
 export type QueueHandlers = {
   enqueueSegments: (input: unknown) => Result<EnqueueResult>;
   enqueueChapter: (input: unknown) => Result<EnqueueResult>;
+  enqueueBook: (input: unknown) => Result<EnqueueResult>;
+  estimateChapter: (input: unknown) => Result<GenerateEstimateInfo>;
+  estimateBook: (input: unknown) => Result<GenerateEstimateInfo>;
   getStatus: () => Result<QueueStatusInfo>;
   listPending: () => Result<Job[]>;
   pause: () => Result<QueueStatusInfo>;
@@ -39,6 +47,9 @@ export type QueueHandlerDeps = {
   queue: GenerateQueue;
   jobs: JobRepository;
   segments: SegmentRepository;
+  chapters: ChapterRepository;
+  /** Bitrate hiện tại — ước lượng dung lượng phụ thuộc nó (16/24/32 chênh 2×) */
+  getBitrate: () => AudioBitrate;
 };
 
 /** Số job tối đa trả về cho bảng hàng đợi — UI không hiện nổi hơn thế */
@@ -57,8 +68,25 @@ export const toQueueStatusInfo = (status: QueueStatus): QueueStatusInfo => ({
     : { currentSegmentId: status.currentSegmentId }),
 });
 
+/** Ghép số liệu DB với công thức ước lượng dùng chung ở `shared` */
+const toEstimateInfo = (
+  stats: PendingStats,
+  existingBytes: number,
+  bitrate: AudioBitrate,
+): GenerateEstimateInfo => {
+  const estimate = estimateFromTotals(stats.segmentCount, stats.totalChars, bitrate);
+  return {
+    segmentCount: estimate.segmentCount,
+    totalChars: estimate.totalChars,
+    audioDurationMs: estimate.audioDurationMs,
+    audioBytes: estimate.audioBytes,
+    processingMs: estimate.processingMs,
+    existingBytes,
+  };
+};
+
 export const createQueueHandlers = (deps: QueueHandlerDeps): QueueHandlers => {
-  const { queue, jobs, segments } = deps;
+  const { queue, jobs, segments, chapters, getBitrate } = deps;
 
   return {
     enqueueSegments: (input) => {
@@ -95,6 +123,51 @@ export const createQueueHandlers = (deps: QueueHandlerDeps): QueueHandlers => {
       if (queue.getStatus().state === 'idle') queue.start();
 
       return ok({ added });
+    },
+
+    enqueueBook: (input) => {
+      const parsed = bookIdSchema.safeParse(input);
+      if (!parsed.success) throw new InvalidInputError('bookId không hợp lệ');
+
+      const pending = segments.listPendingByBook(parsed.data);
+      if (pending.length === 0) return ok({ added: 0 });
+
+      // Priority mặc định cho cả sách: đây là lượt chạy nền dài, segment user
+      // sắp nghe tới vẫn phải chen lên trước được (`JOB_PRIORITY_URGENT`).
+      const added = queue.enqueueSegments({ segmentIds: pending.map((segment) => segment.id) });
+      if (queue.getStatus().state === 'idle') queue.start();
+
+      return ok({ added });
+    },
+
+    estimateChapter: (input) => {
+      const parsed = chapterIdSchema.safeParse(input);
+      if (!parsed.success) throw new InvalidInputError('chapterId không hợp lệ');
+
+      const chapter = chapters.findById(parsed.data);
+      if (chapter === undefined) return err('NOT_FOUND', 'Không tìm thấy chương này.');
+
+      return ok(
+        toEstimateInfo(segments.pendingStatsByChapter(chapter.id), chapter.audioBytes, getBitrate()),
+      );
+    },
+
+    estimateBook: (input) => {
+      const parsed = bookIdSchema.safeParse(input);
+      if (!parsed.success) throw new InvalidInputError('bookId không hợp lệ');
+
+      const bookId = parsed.data;
+      const stats = segments.pendingStatsByBook(bookId);
+      const existingBytes = chapters.audioBytesByBook(bookId);
+
+      // Sách không tồn tại và sách đã generate xong cho ra cùng con số 0. Chỉ
+      // báo NOT_FOUND khi thật sự không có chương nào — nếu không thì sách vừa
+      // generate xong lại hiện lỗi "không tìm thấy".
+      if (stats.segmentCount === 0 && chapters.listByBook(bookId).length === 0) {
+        return err('NOT_FOUND', 'Không tìm thấy sách này.');
+      }
+
+      return ok(toEstimateInfo(stats, existingBytes, getBitrate()));
     },
 
     getStatus: () => ok(toQueueStatusInfo(queue.getStatus())),

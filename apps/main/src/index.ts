@@ -212,6 +212,8 @@ const start = (): void => {
     queue,
     jobs: jobRepo,
     segments: segmentRepo,
+    chapters: chapterRepo,
+    getBitrate: () => settings.getAll().bitrate,
   });
 
   const sidecarHandlers = createSidecarHandlers({ getStatus: () => supervisor.getStatus() });
@@ -252,6 +254,9 @@ const start = (): void => {
   registerHandler('voices:remove', voicesHandlers.remove, logger);
   registerHandler('queue:enqueueSegments', queueHandlers.enqueueSegments, logger);
   registerHandler('queue:enqueueChapter', queueHandlers.enqueueChapter, logger);
+  registerHandler('queue:enqueueBook', queueHandlers.enqueueBook, logger);
+  registerHandler('queue:estimateChapter', queueHandlers.estimateChapter, logger);
+  registerHandler('queue:estimateBook', queueHandlers.estimateBook, logger);
   registerHandler('queue:getStatus', queueHandlers.getStatus, logger);
   registerHandler('queue:listPending', queueHandlers.listPending, logger);
   registerHandler('queue:pause', queueHandlers.pause, logger);

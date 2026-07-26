@@ -1,5 +1,9 @@
-import type { BookDetail } from '@ln/shared';
+import { useEffect } from 'react';
+import { formatBytes, type BookDetail } from '@ln/shared';
 import { rangeLabel } from '@/features/import/confidence';
+import { GenerateControls } from '@/features/generate/GenerateControls';
+import { useQueueStore } from '@/stores/queue-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { formatLabel } from './format';
 
 /**
@@ -21,9 +25,23 @@ export type BookDetailViewProps = {
 export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps): JSX.Element => {
   const { book, chapters, resumeChapterId } = detail;
 
+  const loadQueueStatus = useQueueStore((s) => s.loadStatus);
+  const applyQueueStatus = useQueueStore((s) => s.applyStatus);
+
+  // Giọng theo ngôn ngữ sách — rỗng thì hàng đợi dừng ngay (xem PROGRESS 4.36)
+  const voiceReady = useSettingsStore(
+    (s) => ((book.lang === 'vi' ? s.settings?.voiceVi : s.settings?.voiceEn) ?? '') !== '',
+  );
+
+  useEffect(() => {
+    void loadQueueStatus();
+    return window.api.queue.onStatusChanged(applyQueueStatus);
+  }, [loadQueueStatus, applyQueueStatus]);
+
   // DOCX không có trang giấy — `pageStart` khi đó là chỉ số đoạn văn
   const hasRealPages = book.format !== 'docx';
   const totalSegments = chapters.reduce((sum, c) => sum + c.segmentCount, 0);
+  const audioBytes = chapters.reduce((sum, c) => sum + c.audioBytes, 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -40,6 +58,7 @@ export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps):
           <h1 className="truncate text-lg font-semibold text-fg">{book.title}</h1>
           <p className="text-xs text-fg-muted">
             {formatLabel(book.format)} · {chapters.length} chương · {totalSegments} segment
+            {audioBytes > 0 && ` · ${formatBytes(audioBytes)} audio`}
           </p>
         </div>
 
@@ -84,8 +103,21 @@ export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps):
                         ? `${rangeLabel(chapter.pageStart, chapter.pageEnd, hasRealPages)} · `
                         : ''}
                       {chapter.segmentCount} segment
+                      {chapter.audioBytes > 0 && ` · ${formatBytes(chapter.audioBytes)}`}
                     </span>
                   </span>
+
+                  {/* Chương đã có audio hay chưa là thứ user cần thấy trước khi
+                      bấm generate — không thì phải mở từng chương ra mới biết. */}
+                  {chapter.generateStatus !== 'none' ? (
+                    <span
+                      data-testid="chapter-generate-status"
+                      data-generate-status={chapter.generateStatus}
+                      className="shrink-0 rounded bg-bg-subtle px-2 py-0.5 text-xs text-fg-muted"
+                    >
+                      {chapter.generateStatus === 'complete' ? 'Đủ audio' : 'Một phần'}
+                    </span>
+                  ) : null}
 
                   {isResume ? (
                     <span className="shrink-0 rounded bg-accent/10 px-2 py-0.5 text-xs text-accent">
@@ -99,9 +131,11 @@ export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps):
         </ol>
       )}
 
-      <footer className="shrink-0 border-t border-border px-4 py-2 text-xs text-fg-muted">
-        Phát audio và phụ đề đồng bộ thuộc Phase 2 — chưa nối vào đây.
-      </footer>
+      {chapters.length > 0 && (
+        <footer className="shrink-0 border-t border-border px-4 py-2.5">
+          <GenerateControls bookId={book.id} bookTitle={book.title} voiceReady={voiceReady} />
+        </footer>
+      )}
     </div>
   );
 };

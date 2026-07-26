@@ -7,4 +7,10 @@ pytest==8.3.4
 
 # Đóng gói sidecar thành .exe (xem sidecar/build.py). Chỉ cần lúc build — máy
 # user không có Python nên không bao giờ chạy pip ở đó.
-pyinstaller==6.11.1
+#
+# BẮT BUỘC >= 6.21: hook numpy của 6.11 có trước numpy 2.5 nên chỉ mang theo
+# các file `.pyd` mà bỏ hết submodule Python thuần (`numpy._core._exceptions`…).
+# Hậu quả: `.exe` build THÀNH CÔNG, kích thước hợp lý, rồi chết ngay lúc khởi
+# động với "Importing the numpy C-extensions failed". Đã gặp thật ở P2.4 —
+# numpy vào dự án cùng lúc với piper/onnxruntime.
+pyinstaller==6.21.0

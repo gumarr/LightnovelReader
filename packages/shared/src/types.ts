@@ -217,6 +217,31 @@ export type VoiceDownloadProgress = {
   message?: string;
 };
 
+/**
+ * Nguồn của mốc thời gian từng từ trong một segment.
+ *
+ * `phoneme` → gộp từ độ dài phoneme do chính Piper sinh ra. Sát thực tế hơn
+ *             hẳn, dùng được khi số nhóm phoneme khớp số từ.
+ * `estimate` → chia theo độ dài ký tự. Lưới an toàn khi cách trên không khớp
+ *             (chữ số đọc thành nhiều từ: `"30"` → "ba mươi").
+ *
+ * Cả hai đều cho `alignStatus = 'estimated'` — chỉ CTC forced alignment ở
+ * Phase 4 mới được nâng lên `'aligned'`. Đưa field này lên UI để chẩn đoán
+ * được vì sao highlight lệch, thay vì đoán mò.
+ */
+export type TimingSource = 'phoneme' | 'estimate';
+
+/** Kết quả tổng hợp một segment, trả từ sidecar `/synthesize` */
+export type SynthesisResult = {
+  audioPath: string;
+  durationMs: number;
+  audioBytes: number;
+  sampleRate: number;
+  voiceId: string;
+  timingSource: TimingSource;
+  timings: WordTiming[];
+};
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 /** Bitrate Opus cho phép, mặc định 24 kbps */

@@ -523,3 +523,44 @@ describe('createSidecarSupervisor — trạng thái đẩy lên UI', () => {
     expect(supervisor.getClient()).toBeUndefined();
   });
 });
+
+describe('createSidecarSupervisor — thư mục audio', () => {
+  it('đọc lại thư mục audio ở MỖI lần spawn', async () => {
+    // `audioDir` do user đổi trong Settings. Chốt giá trị lúc dựng supervisor
+    // thì đổi thư mục xong sidecar vẫn ghi vào chỗ cũ tới khi khởi động lại app.
+    const seen: string[] = [];
+    let current = 'D:/audio-cũ';
+
+    const envs: Record<string, string>[] = [];
+    const { supervisor, processes, handshake, clock } = setup({
+      audioDir: () => {
+        seen.push(current);
+        return current;
+      },
+      spawn: (options) => {
+        envs.push(options.env);
+        const proc = createFakeProcess();
+        processes.push(proc);
+        return proc;
+      },
+    });
+
+    const started = supervisor.start();
+    handshake(50000);
+    await started;
+    expect(envs[0]?.['LN_SIDECAR_AUDIO_DIR']).toBe('D:/audio-cũ');
+
+    // User đổi thư mục, rồi sidecar chết và được dựng lại.
+    current = 'E:/audio-mới';
+    processes[0]?.emitExit(1);
+    clock.advance(1_000);
+    handshake(50001);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(seen).toContain('E:/audio-mới');
+    expect(envs[1]?.['LN_SIDECAR_AUDIO_DIR']).toBe('E:/audio-mới');
+
+    await supervisor.stop();
+  });
+});

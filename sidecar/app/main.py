@@ -1,8 +1,8 @@
 """FastAPI app của sidecar.
 
-Route hiện có: `/health`, `/normalize` (P2.1) và nhóm `/voices` (P2.3).
-`/synthesize`, `/align` thêm ở P2.4 — cố ý không dựng sẵn route trả mock
-(CLAUDE.md cấm).
+Route hiện có: `/health`, `/normalize` (P2.1), nhóm `/voices` (P2.3) và
+`/synthesize` (P2.4). `/align` (CTC forced alignment) thêm ở Phase 4 — cố ý
+không dựng sẵn route trả mock (CLAUDE.md cấm).
 """
 
 from __future__ import annotations
@@ -17,8 +17,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from . import __version__
+from .audio import AudioPathError, EncodeError, resolve_audio_path, write_opus
 from .auth import make_auth_middleware
 from .config import SidecarConfig
+from .engines import EngineError, PiperEngine, SynthesisResult
 from .schemas import (
     CatalogResponse,
     CatalogVoice,
@@ -28,7 +30,10 @@ from .schemas import (
     InstalledVoicesResponse,
     NormalizeRequest,
     NormalizeResponse,
+    SynthesizeRequest,
+    SynthesizeResponse,
     VoiceFileInfo,
+    WordTimingModel,
 )
 from .text import normalize
 from .voices import (
@@ -70,6 +75,11 @@ def create_app(config: SidecarConfig) -> FastAPI:
     models_dir = Path(config.models_dir)
     catalog_path = Path(config.catalog_path) if config.catalog_path else None
 
+    # Một engine dùng chung cho cả tiến trình: nó giữ model đã nạp (~200 MB RAM)
+    # nên dựng mới mỗi request là nạp lại 1.2 s và phình bộ nhớ. Bản thân engine
+    # tự khoá luồng — xem `PiperEngine`.
+    engine = PiperEngine(models_dir)
+
     def read_catalog() -> Catalog:
         """Đọc catalog mỗi lần gọi thay vì cache lúc khởi động.
 
@@ -91,7 +101,11 @@ def create_app(config: SidecarConfig) -> FastAPI:
             status="ok",
             version=__version__,
             pid=os.getpid(),
-            engine_ready=False,
+            # Trạng thái THẬT từ P2.4. `False` lúc mới khởi động là bình thường:
+            # engine nạp lười ở lần synthesize đầu tiên, không nạp sẵn 63 MB cho
+            # người chỉ muốn đọc sách.
+            engine_ready=engine.ready,
+            loaded_voice_id=engine.loaded_voice_id,
         )
 
     @app.post("/normalize", response_model=NormalizeResponse)
@@ -211,6 +225,78 @@ def create_app(config: SidecarConfig) -> FastAPI:
             # Chặn mọi tầng đệm: SSE mà bị gom lại thì tiến độ tới nơi một cục
             # lúc tải xong, đúng lúc không còn ai cần nữa.
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/synthesize", response_model=SynthesizeResponse)
+    async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
+        """Tổng hợp **một segment** thành `.ogg` + mốc thời gian từng từ.
+
+        **Một segment mỗi lần, không phải cả chương.** Segment là đơn vị generate
+        theo domain model (CLAUDE.md): ~10 s audio, một file `.ogg`. Nhận cả
+        chương thì một lỗi mất cả chương, huỷ giữa chừng không được, và priority
+        queue ở P2.5 không chen được segment sắp phát lên đầu.
+
+        **Vì sao chạy trong thread riêng.** Tổng hợp là CPU-bound và mất ~2 s cho
+        một segment. Chạy thẳng trong coroutine sẽ chặn cả event loop, `/health`
+        treo theo, và supervisor bên main sẽ tưởng sidecar chết rồi giết oan —
+        đúng vết xe đổ đã tránh ở `/voices/{id}/download` (P2.3).
+        """
+        catalog = read_catalog()
+        entry = catalog.find(request.voiceId)
+        if entry is None:
+            raise HTTPException(
+                status_code=404, detail=f"Không có voice {request.voiceId!r} trong catalog"
+            )
+
+        try:
+            target = resolve_audio_path(config.audio_dir, request.outPath)
+        except AudioPathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Chuẩn hoá text TRƯỚC khi đọc: "11-5" thành "mười một năm", "TP." thành
+        # "thành phố"… Đây cũng chính là text mà timing bám theo, nên phải dùng
+        # bản đã chuẩn hoá cho cả hai — dùng text gốc để tính timing thì
+        # `charStart`/`charEnd` trỏ sai chỗ ngay khi có một chữ số.
+        spoken = normalize(request.text, request.lang)
+
+        def run() -> SynthesisResult:
+            result = engine.synthesize(spoken, entry, request.bitrate)
+            # Ghi đĩa trong CÙNG thread với tổng hợp: tách ra thì phải mang cả
+            # mảng bytes qua lại giữa các thread mà chẳng được gì.
+            write_opus(target, result.audio)
+            return result
+
+        try:
+            result = await asyncio.to_thread(run)
+        except EngineError as exc:
+            # 422: request hợp lệ về hình thức nhưng không xử lý được (voice chưa
+            # cài, model hỏng). Khác hẳn 500 — main phân biệt để báo user đúng
+            # cách sửa thay vì "lỗi không rõ".
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except EncodeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Không ghi được file audio: {exc}"
+            ) from exc
+
+        return SynthesizeResponse(
+            audioPath=str(target),
+            durationMs=result.audio.duration_ms,
+            audioBytes=result.audio.size_bytes,
+            sampleRate=result.audio.sample_rate,
+            voiceId=result.voice_id,
+            timingSource=result.timing_source,
+            timings=[
+                WordTimingModel(
+                    w=t.w,
+                    startMs=t.start_ms,
+                    endMs=t.end_ms,
+                    charStart=t.char_start,
+                    charEnd=t.char_end,
+                )
+                for t in result.timings
+            ],
         )
 
     @app.delete("/voices/{voice_id}", response_model=DeleteVoiceResponse)

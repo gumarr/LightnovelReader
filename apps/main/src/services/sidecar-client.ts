@@ -1,4 +1,11 @@
-import type { BookLang, VoiceDownloadProgress, VoiceQuality } from '@ln/shared';
+import type {
+  AudioBitrate,
+  BookLang,
+  SynthesisResult,
+  VoiceDownloadProgress,
+  VoiceQuality,
+  WordTiming,
+} from '@ln/shared';
 import type { SidecarEndpoint } from './sidecar-process.js';
 
 /**
@@ -17,10 +24,15 @@ export type SidecarHealth = {
   version: string;
   pid: number;
   /**
-   * `false` cho tới P2.4 (chưa nạp engine TTS). Supervisor phải phân biệt
-   * "tiến trình sống" với "engine nạp xong" — đừng coi `false` là hỏng.
+   * Engine đã nạp xong một voice chưa.
+   *
+   * Engine nạp **lười** ở lần synthesize đầu tiên, nên `false` lúc mới khởi
+   * động là bình thường — supervisor phải phân biệt "tiến trình sống" với
+   * "engine nạp xong" và đừng coi `false` là hỏng.
    */
   engineReady: boolean;
+  /** Voice đang giữ trong bộ nhớ, `undefined` khi chưa nạp gì */
+  loadedVoiceId?: string;
 };
 
 /** Một voice trong catalog, kèm cờ đã cài chưa. Khớp `CatalogVoice` bên pydantic. */
@@ -61,6 +73,24 @@ export type SidecarClient = {
     signal?: AbortSignal;
   }) => Promise<void>;
   deleteVoice: (voiceId: string) => Promise<boolean>;
+  /**
+   * Tổng hợp **một segment** thành `.ogg` + mốc thời gian từng từ.
+   *
+   * `outPath` phải lấy qua `services/paths.ts` (`segmentAudioPath`) — sidecar
+   * từ chối mọi đường dẫn ngoài `audioDir`.
+   *
+   * Timeout dài hơn hẳn mặc định: Piper mất ~2 s cho một segment 10 s, và lần
+   * gọi ĐẦU TIÊN còn phải nạp model 63 MB (~1.5 s nữa). Cắt sớm thì mọi lượt
+   * generate đầu tiên đều hỏng, mà lỗi lại trông như sidecar chết.
+   */
+  synthesize: (input: {
+    text: string;
+    voiceId: string;
+    outPath: string;
+    bitrate: AudioBitrate;
+    lang: BookLang;
+    signal?: AbortSignal;
+  }) => Promise<SynthesisResult>;
   baseUrl: string;
 };
 
@@ -97,6 +127,14 @@ export class SidecarHttpError extends Error {
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
+ * Timeout cho `/synthesize`. Rộng hơn hẳn mặc định vì lần gọi đầu tiên gồm cả
+ * nạp model 63 MB (~1.5 s) lẫn tổng hợp (~2 s cho segment 10 s), và máy yếu có
+ * thể chậm hơn nhiều lần. Cắt sớm thì lượt generate đầu tiên luôn hỏng — mà
+ * lỗi lại trông giống hệt sidecar chết.
+ */
+export const SYNTHESIZE_TIMEOUT_MS = 120_000;
+
+/**
  * Health check phải có timeout **riêng và ngắn**: nếu sidecar treo (còn sống
  * nhưng không trả lời), request không timeout sẽ treo luôn vòng health check,
  * và supervisor không bao giờ phát hiện ra để restart — đúng loại hỏng mà
@@ -130,6 +168,24 @@ export const parseSseFrames = (
   }
 
   return { frames, rest };
+};
+
+/**
+ * Rút `detail` từ thân lỗi của FastAPI, `undefined` nếu không đọc được.
+ *
+ * Thân lỗi có thể là `{"detail": "..."}` (HTTPException) hoặc
+ * `{"detail": [{...}]}` (lỗi validate của pydantic) — chỉ lấy dạng chuỗi, vì
+ * dạng mảng là lỗi lập trình phía main chứ không phải thứ để hiện cho user.
+ */
+const detailOf = (raw: string): string | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
+    const { detail } = parsed as Record<string, unknown>;
+    return typeof detail === 'string' && detail !== '' ? detail : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 /** Đọc một khung SSE thành `VoiceDownloadProgress`, bỏ qua khung không hiểu được */
@@ -181,10 +237,16 @@ export const createSidecarClient = (options: {
 
   const request = async (
     path: string,
-    init: { method: string; body?: unknown; timeoutMs: number },
+    init: { method: string; body?: unknown; timeoutMs: number; signal?: AbortSignal },
   ): Promise<string> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), init.timeoutMs);
+
+    // Huỷ từ nơi gọi (user bấm dừng generate) cũng phải huỷ được request đang
+    // bay. Không nối vào thì job "đã huỷ" vẫn chiếm sidecar cho tới khi xong.
+    const abortFromCaller = (): void => controller.abort();
+    init.signal?.addEventListener('abort', abortFromCaller);
+    if (init.signal?.aborted === true) controller.abort();
 
     try {
       const headers: Record<string, string> = { [TOKEN_HEADER]: token };
@@ -199,13 +261,21 @@ export const createSidecarClient = (options: {
 
       const text = await response.text();
       if (!response.ok) {
-        throw new SidecarHttpError(response.status, `Sidecar trả ${response.status} cho ${path}`);
+        // FastAPI đặt lý do thật vào `detail`. Bỏ qua nó thì UI chỉ thấy
+        // "Sidecar trả 422" — vô dụng, trong khi sidecar đã nói rõ phải làm gì
+        // ("Voice … chưa được cài. Vào màn Giọng đọc để tải lại").
+        throw new SidecarHttpError(
+          response.status,
+          detailOf(text) ?? `Sidecar trả ${response.status} cho ${path}`,
+        );
       }
       return text;
     } finally {
       // Xoá timer ở `finally`: bỏ sót thì mỗi request giữ event loop sống thêm
       // vài giây, và test chạy xong không thoát được.
       clearTimeout(timer);
+      // Gỡ listener kẻo `signal` dùng lại cho nhiều request sẽ tích luỹ dần.
+      init.signal?.removeEventListener('abort', abortFromCaller);
     }
   };
 
@@ -237,11 +307,14 @@ export const createSidecarClient = (options: {
         throw new Error('Phản hồi /health thiếu "status" hoặc "version"');
       }
 
+      const loadedVoiceId = body['loaded_voice_id'];
+
       return {
         status,
         version,
         pid: typeof pid === 'number' ? pid : 0,
         engineReady: engineReady === true,
+        ...(typeof loadedVoiceId === 'string' ? { loadedVoiceId } : {}),
       };
     },
 
@@ -338,7 +411,61 @@ export const createSidecarClient = (options: {
       const body = parseJson(raw, '/voices/{id}');
       return body['removed'] === true;
     },
+
+    synthesize: async (input): Promise<SynthesisResult> => {
+      const { text, voiceId, outPath, bitrate, lang, signal } = input;
+
+      const raw = await request('/synthesize', {
+        method: 'POST',
+        body: { text, voiceId, outPath, bitrate, lang },
+        timeoutMs: SYNTHESIZE_TIMEOUT_MS,
+        ...(signal === undefined ? {} : { signal }),
+      });
+      const body = parseJson(raw, '/synthesize');
+
+      const { audioPath, durationMs, audioBytes, sampleRate, timingSource } = body;
+      if (typeof audioPath !== 'string' || typeof durationMs !== 'number') {
+        throw new Error('Phản hồi /synthesize thiếu "audioPath" hoặc "durationMs"');
+      }
+
+      return {
+        audioPath,
+        durationMs,
+        audioBytes: typeof audioBytes === 'number' ? audioBytes : 0,
+        sampleRate: typeof sampleRate === 'number' ? sampleRate : 0,
+        voiceId: typeof body['voiceId'] === 'string' ? body['voiceId'] : voiceId,
+        timingSource: timingSource === 'phoneme' ? 'phoneme' : 'estimate',
+        timings: parseTimings(body['timings']),
+      };
+    },
   };
+};
+
+/**
+ * Đọc mảng timing, bỏ qua phần tử hỏng.
+ *
+ * Bỏ qua thay vì ném: mất một mốc từ thì highlight lệch một chữ, còn ném ở đây
+ * là vứt luôn cả segment audio đã tổng hợp xong — đắt hơn nhiều so với cái mất.
+ */
+const parseTimings = (raw: unknown): WordTiming[] => {
+  if (!Array.isArray(raw)) return [];
+
+  const timings: WordTiming[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue;
+    const { w, startMs, endMs, charStart, charEnd } = item as Record<string, unknown>;
+    if (
+      typeof w !== 'string' ||
+      typeof startMs !== 'number' ||
+      typeof endMs !== 'number' ||
+      typeof charStart !== 'number' ||
+      typeof charEnd !== 'number'
+    ) {
+      continue;
+    }
+    timings.push({ w, startMs, endMs, charStart, charEnd });
+  }
+  return timings;
 };
 
 /** Đẩy các khung đã tách được lên `onProgress`, bỏ qua khung không đọc được */

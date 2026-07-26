@@ -189,6 +189,30 @@ describe('startSidecar', () => {
     expect(call?.args.join(' ')).not.toContain('token-abc');
   });
 
+  it('truyền thư mục audio qua ENV khi có', async () => {
+    const fake = createFakeProcess();
+    const { spawn, lastCall } = recordingSpawn(fake);
+
+    const promise = startSidecar({ ...baseOptions(fake), spawn, audioDir: 'D:/audio' });
+    fake.emitStdout(readyLine());
+    await promise;
+
+    expect(lastCall()?.env['LN_SIDECAR_AUDIO_DIR']).toBe('D:/audio');
+  });
+
+  it('không có thư mục audio thì KHÔNG đặt biến rỗng', async () => {
+    // Đặt chuỗi rỗng thì sidecar coi như "đã cấu hình vào thư mục rỗng" và
+    // thông báo lỗi mất hết ý nghĩa. Thiếu hẳn biến mới đúng là "chưa cấu hình".
+    const fake = createFakeProcess();
+    const { spawn, lastCall } = recordingSpawn(fake);
+
+    const promise = startSidecar({ ...baseOptions(fake), spawn, audioDir: '' });
+    fake.emitStdout(readyLine());
+    await promise;
+
+    expect(lastCall()?.env['LN_SIDECAR_AUDIO_DIR']).toBeUndefined();
+  });
+
   it('giữ lại env nền nhưng KHÔNG cho nó ghi đè token', async () => {
     const fake = createFakeProcess();
     const { spawn, lastCall } = recordingSpawn(fake);

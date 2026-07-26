@@ -8,6 +8,7 @@ vẫn xanh. Cả ba thứ dưới đây đều đã hỏng thật một lần kh
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 SIDECAR_DIR = Path(__file__).resolve().parents[1]
@@ -77,3 +78,53 @@ class TestPhụThuộc:
         source = build_source()
         assert "uvicorn.loops.auto" in source
         assert "uvicorn.protocols.http.auto" in source
+
+    def test_engine_là_dependency_runtime(self) -> None:
+        """piper/soundfile/onnx phải ở `requirements.txt`, không phải dev.
+
+        Để nhầm sang `requirements-dev.txt` thì `.exe` build vẫn thành công
+        (PyInstaller chỉ gói cái nó import được) rồi chết đúng lúc user bấm
+        generate — cùng vết xe đổ với httpx ở P2.3.
+        """
+        requirements = (SIDECAR_DIR / "requirements.txt").read_text(encoding="utf-8")
+        for package in ("piper-tts", "soundfile", "onnx"):
+            assert package in requirements
+
+    def test_pyinstaller_đủ_mới_cho_numpy_2(self) -> None:
+        """PyInstaller < 6.21 có hook numpy viết trước numpy 2.5.
+
+        Hook cũ chỉ mang theo các file `.pyd` mà bỏ hết submodule Python thuần
+        (`numpy._core._exceptions`…). `.exe` build THÀNH CÔNG, kích thước hợp
+        lý, rồi chết ngay lúc khởi động với "Importing the numpy C-extensions
+        failed". Đã gặp thật khi build P2.4.
+        """
+        dev = (SIDECAR_DIR / "requirements-dev.txt").read_text(encoding="utf-8")
+        match = re.search(r"pyinstaller==(\d+)\.(\d+)", dev)
+        assert match is not None, "requirements-dev.txt phải ghim phiên bản pyinstaller"
+
+        major, minor = int(match.group(1)), int(match.group(2))
+        assert (major, minor) >= (6, 21), f"pyinstaller {major}.{minor} quá cũ cho numpy 2.x"
+
+    def test_KHÔNG_khai_numpy_làm_hidden_import(self) -> None:
+        """Khai tường minh sẽ ĐÈ hook numpy của PyInstaller.
+
+        Kết quả y hệt lỗi trên: chỉ `numpy` được gói, các C-extension con thì
+        không. Để hook tự lo mới đúng.
+        """
+        source = build_source()
+        assert '"numpy"' not in source
+
+    def test_thu_viện_native_được_gom_binaries(self) -> None:
+        """onnxruntime và soundfile nạp DLL native, PyInstaller không tự thấy."""
+        source = build_source()
+        assert "COLLECT_BINARIES" in source
+        assert "onnxruntime" in source
+        assert "soundfile" in source
+
+    def test_dữ_liệu_espeak_được_gom(self) -> None:
+        """`espeak-ng-data` (gồm `vi_dict`) nằm trong wheel piper, không phải mã
+        Python nên PyInstaller không tự mang theo. Thiếu nó thì model nạp được
+        nhưng không phiên âm nổi chữ nào."""
+        source = build_source()
+        assert "COLLECT_DATA" in source
+        assert '"piper"' in source

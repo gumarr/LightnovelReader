@@ -51,7 +51,40 @@ HIDDEN_IMPORTS = [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan",
     "uvicorn.lifespan.on",
+    # P2.4 — engine TTS.
+    #
+    # `onnxruntime` nạp provider CPU qua DLL native, `soundfile` nạp libsndfile
+    # qua cffi, và cả hai đều KHÔNG lộ ra cho bộ dò import tĩnh của PyInstaller.
+    # Thiếu là `.exe` build xong vẫn chạy, rồi chết đúng lúc user bấm generate.
+    "onnxruntime",
+    "onnxruntime.capi",
+    "onnxruntime.capi._pybind_state",
+    "soundfile",
+    # KHÔNG khai `numpy` ở đây. PyInstaller có hook riêng cho numpy, và khai
+    # tường minh sẽ ĐÈ hook đó: nó chỉ mang theo `numpy` mà bỏ các
+    # C-extension con (`numpy._core._exceptions`…), khiến `.exe` chết ngay lúc
+    # import với "Importing the numpy C-extensions failed". Đã gặp thật khi
+    # build P2.4 — để hook tự lo là đúng.
+    # `piper` nạp bộ phiên âm theo ngôn ngữ lúc chạy — voice VI/EN dùng espeak.
+    "piper",
+    "piper.voice",
+    "piper.config",
+    "piper.phonemize_espeak",
+    "piper.phoneme_ids",
+    # Cần cho `include_alignments`: piper vá model trong bộ nhớ để lộ số mẫu mỗi
+    # phoneme. Thiếu thì piper CHỈ ghi log rồi trả `None` — timing âm thầm rơi
+    # hết về ước lượng theo ký tự mà không có gì báo.
+    "onnx",
 ]
+
+# Dữ liệu không phải mã Python, PyInstaller không tự mang theo.
+#
+# `espeak-ng-data` là bảng phiên âm của espeak (gồm `vi_dict`) nằm trong wheel
+# piper. Thiếu nó thì model nạp được nhưng không phiên âm nổi chữ nào.
+COLLECT_DATA = ["piper", "soundfile", "onnxruntime"]
+
+# `--collect-binaries` cho DLL native đi kèm wheel.
+COLLECT_BINARIES = ["onnxruntime", "soundfile"]
 
 # Không mang theo thứ chỉ dùng lúc test/build — mỗi cái là vài MB.
 EXCLUDES = ["pytest", "PyInstaller", "tkinter", "unittest", "pydoc"]
@@ -97,6 +130,10 @@ def build() -> int:
 
     for module in HIDDEN_IMPORTS:
         args += ["--hidden-import", module]
+    for package in COLLECT_DATA:
+        args += ["--collect-data", package]
+    for package in COLLECT_BINARIES:
+        args += ["--collect-binaries", package]
     for module in EXCLUDES:
         args += ["--exclude-module", module]
 

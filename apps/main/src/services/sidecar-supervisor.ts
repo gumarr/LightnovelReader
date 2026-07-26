@@ -64,6 +64,13 @@ export type SupervisorDeps = {
   /** Gốc repo lúc dev */
   repoRoot?: string | undefined;
   modelsDir: string;
+  /**
+   * Thư mục audio hiện hành. Là **hàm** chứ không phải chuỗi vì `audioDir` do
+   * user đổi được trong Settings — chốt giá trị lúc dựng supervisor thì đổi
+   * thư mục xong sidecar vẫn ghi vào chỗ cũ cho tới khi khởi động lại app.
+   * Mỗi lần spawn đọc lại giá trị mới nhất.
+   */
+  audioDir?: () => string;
   spawn: SpawnSidecar;
   exists: PathExists;
   logger: SupervisorLogger;
@@ -87,6 +94,7 @@ export const createSidecarSupervisor = (deps: SupervisorDeps): SidecarSupervisor
     resourcesPath,
     repoRoot,
     modelsDir,
+    audioDir,
     spawn,
     exists,
     logger,
@@ -280,6 +288,9 @@ export const createSidecarSupervisor = (deps: SupervisorDeps): SidecarSupervisor
         cwd: command.cwd,
         modelsDir,
         ...(catalogPath === undefined ? {} : { catalogPath }),
+        // Đọc lại mỗi lần spawn: user đổi thư mục audio trong Settings thì lần
+        // dựng lại kế tiếp phải theo giá trị mới.
+        ...(audioDir === undefined ? {} : { audioDir: audioDir() }),
         token,
         spawn,
         startupTimeoutMs,

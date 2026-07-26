@@ -15,13 +15,18 @@ from app.main import create_app
 TOKEN = "token-phien-test"
 
 
-def make_client(models_dir: Path, catalog_path: Path | None = None) -> TestClient:
+def make_client(
+    models_dir: Path,
+    catalog_path: Path | None = None,
+    audio_dir: Path | None = None,
+) -> TestClient:
     config = SidecarConfig(
         token=TOKEN,
         host="127.0.0.1",
         port=0,
         models_dir=str(models_dir),
         catalog_path="" if catalog_path is None else str(catalog_path),
+        audio_dir="" if audio_dir is None else str(audio_dir),
     )
     return TestClient(create_app(config))
 
@@ -98,9 +103,16 @@ class TestHealth:
         assert body["pid"] > 0
         assert body["version"]
 
-    def test_engine_chưa_sẵn_sàng_ở_p21(self, client: TestClient) -> None:
-        """Chưa có engine TTS nào — không được báo sẵn sàng khống."""
-        assert client.get("/health").json()["engine_ready"] is False
+    def test_engine_chưa_nạp_thì_báo_chưa_sẵn_sàng(self, client: TestClient) -> None:
+        """Engine nạp LƯỜI ở lần synthesize đầu tiên.
+
+        Nên `False` lúc mới khởi động là bình thường, không phải hỏng —
+        supervisor bên main không được coi đó là lý do restart. Từ P2.4 đây là
+        trạng thái thật chứ không còn `False` cứng.
+        """
+        body = client.get("/health").json()
+        assert body["engine_ready"] is False
+        assert body["loaded_voice_id"] is None
 
 
 class TestXácThực:
@@ -289,3 +301,102 @@ class TestXoáVoice:
         client = make_client(tmp_path / "models", write_catalog(tmp_path))
         response = client.delete("/voices/..%2F..%2Fwindows", headers=auth())
         assert response.status_code in (400, 404)
+
+
+class TestSynthesize:
+    """Route `/synthesize` (P2.4).
+
+    Không nạp model thật ở đây — voice 63 MB không có trong repo và test phải
+    chạy được trên máy sạch. Phần tổng hợp thật đã khoá ở `test_engine.py`, còn
+    ở đây kiểm **biên HTTP**: xác thực, kiểm đường dẫn, và mã lỗi.
+    """
+
+    def _body(self, out_path: Path, voice_id: str = "vi_VN-test-medium") -> dict[str, object]:
+        return {
+            "text": "Xin chào các bạn.",
+            "voiceId": voice_id,
+            "outPath": str(out_path),
+            "bitrate": 24,
+            "lang": "vi",
+        }
+
+    def test_thiếu_token_bị_từ_chối(self, tmp_path: Path) -> None:
+        audio = tmp_path / "audio"
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+        response = client.post("/synthesize", json=self._body(audio / "s.ogg"))
+        assert response.status_code == 401
+
+    def test_voice_không_có_trong_catalog(self, tmp_path: Path) -> None:
+        audio = tmp_path / "audio"
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+        response = client.post(
+            "/synthesize", headers=auth(), json=self._body(audio / "s.ogg", "khong-ton-tai")
+        )
+        assert response.status_code == 404
+
+    def test_đường_dẫn_ngoài_thư_mục_audio_bị_từ_chối(self, tmp_path: Path) -> None:
+        """`outPath` đến từ thân request — không chặn thì ghi đè được file bất kỳ."""
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+
+        response = client.post(
+            "/synthesize", headers=auth(), json=self._body(tmp_path / "ngoai.ogg")
+        )
+        assert response.status_code == 400
+
+    def test_thoát_thư_mục_bằng_dấu_chấm_chấm(self, tmp_path: Path) -> None:
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+
+        body = self._body(audio / "s.ogg")
+        body["outPath"] = "../../ln-reader.db.ogg"
+        assert client.post("/synthesize", headers=auth(), json=body).status_code == 400
+
+    def test_đuôi_file_khác_ogg_bị_từ_chối(self, tmp_path: Path) -> None:
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+
+        response = client.post(
+            "/synthesize", headers=auth(), json=self._body(audio / "seg.json")
+        )
+        assert response.status_code == 400
+
+    def test_chưa_cấu_hình_thư_mục_audio(self, tmp_path: Path) -> None:
+        """Rỗng = main chưa truyền env → từ chối, không ghi bừa ra thư mục làm việc."""
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        response = client.post(
+            "/synthesize", headers=auth(), json=self._body(tmp_path / "s.ogg")
+        )
+        assert response.status_code == 400
+
+    def test_bitrate_ngoài_danh_sách_bị_từ_chối(self, tmp_path: Path) -> None:
+        """Chỉ 16/24/32 — khớp `AudioBitrate` bên TypeScript."""
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+
+        body = self._body(audio / "s.ogg")
+        body["bitrate"] = 48
+        assert client.post("/synthesize", headers=auth(), json=body).status_code == 422
+
+    def test_text_rỗng_bị_từ_chối(self, tmp_path: Path) -> None:
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+
+        body = self._body(audio / "s.ogg")
+        body["text"] = ""
+        assert client.post("/synthesize", headers=auth(), json=body).status_code == 422
+
+    def test_voice_chưa_cài_trả_422_kèm_cách_sửa(self, tmp_path: Path) -> None:
+        """Phân biệt với 500: user sửa được bằng cách vào màn Giọng đọc tải lại."""
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        client = make_client(tmp_path / "models", write_catalog(tmp_path), audio)
+
+        response = client.post("/synthesize", headers=auth(), json=self._body(audio / "s.ogg"))
+        assert response.status_code == 422
+        assert "Giọng đọc" in response.json()["detail"]

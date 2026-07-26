@@ -19,8 +19,15 @@ class HealthResponse(BaseModel):
     status: HealthStatus
     version: str
     pid: int
-    # Engine TTS đã sẵn sàng chưa. P2.1 luôn là False — chưa có engine nào.
+    # Engine TTS đã nạp xong voice nào chưa.
+    #
+    # Từ P2.4 đây là trạng thái THẬT, không còn `False` cứng. Nhưng nghĩa của nó
+    # là "đã nạp xong một voice", KHÔNG phải "generate được": engine nạp lười ở
+    # lần synthesize đầu tiên, nên `False` lúc mới khởi động là bình thường.
+    # Supervisor không được coi `False` là hỏng.
     engine_ready: bool = False
+    # Voice đang giữ trong bộ nhớ, `None` khi chưa nạp gì.
+    loaded_voice_id: str | None = None
 
 
 class NormalizeRequest(BaseModel):
@@ -85,3 +92,41 @@ class InstalledVoicesResponse(BaseModel):
 class DeleteVoiceResponse(BaseModel):
     voiceId: str  # noqa: N815
     removed: bool
+
+
+# --- Tổng hợp giọng đọc (P2.4) --------------------------------------------
+
+
+class SynthesizeRequest(BaseModel):
+    """Tổng hợp MỘT segment. Không nhận cả chương — xem ghi chú ở route."""
+
+    text: str = Field(min_length=1, max_length=2_000)
+    voiceId: str = Field(min_length=1, max_length=64)  # noqa: N815
+    # Đường dẫn file `.ogg` đích, do main tính qua `services/paths.ts`. Sidecar
+    # KHÔNG tự ghép path: `audioDir` user đổi được và chỉ main biết nó ở đâu.
+    outPath: str = Field(min_length=1)  # noqa: N815
+    bitrate: Literal[16, 24, 32] = 24
+    # Ngôn ngữ để chuẩn hoá text trước khi đọc (số, viết tắt, ngày tháng).
+    lang: str = Field(default="vi", min_length=2, max_length=8)
+
+
+class WordTimingModel(BaseModel):
+    """Khớp `WordTiming` ở `packages/shared/src/types.ts` — tên field giữ nguyên."""
+
+    w: str
+    startMs: int  # noqa: N815
+    endMs: int  # noqa: N815
+    charStart: int  # noqa: N815
+    charEnd: int  # noqa: N815
+
+
+class SynthesizeResponse(BaseModel):
+    audioPath: str  # noqa: N815
+    durationMs: int  # noqa: N815
+    audioBytes: int  # noqa: N815
+    sampleRate: int  # noqa: N815
+    voiceId: str  # noqa: N815
+    # `phoneme` = alignment thật của Piper, `estimate` = chia theo độ dài ký tự.
+    # Đưa lên UI để chẩn đoán được vì sao highlight lệch, thay vì đoán mò.
+    timingSource: Literal["phoneme", "estimate"]  # noqa: N815
+    timings: list[WordTimingModel]

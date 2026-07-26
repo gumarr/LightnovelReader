@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-26 · commit `ed799cf`
+> **Cập nhật lần cuối:** 2026-07-26 · commit `(P2.4)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -32,8 +32,8 @@ pnpm build:sidecar
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P2.4 — Piper engine + `/synthesize` (xem mục 3).
-**Phase 1 xong. P2.1, P2.2, P2.3 xong.**
+**Việc tiếp theo:** P2.5 — Job queue persist SQLite (xem mục 3).
+**Phase 1 xong. P2.1, P2.2, P2.3, P2.4 xong.**
 
 ---
 
@@ -369,16 +369,57 @@ sidecar** — nợ mức Cao đã chặn P2.4, làm luôn ở đây theo đúng 
 
 Tìm ra **1 lỗi đóng gói** mà 245 test sidecar không lộ — xem mục 4.29.
 
+### Phase 2 — P2.4 Piper engine + `/synthesize` ✅
+
+Lần đầu app sinh ra audio thật. Chia theo **thứ hỏng theo cách khác nhau**: ba
+hàm thuần trên mảng numpy (test không cần voice 63 MB), rồi engine, rồi route.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `sidecar/app/audio/resample.py` | Polyphase 22050→24000 (xem 4.30) | 21 |
+| `sidecar/app/audio/encode.py` | Opus trong `.ogg`, bitrate 16/24/32 (4.31) | 19 |
+| `sidecar/app/audio/timings.py` | Phoneme alignment → `WordTiming` (4.32) | 23 |
+| `sidecar/app/audio/paths.py` | Chặn ghi ra ngoài `audioDir` (4.33) | 7 |
+| `sidecar/app/engines/piper.py` | Nạp + cache model, `engine_ready` thật | 16 |
+| `sidecar/app/main.py` | `POST /synthesize`, `/health` báo engine thật | +9 |
+| `main/services/sidecar-client.ts` | `synthesize()` + giữ `detail` lỗi thật | +8 |
+| `main/services/sidecar-process.ts` | Truyền `LN_SIDECAR_AUDIO_DIR` | +2 |
+| `main/services/sidecar-supervisor.ts` | `audioDir` là **hàm** — user đổi được | +1 |
+| `shared/types.ts` | `TimingSource`, `SynthesisResult` | — |
+
+**Đã chạy thật với model `vi_VN-vais1000-medium` 63 MB** (không chỉ bản giả):
+
+| | Kết quả |
+|---|---|
+| Tổng hợp câu VI 13 từ | ✅ 2.81s audio, RTF ~0.76 lần đầu |
+| Cache model | ✅ 1.58s → **0.07s** cho segment kế (23×) |
+| Timing từ phoneme thật | ✅ 13/13 từ khớp, mốc nối liền nhau |
+| Nhiều câu một segment | ✅ `"Ừ. À. Ồ."` 3 chunk → 3 từ (xem 4.32) |
+| Chữ số rơi về ước lượng | ✅ `"Lớp 11-5 có 30…"` → `estimate`, không gán lệch |
+
+**Đã chạy thật với `.exe` PyInstaller** (đường đi mà unit test không chạm tới):
+
+| | Kết quả |
+|---|---|
+| Bắt tay stdout từ `.exe` | ✅ `LN_SIDECAR_READY {...,"port":54402,...}` |
+| `/synthesize` qua `.exe` | ✅ 4.25s (gồm nạp model), `timingSource: phoneme` |
+| File `.ogg` sinh ra | ✅ magic `OggS`, 24000 Hz, 2.74s, **RMS 0.168** — tiếng thật |
+| Lần 2 (cache) | ✅ **0.11s** |
+| `engine_ready` | ✅ `false` → `true` sau lượt đầu, kèm `loaded_voice_id` |
+| Đóng app | ✅ không còn tiến trình mồ côi |
+
+Tìm ra **1 lỗi đóng gói** mà 340 test không lộ — xem mục 4.34.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1180 passed** (+99 ở P2.3) |
-| Unit test sidecar (pytest) | **245 passed** (+80 ở P2.3) |
+| Unit test TypeScript | **1192 passed** (+12 ở P2.4) |
+| Unit test sidecar (pytest) | **345 passed** (+100 ở P2.4) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | 5 kịch bản |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
-| Installer | **94 MB** (đã gồm sidecar `.exe` 29 MB) |
+| Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
 
 ---
 
@@ -398,31 +439,39 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 | P2.2 | Supervisor bên main: spawn/kill, health check 5s, restart 3 lần | ✅ Xong |
 | P2.3 | Voice manager: catalog, download + verify SHA256, progress UI | ✅ Xong |
 | — | *(kèm P2.3)* Đóng gói sidecar `.exe` + catalog vào installer | ✅ Xong |
-| P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | ⬅️ **Tiếp theo** |
-| P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | Chưa |
+| P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | ✅ Xong |
+| P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | ⬅️ **Tiếp theo** |
 | P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | Chưa |
 | P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | Chưa |
 
 **DoD Phase 2:** Generate chương 1 → có audio, phát được, xem & xoá được dung lượng.
 
-### Ghi chú cho P2.4 (Piper engine + `/synthesize`)
+### Ghi chú cho P2.5 (Job queue persist SQLite)
 
-Những gì P2.3 để lại sẵn:
+Những gì P2.4 để lại sẵn:
 
-- **Voice đã cài tra ở đâu**: `sidecar/app/voices/catalog.py` có
-  `is_installed()` và `voice_dir()`. Engine nạp model thì lấy đường dẫn từ đó,
-  **đừng** tự ghép `models_dir / voices / id` lần nữa.
-- `is_installed()` chỉ kiểm **kích thước**, không băm lại (63 MB băm mỗi lần mở
-  màn hình là quá đắt). Engine nạp file hỏng vẫn có thể xảy ra nếu user sửa tay
-  — bắt lỗi lúc nạp và báo rõ, đừng giả định file luôn đúng.
-- **`engineReady` vẫn đang `false` cứng** trong `sidecar/app/main.py`. P2.4 phải
-  đổi nó thành trạng thái thật, vì supervisor và UI đều đã đọc sẵn field này.
-- `requirements.txt` giờ có `httpx`. Thêm `piper-tts` + `onnxruntime` vào **đó**
-  (không phải `requirements-dev.txt`), nếu không bản `.exe` thiếu — xem 4.29b.
-- **Thêm dependency Python xong phải build lại `.exe` và chạy thử**, không chỉ
-  chạy pytest: `pnpm build:sidecar` rồi chạy `ln-sidecar.exe` xem nó còn bắt tay
-  được không. ONNX Runtime có DLL native, đúng loại thứ PyInstaller hay bỏ sót.
-- Bitrate 16/24/32 đã có trong `AppSettings.bitrate`, chưa ai đọc.
+- **Gọi generate một segment**: `client.synthesize({ text, voiceId, outPath,
+  bitrate, lang, signal })` ở `sidecar-client.ts`. `outPath` **bắt buộc** lấy
+  qua `segmentAudioPath()` của `services/paths.ts` — sidecar từ chối mọi đường
+  dẫn ngoài `audioDir` (mục 4.33).
+- **Huỷ job đã nối sẵn**: truyền `signal` vào `synthesize()`. Không truyền thì
+  job "đã huỷ" vẫn chiếm sidecar cho tới khi tổng hợp xong.
+- **Sidecar xử lý tuần tự một segment mỗi lần** (`PiperEngine` có `Lock`). Queue
+  bên main **không nên** bắn nhiều request song song: không nhanh hơn (CPU-bound)
+  mà còn làm hàng đợi bên trong sidecar không quan sát được. Một worker là đủ.
+- **Đo thật để ước lượng ở P2.6**: RTF ~0.76 cho lần đầu (gồm nạp model 1.5 s),
+  ~0.04 cho các segment sau nhờ cache. `SYNTHESIS_RTF_ESTIMATE = 0.15` trong
+  `constants.ts` nằm giữa hai con số đó — dùng tạm được, nhưng nếu ước lượng
+  "generate cả sách" lệch nhiều thì đo lại trên máy thật rồi chỉnh.
+- **`durationMs` trả về là số thật**, tính từ số mẫu — dùng nó cập nhật
+  `Segment.durationMs`, đừng ước lượng lại từ độ dài text.
+- **`timingSource`** cho biết timing lấy từ đâu. Cả hai đều ứng với
+  `alignStatus = 'estimated'`; chỉ CTC ở Phase 4 mới lên `'aligned'`.
+- **`timings` chưa được ghi ra đĩa.** Route mới chỉ trả về qua HTTP. Theo domain
+  model thì phải nằm ở `{audioDir}/{bookId}/{segmentId}.json` — đã có
+  `segmentTimingsPath()` sẵn, nhưng **chưa ai gọi**. P2.5 ghi khi job xong.
+- Bitrate lấy từ `AppSettings.bitrate` (16/24/32), **vẫn chưa ai đọc** — queue
+  phải truyền nó xuống, nếu không mọi segment đều 24 kbps mặc định.
 
 ### Ghi chú cho Phase 2 (TTS + player)
 
@@ -1105,6 +1154,142 @@ test vẫn xanh. `test_build.py` khoá cả hai chiều.
 
 Installer: 82 → **94 MB** (sidecar onedir 29 MB). Vẫn xa mốc 200 MB của plan.
 
+### 4.30 Piper xuất 22050 Hz mà Opus không nhận — phải tự resample
+
+Ràng buộc không né được: Piper xuất **22050 Hz** (nằm trong model `.onnx` đã
+train, đổi là đổi cao độ giọng), còn libsndfile chỉ mã hoá Opus ở
+**8/12/16/24/48 kHz**. Không resample thì `sf.SoundFile` ném ngay lúc mở file.
+
+**Đã thống nhất với user: tự viết polyphase, không thêm scipy.**
+`scipy.signal.resample_poly` làm sẵn đúng việc này nhưng wheel ~45 MB sẽ kéo
+installer từ 94 MB lên ~140 MB — cho đúng một hàm. Chọn 24000 Hz làm đích (không
+phải 48000: giọng nói không có gì trên 12 kHz để giữ, mà 48 kHz thì gấp đôi số
+mẫu phải mã hoá; cũng không phải 16000: cắt mất âm xát /s/, /t/ nghe đục).
+
+Đổi lại là phải tự chịu trách nhiệm về chất lượng — và **hai lỗi đã bị bắt bằng
+chính test đo tính chất tín hiệu**, cả hai đều không ném exception nào:
+
+**a) Chuẩn hoá bộ lọc sai — audio nhỏ đi 160 lần.** Mỗi mẫu đầu ra chỉ chạm
+**một pha** của bộ lọc, nên điều kiện giữ nguyên biên độ là "tổng **mỗi pha**
+= 1", không phải "tổng cả bộ lọc = 1". Chuẩn hoá nhầm về 1 thì audio gần như câm.
+
+**b) Tần số cắt lấy `1/up` thay vì `1/max(up, down)` — 4 kHz gập xuống 2 kHz.**
+Khi giảm mẫu thì Nyquist đích thấp hơn Nyquist nguồn; cắt theo `up` để lọt đúng
+phần bị gập ngược thành aliasing. Đo được: sine 4000 Hz ra đỉnh ở 2050 Hz.
+
+Bài học chung: **resample hỏng không báo lỗi.** Audio vẫn phát được, chỉ là nhỏ
+tiếng / méo / lệch cao độ. Nên test đo **hệ số khuếch đại RMS, tần số đỉnh, độ
+dài** chứ không so mảng với số chép cứng.
+
+Bản đầu chạy vòng lặp Python cho từng mẫu đầu ra: đúng nhưng **1.2 s** cho một
+segment 10 s — thêm ~1.6 giờ cho cuốn 4818 segment, nhiều hơn cả thời gian Piper
+tổng hợp. Vector hoá bằng numpy còn **114 ms** (10×).
+
+### 4.31 Bitrate Opus phải ĐO, không suy ra từ công thức
+
+libsndfile không cho đặt bitrate trực tiếp — chỉ có `compression_level` trong
+[0, 1], **ngược chiều** với bitrate. Công thức tuyến tính `1 - kbps/256` nghe
+hợp lý nhưng lệch tới **+7 kbps** ở vùng 16–32 kbps, mà đó đúng là vùng dự án
+này chạy. Bảng trong `encode.py` lấy từ đo thật trên tín hiệu giọng nói 30 s:
+
+| Bitrate muốn | `compression_level` | Đo được |
+|---|---|---|
+| 16 | 0.962 | 16.4 kbps |
+| 24 | 0.933 | 23.6 kbps |
+| 32 | 0.900 | 32.0 kbps |
+
+**Thêm bitrate mới thì phải ĐO lại**, đừng nội suy — đường cong không tuyến
+tính, nhất là khi tiến gần 1.0 (0.99 → 8 kbps, 1.0 → 6.3 kbps).
+
+Kèm hai quyết định nhỏ:
+
+- **`duration_ms` tính từ số mẫu ĐẦU VÀO**, không đọc lại file đã mã hoá. Opus
+  đệm mẫu im lặng ở đầu (pre-skip) nên đọc lại ra dài hơn thật vài chục ms — đủ
+  để timing từng từ trôi lệch dần về cuối segment.
+- **Ghi qua `.part` rồi đổi tên** (cùng lý lẽ với tải voice ở 4.28): tiến trình
+  chết giữa chừng để lại `.ogg` dở dang mà lần sau nhìn vào tưởng đã xong.
+
+### 4.32 Timing từ phoneme của Piper — chính xác hơn hẳn ước lượng theo ký tự
+
+Piper 1.6 trả về **số mẫu audio cho từng phoneme** (`include_alignments=True`),
+gộp theo ranh giới từ là ra mốc thời gian sát thực tế. Đã thống nhất với user
+dùng đường này thay vì chỉ chia theo độ dài ký tự như `plan.md` mô tả.
+
+**Cần package `onnx` (17 MB)** để piper vá model trong bộ nhớ. Model tải từ HF
+**không** có sẵn đầu ra alignment — đã kiểm: thiếu `onnx` thì
+`phoneme_alignments` là `None`.
+
+**Cạm bẫy: piper KHÔNG ném lỗi khi thiếu `onnx`** — nó chỉ ghi log cảnh báo rồi
+trả `None`. Nghĩa là bản `.exe` thiếu package đó vẫn chạy bình thường nhưng
+timing **âm thầm** rơi hết về ước lượng theo ký tự. Đó là lý do `test_engine.py`
+khoá lại việc `import onnx` phải chạy được, và vì sao API trả về `timingSource`.
+
+**Lỗi thật đã bắt được khi chạy trên câu mẫu:** Piper tổng hợp **mỗi câu một
+chunk**. Bản đầu nhận một mảng phoneme phẳng rồi so với số từ của **cả segment**,
+nên `"Ừ. À. Ồ."` (3 chunk, mỗi chunk 1 từ) luôn lệch và rơi về ước lượng — trong
+khi alignment hoàn toàn dùng được. Nay nhận `list[PhonemeChunk]` và cộng dồn
+xuyên qua ranh giới chunk.
+
+**Không khớp thì trả rỗng để rơi về ước lượng, không cố đoán.** Chữ số đọc thành
+nhiều từ (`"30"` → "ba mươi") nên số nhóm phoneme lệch số từ; gán lệch một nhịp
+sẽ sai cho **mọi** từ phía sau, tệ hơn hẳn ước lượng đều. Đo trên câu thật:
+
+| Câu | Nguồn timing |
+|---|---|
+| `"Cô ấy vẫy tay chào tạm biệt."` | `phoneme` 7/7 từ |
+| `"Ừ. À. Ồ."` | `phoneme` 3/3 từ (3 chunk) |
+| `"Lớp 11-5 có 30 học sinh."` | `estimate` — đúng như thiết kế |
+
+### 4.33 `outPath` đến từ request HTTP — phải chặn ghi ra ngoài `audioDir`
+
+Sidecar nghe loopback, nhưng bất kỳ tiến trình nào trên máy đoán được cổng +
+token đều gọi thẳng `/synthesize` được. Không kiểm thì một request đặt `outPath`
+thành `.../LN Reader/ln-reader.db` sẽ **ghi đè cả thư viện sách** bằng dữ liệu
+Opus. Cùng lý lẽ với `is_safe_voice_id` ở 4.28: tin biên trên kiểm hộ là bỏ
+trống đúng cửa mà kẻ tấn công đi vào.
+
+→ `app/audio/paths.py` `resolve()` cả hai vế **trước** khi so (`..`, symlink,
+đường dẫn tương đối đều quy về dạng chuẩn), rồi dùng `is_relative_to` chứ không
+so chuỗi tiền tố — so chuỗi thì `/audio-khac` khớp tiền tố `/audio` và lọt qua.
+
+Thư mục cho phép đi qua env `LN_SIDECAR_AUDIO_DIR`. Bên main, `audioDir` là
+**hàm** chứ không phải chuỗi: user đổi được trong Settings, chốt giá trị lúc
+dựng supervisor thì đổi xong sidecar vẫn ghi vào chỗ cũ tới khi khởi động lại
+app. Thiếu env thì sidecar **từ chối** mọi lượt generate (400) chứ không ghi bừa
+ra thư mục làm việc — quên truyền là hỏng ngay, không âm thầm.
+
+### 4.34 PyInstaller 6.11 không gói nổi numpy 2.5 — `.exe` build xong vẫn chết
+
+Đúng như dự đoán ghi ở phiên trước ("ONNX Runtime có DLL native, đúng loại thứ
+PyInstaller hay bỏ sót"), nhánh `.exe` hỏng ngay lần build đầu của P2.4 trong
+khi **340 test vẫn xanh**.
+
+```
+ModuleNotFoundError: No module named 'numpy._core._exceptions'
+ImportError: Importing the numpy C-extensions failed.
+```
+
+Hook numpy của PyInstaller 6.11.1 viết **trước** numpy 2.5, nên chỉ mang theo
+các file `.pyd` mà bỏ hết submodule Python thuần. `.exe` build **thành công**,
+kích thước hợp lý (145 MB), rồi chết ngay dòng import đầu tiên.
+
+→ Nâng `pyinstaller` 6.11.1 → **6.21.0**. Test khoá ở `test_build.py`: phiên bản
+phải ≥ 6.21.
+
+**Kèm một lỗi tự gây ra khi đang đuổi lỗi trên:** khai `--hidden-import numpy`
+tường minh sẽ **ĐÈ** hook numpy của PyInstaller và cho ra đúng triệu chứng y
+hệt. Để hook tự lo mới đúng; `test_build.py` khoá luôn việc **không** được khai
+`numpy` trong `HIDDEN_IMPORTS`.
+
+Ba thứ **phải** khai tường minh vì hook không phủ:
+
+- `--collect-binaries onnxruntime soundfile` — DLL native
+- `--collect-data piper` — `espeak-ng-data` (gồm `vi_dict`); thiếu thì model nạp
+  được nhưng không phiên âm nổi chữ nào
+- `--hidden-import onnx` — cho `include_alignments` (xem 4.32)
+
+Sidecar onedir: 29 → **145 MB**. Phần lớn là ONNX Runtime + espeak data.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -1161,11 +1346,15 @@ py -3.12 -m venv .venv        # 3.14 CHƯA kiểm, đừng dùng
 
 - venv nằm ở `sidecar/.venv/` (đã gitignore), **không** dùng chung với Node
 - Code không dùng cú pháp riêng 3.12 → vẫn chạy được 3.11 nếu bản đóng gói cần
-- `requirements.txt` có `fastapi` + `uvicorn` + `pydantic` + `httpx` (httpx là
-  **runtime** từ P2.3 — tải voice, xem 4.29b). Piper và ONNX Runtime thêm ở
-  **P2.4**, cố ý chưa khai để `pip install` không kéo về 200 MB wheel chưa dùng
+- `requirements.txt` có `fastapi` + `uvicorn` + `pydantic` + `httpx`, và từ P2.4
+  thêm `piper-tts` + `soundfile` + `onnx` (kéo theo `onnxruntime` + `numpy`).
+  **Mọi thứ ở đó đi vào bản `.exe`** — thêm dòng nào cũng phải chạy lại
+  `pnpm build:sidecar` rồi khởi động thử `.exe`, không chỉ pytest (mục 4.34)
 - `pyinstaller` nằm ở `requirements-dev.txt` — chỉ cần lúc đóng gói, máy user
-  không có Python nên không bao giờ chạy `pip` ở đó
+  không có Python nên không bao giờ chạy `pip` ở đó. **Bắt buộc ≥ 6.21**, bản cũ
+  hơn không gói nổi numpy 2.5 (mục 4.34)
+- Cài lại sau khi kéo code P2.4: `.venv/Scripts/python.exe -m pip install -r
+  requirements-dev.txt` (kéo cả `requirements.txt`) — khoảng 200 MB wheel
 - Chạy pytest từ gốc: `pnpm test:sidecar`. Chưa dựng venv thì script **bỏ qua
   và thoát 0**, không làm đỏ oan `pnpm test` của người chỉ đụng TypeScript
 - Trên Windows phải thêm `-X utf8` khi chạy python trực tiếp, nếu không tên
@@ -1288,9 +1477,15 @@ sidecar/                   Dịch vụ TTS Python (venv riêng — mục 5.4)
   build.py                 PyInstaller onedir → ln-sidecar.exe
   app/voices/catalog.py    Đọc catalog + soi đĩa (thuần, không mạng)
   app/voices/download.py   Tải + băm theo dòng chảy + dọn sạch khi hỏng
+  app/audio/resample.py    Polyphase 22050→24000 — Opus không nhận 22050 (4.30)
+  app/audio/encode.py      Opus trong .ogg; bảng bitrate ĐO thật (4.31)
+  app/audio/timings.py     Phoneme alignment → WordTiming, có lưới an toàn (4.32)
+  app/audio/paths.py       Chặn ghi ra ngoài audioDir (4.33)
+  app/engines/piper.py     Chỗ DUY NHẤT import piper. Cache model, tự khoá luồng
   app/config.py            Đọc env do main đặt lúc spawn; models dir BẮT BUỘC
   app/auth.py              Middleware X-Session-Token, so token thời gian hằng
-  app/main.py              FastAPI: /health (không token), /normalize, /voices*
+  app/main.py              FastAPI: /health (không token), /normalize, /voices*,
+                           /synthesize (một SEGMENT mỗi lần, chạy thread riêng)
   app/server.py            Bind socket + bắt tay stdout (hợp đồng — mục 4.26)
   app/schemas.py           pydantic cho mọi biên vào-ra
   app/text/normalize_vi.py 8 luật, mỗi luật một hàm thuần (thứ tự bắt buộc)
@@ -1350,11 +1545,19 @@ scripts/
 | Probe chạy thật sidecar chưa vào CI | TB | `apps/main/probe/` đã tìm ra lỗi 4.27 nhưng phải gọi tay. Cần venv nên chưa nối vào CI được — nối cùng lúc với hàng trên. Đây là lần thứ tư "unit test xanh mà đường nối thật hỏng" |
 | ~~Sidecar chưa đóng gói~~ | ✅ Xong | `build.py` + `extraResources` đã có. **Đã kiểm thật ở bản đóng gói**: sidecar `.exe` lên `ready`, tải voice 63 MB xong trong app đã build. Lộ ra 1 lỗi thật (mục 4.29a). Phần **CI** vẫn còn nợ — xem hàng dưới |
 | ~~Renderer chưa hiện trạng thái sidecar~~ | ✅ Xong | `SidecarBadge` hiện ở màn Giọng đọc, có cả 5 trạng thái. Đã đo màu thật trong app đóng gói ở cả dark lẫn light |
-| Đóng gói sidecar chưa vào CI | **Cao** | `pnpm build:win` **không** tự gọi `pnpm build:sidecar` — quên chạy thì installer ra vẫn thành công nhưng thiếu sidecar, hỏng lặng lẽ. Cố ý chưa nối vào vì PyInstaller cần venv Python mà CI chưa dựng; nối cùng lúc với `pnpm test:sidecar`. Trong lúc chờ: **luôn chạy `pnpm build:sidecar` trước `pnpm build:win`** |
+| Đóng gói sidecar chưa vào CI | **Cao** | `pnpm build:win` **không** tự gọi `pnpm build:sidecar` — quên chạy thì installer ra vẫn thành công nhưng thiếu sidecar, hỏng lặng lẽ. Cố ý chưa nối vào vì PyInstaller cần venv Python mà CI chưa dựng; nối cùng lúc với `pnpm test:sidecar`. Trong lúc chờ: **luôn chạy `pnpm build:sidecar` trước `pnpm build:win`**. P2.4 lại xác nhận rủi ro này: `.exe` hỏng mà 340 test vẫn xanh (mục 4.34) |
+| Chưa dựng lại installer sau P2.4 | TB | `.exe` sidecar **đã** build và chạy thật (bắt tay, `/synthesize`, `.ogg` nghe được). Nhưng `pnpm build:win` chưa chạy lại nên chưa biết installer mới bao nhiêu MB và electron-builder có chép trọn 145 MB onedir không. Làm cùng lúc với P2.5 |
 | Chỉ có 2 voice trong catalog | Thấp | VI (`vais1000`) + EN (`lessac`), đều `medium`. Đủ cho P2.4, nhưng user muốn giọng khác thì phải sửa file — chưa có đường thêm voice từ UI |
 | Tải voice không resume được | TB | Đứt giữa chừng là mất cả 63 MB, tải lại từ đầu. HF có hỗ trợ `Range` nên làm được, nhưng phải giữ trạng thái băm dở — băm theo dòng chảy hiện tại không nối tiếp được. Để lại tới khi thấy người dùng thật kêu |
 | Nút "Giọng đọc" chỉ có ở màn thư viện | Thấp | Vào đọc sách rồi thì phải quay ra mới tải voice được. Hợp lý cho tới khi có nút generate trong reader (P2.6) |
 | Supervisor chưa có backoff luỹ tiến | Thấp | Chờ cố định `SIDECAR_RESTART_DELAY_MS` (1s) giữa các lần thử. Với trần 3 lượt thì đủ; nếu sau này nới trần thì nên tăng dần để không dội liên tục |
+| **`timings` chưa ghi ra đĩa** | **Cao** | `/synthesize` trả `timings` qua HTTP nhưng **chưa ai lưu**. Domain model bắt buộc `{audioDir}/{bookId}/{segmentId}.json`; `segmentTimingsPath()` đã có sẵn mà chưa được gọi. Không có nó thì mở lại app là mất hết timing, phải generate lại. P2.5 ghi khi job xong |
+| Chưa nối `/synthesize` vào UI | TB | Có route + client nhưng chưa có nút nào gọi. Cố ý: generate phải đi qua job queue (P2.5) chứ không phải nút gọi thẳng — bấm hai lần là hai lượt tổng hợp song song không huỷ được |
+| Bitrate trong settings vẫn chưa ai đọc | TB | `AppSettings.bitrate` (16/24/32) đã có từ Phase 0. `/synthesize` nhận tham số `bitrate` nhưng main chưa truyền giá trị thật xuống — mọi segment sẽ là 24 kbps mặc định cho tới khi P2.5 nối vào |
+| Sidecar `.exe` 29 → 145 MB | TB | ONNX Runtime + espeak-ng data (mọi ngôn ngữ, gồm `ru_dict` 9 MB) + numpy. Installer sẽ vượt mốc 200 MB của plan.md. Cắt được: loại bớt `espeak-ng-data/*_dict` không dùng (chỉ cần `vi`, `en`) — nhưng phải chắc piper không nạp động cái nào khác trước khi cắt |
+| Engine chỉ giữ MỘT voice trong RAM | Thấp | Sách VI và EN xen kẽ sẽ nạp lại model mỗi lần đổi (~1.5 s). Giữ hai model là ~400 MB RAM. Chấp nhận được vì generate thường chạy theo cả chương cùng một giọng |
+| Timing chưa kiểm trên giọng EN | TB | Cách gộp phoneme → từ mới đo thật trên `vi_VN-vais1000-medium`. Voice EN chưa tải nên chưa biết espeak tách từ tiếng Anh có khớp regex `\w+` không (viết tắt `Mr.`, sở hữu cách `John's`). Có lưới an toàn nên không vỡ, nhưng có thể rơi về `estimate` nhiều hơn cần thiết |
+| `SYNTHESIS_RTF_ESTIMATE` chưa hiệu chỉnh | Thấp | Hằng số 0.15 đặt từ Phase 0 theo plan.md. Đo thật: ~0.76 lần đầu (gồm nạp model), ~0.04 các lần sau. Ước lượng "generate cả sách" ở P2.6 sẽ hơi lệch — đo lại rồi chỉnh khi làm phần đó |
 | Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

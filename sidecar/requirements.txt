@@ -1,8 +1,9 @@
 # Sidecar TTS — Python >= 3.11 (dev hiện chạy 3.12, xem PROGRESS.md mục 5.4)
 #
-# Chỉ những gì đã thật sự dùng tới. Piper/ONNX Runtime thêm ở P2.4 khi có engine
-# thật — không khai trước để `pip install` phiên này không kéo về 200 MB wheel
-# chưa dùng tới.
+# MỌI thứ ở đây đi vào bản `.exe` PyInstaller. Thêm dòng nào cũng phải chạy lại
+# `pnpm build:sidecar` rồi khởi động thử `.exe` — không chỉ pytest. Thư viện có
+# DLL native (onnxruntime, soundfile) là đúng loại PyInstaller hay bỏ sót, và
+# lỗi đó không lộ ra ở venv.
 fastapi==0.115.6
 uvicorn==0.34.0
 pydantic==2.10.4
@@ -10,3 +11,24 @@ pydantic==2.10.4
 # test) — `requirements-dev.txt` từng khai httpx cho TestClient, nhưng bản đóng
 # gói cũng cần nó để tải model, nên phải nằm ở đây.
 httpx==0.28.1
+
+# --- P2.4: engine TTS -----------------------------------------------------
+#
+# `piper-tts` kéo theo `onnxruntime` + `numpy`. Bản wheel đã gói sẵn cả
+# espeak-ng data (gồm `vi_dict`), nên KHÔNG cần cài piper-phonemize riêng.
+piper-tts==1.6.0
+
+# Mã hoá Opus trong .ogg. libsndfile đi kèm wheel (~1 MB) nên không cần
+# ffmpeg hay DLL cài ngoài — người dùng không phải cài gì thêm.
+#
+# LƯU Ý: libsndfile chỉ nhận Opus ở 8/12/16/24/48 kHz, mà Piper xuất 22050 Hz.
+# Vì vậy có `app/audio/resample.py` — xem lý do đầy đủ ở đó.
+soundfile==0.14.0
+
+# Cần cho `include_alignments`: piper vá model trong bộ nhớ để lộ ra số sample
+# mỗi phoneme. Thiếu package này thì piper CHỈ ghi log cảnh báo rồi trả
+# `phoneme_alignments = None` — không ném lỗi. Nghĩa là bản `.exe` thiếu onnx
+# sẽ chạy bình thường nhưng timing rơi hết về ước lượng theo ký tự, âm thầm
+# kém đi mà không có gì báo. Đó là lý do `test_engine.py` khoá lại việc onnx
+# phải import được.
+onnx==1.22.0

@@ -17,6 +17,7 @@ ENV_HOST = "LN_SIDECAR_HOST"
 ENV_PORT = "LN_SIDECAR_PORT"
 ENV_MODELS_DIR = "LN_SIDECAR_MODELS_DIR"
 ENV_CATALOG_PATH = "LN_SIDECAR_CATALOG"
+ENV_AUDIO_DIR = "LN_SIDECAR_AUDIO_DIR"
 
 # Chỉ nghe loopback. Không bao giờ đổi thành 0.0.0.0 — sidecar không có
 # xác thực nào ngoài token dùng chung, mở ra LAN là mở cho cả mạng.
@@ -47,6 +48,15 @@ class SidecarConfig:
     # Rỗng = chưa có catalog. Không ném lỗi như `models_dir` vì app vẫn chạy
     # được (đọc sách không cần voice), chỉ là màn voice manager không có gì.
     catalog_path: str
+    # Thư mục audio (`audioDir` trong settings, user đổi được). `/synthesize`
+    # chỉ được ghi file BÊN TRONG thư mục này.
+    #
+    # Vì sao cần: `outPath` đến từ thân request HTTP. Sidecar nghe trên loopback
+    # nhưng bất kỳ tiến trình nào trên máy đoán được cổng + token đều gọi được,
+    # nên không có ràng buộc này thì một request có thể ghi đè file bất kỳ mà
+    # user đang chạy quyền của họ. Rỗng = chưa cấu hình → `/synthesize` từ chối
+    # ghi, thay vì ghi bừa ra thư mục làm việc.
+    audio_dir: str
 
 
 def _read_port(raw: str | None) -> int:
@@ -87,4 +97,5 @@ def load_config(env: dict[str, str] | None = None) -> SidecarConfig:
         port=_read_port(source.get(ENV_PORT)),
         models_dir=models_dir,
         catalog_path=source.get(ENV_CATALOG_PATH, "").strip(),
+        audio_dir=source.get(ENV_AUDIO_DIR, "").strip(),
     )

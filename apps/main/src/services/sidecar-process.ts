@@ -133,6 +133,15 @@ export type StartSidecarOptions = {
    * được khi không có voice nào.
    */
   catalogPath?: string;
+  /**
+   * Thư mục audio (`audioDir` trong settings, user đổi được).
+   *
+   * `/synthesize` chỉ được ghi file **bên trong** thư mục này — `outPath` đến
+   * từ thân request HTTP, mà bất kỳ tiến trình nào trên máy đoán được cổng +
+   * token đều gọi được. Thiếu thì sidecar từ chối mọi lượt generate (400) chứ
+   * không ghi bừa, nên quên truyền là hỏng ngay chứ không âm thầm.
+   */
+  audioDir?: string;
   token: string;
   spawn: SpawnSidecar;
   startupTimeoutMs: number;
@@ -159,6 +168,7 @@ export const startSidecar = async (options: StartSidecarOptions): Promise<Sideca
     cwd,
     modelsDir,
     catalogPath,
+    audioDir,
     token,
     spawn,
     startupTimeoutMs,
@@ -181,6 +191,7 @@ export const startSidecar = async (options: StartSidecarOptions): Promise<Sideca
       ...(catalogPath === undefined || catalogPath === ''
         ? {}
         : { LN_SIDECAR_CATALOG: catalogPath }),
+      ...(audioDir === undefined || audioDir === '' ? {} : { LN_SIDECAR_AUDIO_DIR: audioDir }),
       // Python đệm stdout theo khối khi nối vào pipe. Sidecar đã tự `flush()`
       // sau dòng bắt tay, nhưng đặt thêm ở đây để log về sau cũng ra ngay.
       PYTHONUNBUFFERED: '1',

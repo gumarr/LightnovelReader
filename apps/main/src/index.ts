@@ -148,6 +148,9 @@ const start = (): void => {
     resourcesPath: process.resourcesPath,
     repoRoot,
     modelsDir: modelsDir(userData),
+    // Hàm chứ không phải chuỗi: user đổi thư mục audio trong Settings thì lần
+    // sidecar dựng lại kế tiếp phải ghi vào chỗ mới.
+    audioDir: () => settings.getAll().audioDir,
     spawn: nodeSpawnSidecar,
     exists: existsSync,
     logger,

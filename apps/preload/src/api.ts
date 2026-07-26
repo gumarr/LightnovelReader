@@ -10,10 +10,15 @@ import {
   type BookHtml,
   type ChapterPreview,
   type ChapterPreviewRequest,
+  type EnqueueChapterRequest,
+  type EnqueueResult,
+  type EnqueueSegmentsRequest,
   type ImportPreview,
   type InstalledVoice,
   type IpcChannel,
+  type Job,
   type LibraryEntry,
+  type QueueStatusInfo,
   type ReadingProgress,
   type SaveBookRequest,
   type SaveBookResponse,
@@ -130,6 +135,26 @@ export const api = {
     onDownloadProgress: (
       listener: (progress: VoiceDownloadProgress) => void,
     ): (() => void) => subscribe('voices:downloadProgress', listener),
+  },
+
+  queue: {
+    enqueueSegments: (request: EnqueueSegmentsRequest): Promise<Result<EnqueueResult>> =>
+      invoke('queue:enqueueSegments', request),
+    enqueueChapter: (request: EnqueueChapterRequest): Promise<Result<EnqueueResult>> =>
+      invoke('queue:enqueueChapter', request),
+    getStatus: (): Promise<Result<QueueStatusInfo>> => invoke('queue:getStatus', undefined),
+    listPending: (): Promise<Result<Job[]>> => invoke('queue:listPending', undefined),
+    pause: (): Promise<Result<QueueStatusInfo>> => invoke('queue:pause', undefined),
+    resume: (): Promise<Result<QueueStatusInfo>> => invoke('queue:resume', undefined),
+    cancelJob: (jobId: string): Promise<Result<void>> => invoke('queue:cancelJob', jobId),
+    cancelBook: (bookId: string): Promise<Result<EnqueueResult>> =>
+      invoke('queue:cancelBook', bookId),
+    cancelAll: (): Promise<Result<EnqueueResult>> => invoke('queue:cancelAll', undefined),
+    onStatusChanged: (listener: (status: QueueStatusInfo) => void): (() => void) =>
+      subscribe('queue:statusChanged', listener),
+    /** Một segment vừa xong hoặc vừa hỏng — reader đổi nút phát theo cái này */
+    onSegmentUpdated: (listener: (segment: Segment) => void): (() => void) =>
+      subscribe('queue:segmentUpdated', listener),
   },
 
   window: {

@@ -61,6 +61,11 @@ export const JOB_MAX_ATTEMPTS = 3;
 export const DEFAULT_SETTINGS: Omit<AppSettings, 'audioDir'> = {
   theme: 'system',
   bitrate: DEFAULT_BITRATE,
+  // Rỗng = chưa chọn giọng. Không đoán sẵn một voiceId: đoán rồi mà voice đó
+  // chưa tải thì hàng đợi hỏng với lỗi khó hiểu, trong khi rỗng cho ra đúng
+  // câu "chưa cài giọng đọc nào".
+  voiceVi: '',
+  voiceEn: '',
   // 1 vol ≈ 97 MB ở 24 kbps → 5 GB ≈ 50 vol, đủ rộng mà vẫn cảnh báo kịp
   storageWarnBytes: 5 * 1024 ** 3,
   alignmentEnabled: true,

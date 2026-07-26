@@ -94,6 +94,8 @@ describe('appSettingsSchema', () => {
     theme: 'system',
     audioDir: 'D:\\audio',
     bitrate: 24,
+    voiceVi: 'vi_VN-vais1000-medium',
+    voiceEn: '',
     storageWarnBytes: 0,
     alignmentEnabled: true,
     viewerPaneRatio: 0.66,

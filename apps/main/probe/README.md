@@ -15,8 +15,13 @@ npx vitest run -c apps/main/probe/vitest.config.ts -t "giết tiến trình th�
 ```
 
 Chưa dựng `sidecar/.venv` thì tự bỏ qua (`describe.skipIf`), không báo lỗi.
+`queue-real.test.ts` còn cần **voice thật đã tải** trong userData
+(`%APPDATA%/LN Reader/models/voices/vi_VN-vais1000-medium`) — chưa có thì cũng
+tự bỏ qua chứ không hỏng.
 
 ## Kiểm những gì
+
+### `sidecar-real.test.ts` — supervisor + tiến trình
 
 | Kịch bản | Chứng minh điều gì |
 |---|---|
@@ -26,13 +31,28 @@ Chưa dựng `sidecar/.venv` thì tự bỏ qua (`describe.skipIf`), không báo
 | Token sai / thiếu | Sidecar thật trả 401 — token không phải hình thức |
 | Hỏng cố định (thiếu env) | Hết lượt thì `failed`, không quay vòng vô tận |
 
+### `queue-real.test.ts` — hàng đợi + model 63 MB + SQLite + đĩa
+
+| Kịch bản | Chứng minh điều gì |
+|---|---|
+| Generate cả chương | `outPath` main dựng được sidecar chấp nhận (nó **từ chối** mọi path ngoài `audioDir`, mà `audioDir` đi qua biến môi trường lúc spawn — đường nối chỉ tồn tại khi chạy thật) |
+| Đọc magic `OggS` + kích thước | File sinh ra là audio thật, không phải file rỗng. `audioBytes` trong DB khớp đĩa từng byte |
+| Timing ra đĩa | `{segmentId}.json` tồn tại và `durationMs` khớp DB — thứ mà unit test giả `SidecarClient` không chạm tới |
+| Bitrate 16 vs 32 | Tham số từ `AppSettings` đi tới tận libsndfile, không bị bỏ quên giữa đường |
+| Khôi phục job mồ côi | Job kẹt `running` sau khi app bị kill chạy lại và xong thật |
+| Huỷ giữa chừng | Cắt được request đang bay; **không** segment nào kẹt ở `generating`/`queued` |
+
 ## Vì sao phải có
 
-Chạy thật ở đây **đã tìm ra một lỗi thật** mà 71 unit test không thấy: khử
-trùng lặp báo hỏng theo *trạng thái* khiến lần chết thứ hai trở đi bị nuốt,
-supervisor đứng im ở `restarting` mãi mãi và không bao giờ tới `failed`. Tiến
-trình giả trong unit test luôn bắt tay thành công nên không dựng được kịch bản
-"chết liên tiếp ngay lúc khởi động".
+Chạy thật ở đây đã tìm ra **hai lỗi thật** mà unit test không thấy:
 
-Lỗi đó nay đã có unit test khoá lại — xem mục "chết LIÊN TIẾP ngay lúc khởi
-động" trong `sidecar-supervisor.test.ts`.
+1. **P2.2** — khử trùng lặp báo hỏng theo *trạng thái* khiến lần chết thứ hai
+   trở đi bị nuốt, supervisor đứng im ở `restarting` mãi mãi và không bao giờ
+   tới `failed`. Tiến trình giả trong unit test luôn bắt tay thành công nên
+   không dựng được kịch bản "chết liên tiếp ngay lúc khởi động".
+2. **P2.5** — `cancelAll`/`cancelByBook` huỷ job trong SQLite nhưng quên đưa
+   segment về `pending`, nên chúng kẹt `queued` vĩnh viễn. 1319 unit test xanh
+   vì test của `cancelAll` kiểm đúng thứ nó nghĩ là kết quả (`jobs.counts()`),
+   không kiểm thứ user nhìn thấy. Xem PROGRESS mục 4.35.
+
+Cả hai nay đều có unit test khoá lại ở tầng nhanh.

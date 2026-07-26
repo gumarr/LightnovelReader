@@ -270,3 +270,112 @@ describe('SegmentRepository', () => {
     expect(found?.alignStatus).toBe('none');
   });
 });
+
+describe('SegmentRepository — vòng đời generate (P2.5)', () => {
+  const ready = {
+    audioPath: 'D:/audio/book-1/seg-1.ogg',
+    durationMs: 2810,
+    audioBytes: 9401,
+    alignStatus: 'estimated' as const,
+  };
+
+  beforeEach(() => {
+    books.insert(book());
+    chapters.insertMany([chapter()]);
+    segments.insertMany([segment({ id: 'seg-1', index: 0 }), segment({ id: 'seg-2', index: 1 })]);
+  });
+
+  it('đi qua đủ ba trạng thái queued → generating → ready', () => {
+    segments.markQueued('seg-1');
+    expect(segments.findById('seg-1')?.status).toBe('queued');
+
+    segments.markGenerating('seg-1');
+    expect(segments.findById('seg-1')?.status).toBe('generating');
+
+    segments.markReady('seg-1', ready);
+    expect(segments.findById('seg-1')?.status).toBe('ready');
+  });
+
+  it('ghi lại durationMs thật của sidecar, không ước lượng lại', () => {
+    segments.markReady('seg-1', ready);
+    const found = segments.findById('seg-1');
+
+    expect(found?.durationMs).toBe(2810);
+    expect(found?.audioBytes).toBe(9401);
+    expect(found?.audioPath).toBe('D:/audio/book-1/seg-1.ogg');
+  });
+
+  it('timing phoneme lẫn ước lượng đều cho alignStatus estimated', () => {
+    // Chỉ CTC ở Phase 4 mới được lên 'aligned'.
+    segments.markReady('seg-1', ready);
+    expect(segments.findById('seg-1')?.alignStatus).toBe('estimated');
+  });
+
+  it('cộng dung lượng lên chương', () => {
+    segments.markReady('seg-1', ready);
+    expect(chapters.findById('chap-1')?.audioBytes).toBe(9401);
+  });
+
+  it('generate lại KHÔNG đếm trùng dung lượng', () => {
+    // Đổi bitrate hay đổi giọng là generate lại — cộng dồn thì storage manager
+    // hiện số gấp đôi mà không có cách nào tự phát hiện.
+    segments.markReady('seg-1', ready);
+    segments.markReady('seg-1', { ...ready, audioBytes: 5000 });
+
+    expect(chapters.findById('chap-1')?.audioBytes).toBe(5000);
+  });
+
+  it('mới xong một phần thì chương là partial', () => {
+    segments.markReady('seg-1', ready);
+    expect(chapters.findById('chap-1')?.generateStatus).toBe('partial');
+  });
+
+  it('xong hết thì chương là complete', () => {
+    segments.markReady('seg-1', ready);
+    segments.markReady('seg-2', ready);
+
+    expect(chapters.findById('chap-1')?.generateStatus).toBe('complete');
+  });
+
+  it('lỗi thì giữ lại thông báo cho user', () => {
+    segments.markError('seg-1', 'Voice chưa được cài');
+    const found = segments.findById('seg-1');
+
+    expect(found?.status).toBe('error');
+    expect(found?.errorMessage).toBe('Voice chưa được cài');
+  });
+
+  it('generate lại thành công thì xoá lỗi cũ', () => {
+    segments.markError('seg-1', 'lỗi tạm');
+    segments.markReady('seg-1', ready);
+
+    expect(segments.findById('seg-1')).not.toHaveProperty('errorMessage');
+  });
+
+  it('huỷ job thì segment về pending chứ không kẹt ở generating', () => {
+    segments.markGenerating('seg-1');
+    segments.resetToPending('seg-1');
+
+    expect(segments.findById('seg-1')?.status).toBe('pending');
+  });
+
+  it('huỷ KHÔNG xoá audio đã có của segment đã xong', () => {
+    // Job huỷ sau khi segment đã ready thì file .ogg vẫn nằm trên đĩa — đưa về
+    // pending là nói dối, và user sẽ generate lại thứ đã có.
+    segments.markReady('seg-1', ready);
+    segments.resetToPending('seg-1');
+
+    expect(segments.findById('seg-1')?.status).toBe('ready');
+  });
+
+  it('liệt kê được segment chưa có audio để enqueue', () => {
+    segments.markReady('seg-1', ready);
+
+    expect(segments.listPendingByChapter('chap-1').map((s) => s.id)).toEqual(['seg-2']);
+  });
+
+  it('tra ngược ra sách để dựng đường dẫn audio', () => {
+    expect(segments.findBookId('seg-1')).toBe('book-1');
+    expect(segments.findBookId('không-có')).toBeUndefined();
+  });
+});

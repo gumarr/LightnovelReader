@@ -6,6 +6,7 @@ import type {
   BookLang,
   Chapter,
   InstalledVoice,
+  Job,
   Segment,
   SidecarStatus,
   ThemeMode,
@@ -176,6 +177,40 @@ export type VoiceCatalogItem = {
   installed: boolean;
 };
 
+/**
+ * Trạng thái hàng đợi generate như UI cần thấy.
+ *
+ * Chỉ có con số tổng chứ không kèm danh sách job: "generate cả sách" là ~4800
+ * job, đẩy cả mảng qua IPC mỗi lần một segment xong là hàng nghìn lần gửi vô
+ * ích. Danh sách lấy riêng qua `queue:listPending` khi user mở bảng hàng đợi.
+ */
+export type QueueStatusInfo = {
+  state: 'idle' | 'running' | 'paused';
+  queued: number;
+  running: number;
+  done: number;
+  error: number;
+  cancelled: number;
+  /** Segment đang tổng hợp — UI hiện tên chương đang chạy */
+  currentSegmentId?: string;
+};
+
+export type EnqueueSegmentsRequest = {
+  segmentIds: string[];
+  /** Số càng lớn càng ưu tiên. Segment sắp phát dùng `JOB_PRIORITY_URGENT`. */
+  priority?: number;
+};
+
+export type EnqueueChapterRequest = {
+  chapterId: string;
+  priority?: number;
+};
+
+export type EnqueueResult = {
+  /** Số job **mới** tạo — segment đã nằm trong hàng đợi chỉ được nâng priority */
+  added: number;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -229,6 +264,21 @@ export type IpcContract = {
   'voices:cancelDownload': { in: string; out: Result<void> };
   'voices:remove': { in: string; out: Result<void> };
 
+  /** Xếp segment vào hàng đợi generate */
+  'queue:enqueueSegments': { in: EnqueueSegmentsRequest; out: Result<EnqueueResult> };
+  /** Xếp cả chương — main tự tra segment chưa có audio */
+  'queue:enqueueChapter': { in: EnqueueChapterRequest; out: Result<EnqueueResult> };
+  'queue:getStatus': { in: void; out: Result<QueueStatusInfo> };
+  /** Job đang chờ/chạy, ưu tiên cao trước. Dùng khi user mở bảng hàng đợi */
+  'queue:listPending': { in: void; out: Result<Job[]> };
+  /** Tạm dừng sau job hiện tại. Không vứt công đang làm dở */
+  'queue:pause': { in: void; out: Result<QueueStatusInfo> };
+  'queue:resume': { in: void; out: Result<QueueStatusInfo> };
+  /** Huỷ một job. Đang chạy thì cắt luôn request đang bay */
+  'queue:cancelJob': { in: string; out: Result<void> };
+  'queue:cancelBook': { in: string; out: Result<EnqueueResult> };
+  'queue:cancelAll': { in: void; out: Result<EnqueueResult> };
+
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
   'window:close': { in: void; out: Result<void> };
@@ -256,6 +306,19 @@ export type IpcEventContract = {
    * `voices:download` vì một lượt tải sinh ra hàng trăm mốc tiến độ.
    */
   'voices:downloadProgress': VoiceDownloadProgress;
+  /**
+   * Hàng đợi generate đổi trạng thái.
+   *
+   * Đẩy chủ động vì một lượt "generate cả sách" chạy hàng giờ mà không có
+   * tương tác nào từ user — hỏi vòng thì UI hoặc trễ, hoặc phí IPC liên tục.
+   */
+  'queue:statusChanged': QueueStatusInfo;
+  /**
+   * Một segment vừa xong (hoặc hỏng). Đi riêng khỏi `queue:statusChanged` vì
+   * reader cần biết **segment nào** để đổi nút "phát" mà không phải tải lại cả
+   * danh sách segment.
+   */
+  'queue:segmentUpdated': Segment;
 };
 
 export type IpcEventName = keyof IpcEventContract;
@@ -289,6 +352,15 @@ export const IPC_CHANNELS = [
   'voices:download',
   'voices:cancelDownload',
   'voices:remove',
+  'queue:enqueueSegments',
+  'queue:enqueueChapter',
+  'queue:getStatus',
+  'queue:listPending',
+  'queue:pause',
+  'queue:resume',
+  'queue:cancelJob',
+  'queue:cancelBook',
+  'queue:cancelAll',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',
@@ -300,6 +372,8 @@ export const IPC_EVENTS = [
   'settings:changed',
   'sidecar:statusChanged',
   'voices:downloadProgress',
+  'queue:statusChanged',
+  'queue:segmentUpdated',
 ] as const satisfies readonly IpcEventName[];
 
 /**

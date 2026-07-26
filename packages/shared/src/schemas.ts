@@ -98,6 +98,10 @@ export const appSettingsSchema = z.object({
   theme: themeModeSchema,
   audioDir: z.string().min(1),
   bitrate: audioBitrateSchema,
+  // Rỗng = chưa chọn. Khác rỗng thì phải hợp lệ như tên thư mục — voiceId đi
+  // thẳng vào đường dẫn model trên đĩa.
+  voiceVi: z.string().max(64).regex(/^[A-Za-z0-9_-]*$/),
+  voiceEn: z.string().max(64).regex(/^[A-Za-z0-9_-]*$/),
   storageWarnBytes: z.number().int().nonnegative(),
   alignmentEnabled: z.boolean(),
   viewerPaneRatio: z.number().min(VIEWER_PANE_RATIO_MIN).max(VIEWER_PANE_RATIO_MAX),
@@ -193,6 +197,27 @@ export const voiceCatalogSchema = z.object({
   baseUrl: z.string().url(),
   voices: z.array(voiceCatalogEntrySchema).max(200),
 });
+
+/**
+ * Input của `queue:*`.
+ *
+ * Trần 5000 segment cho một lượt enqueue: một vol 270 trang cho ~4800 segment,
+ * nên "generate cả sách" phải lọt, còn renderer hỏng thì không ép main dựng
+ * hàng đợi vô hạn.
+ */
+export const segmentIdSchema = z.string().min(1).max(64);
+
+export const enqueueSegmentsSchema = z.object({
+  segmentIds: z.array(segmentIdSchema).min(1).max(5000),
+  priority: z.number().int().min(0).max(1000).optional(),
+});
+
+export const enqueueChapterSchema = z.object({
+  chapterId: z.string().min(1).max(64),
+  priority: z.number().int().min(0).max(1000).optional(),
+});
+
+export const jobIdSchema = z.string().min(1).max(64);
 
 // Kiểm tra AUDIO_BITRATES và schema không lệch nhau khi sửa constants
 const _bitrateGuard: ReadonlyArray<z.infer<typeof audioBitrateSchema>> = AUDIO_BITRATES;

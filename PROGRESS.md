@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-26 · commit `50dcf25`
+> **Cập nhật lần cuối:** 2026-07-26 · commit `<P2.5>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -23,7 +23,8 @@ cd sidecar && py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements-dev.txt
 cd .. && pnpm test:sidecar
 
-# Chạy thật supervisor + sidecar Python (ngoài pnpm test — xem apps/main/probe/)
+# Chạy thật supervisor + hàng đợi generate với sidecar Python + model 63 MB
+# (ngoài pnpm test — xem apps/main/probe/). Cần voice đã tải trong userData.
 npx vitest run -c apps/main/probe/vitest.config.ts
 
 # Đóng gói sidecar thành .exe (BẮT BUỘC chạy TRƯỚC pnpm build:win — mục 4.29)
@@ -32,8 +33,8 @@ pnpm build:sidecar
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P2.5 — Job queue persist SQLite (xem mục 3).
-**Phase 1 xong. P2.1, P2.2, P2.3, P2.4 xong.**
+**Việc tiếp theo:** P2.6 — Generate theo chương + prefetch + ước lượng (xem mục 3).
+**Phase 1 xong. P2.1, P2.2, P2.3, P2.4, P2.5 xong.**
 
 ---
 
@@ -410,13 +411,44 @@ hàm thuần trên mảng numpy (test không cần voice 63 MB), rồi engine, r
 
 Tìm ra **1 lỗi đóng gói** mà 340 test không lộ — xem mục 4.34.
 
+### Phase 2 — P2.5 Job queue persist SQLite ✅
+
+Hàng đợi generate nằm trong SQLite, chạy tuần tự một worker, dừng/huỷ được.
+Bảng `jobs` đã có sẵn từ schema v1 nên **không cần migration mới**.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `main/services/timings-store.ts` | Ghi/đọc `{segmentId}.json` — **trả nợ P2.4** | 16 |
+| `main/db/repositories/jobs.ts` | enqueue/claim/retry/cancel, priority, khôi phục | 36 |
+| `main/db/repositories/segments.ts` | Vòng đời generate + dồn `audio_bytes` lên chương | +13 |
+| `main/services/queue.ts` | Worker tuần tự, pause/resume/cancel, `AbortSignal` | 44 |
+| `main/ipc/handlers/queue.ts` | 9 channel `queue:*` | 22 |
+| `preload/api.ts` | `window.api.queue.*` + 2 event | +2 |
+| `shared/ipc.ts` | `QueueStatusInfo`, `EnqueueResult`, event tiến độ | — |
+| `shared/types.ts` | `AppSettings.voiceVi` / `voiceEn` (xem 4.36) | — |
+
+**Đã chạy thật với sidecar + model 63 MB + SQLite + đĩa thật**
+(`probe/queue-real.test.ts`, ngoài `pnpm test`):
+
+| | Kết quả |
+|---|---|
+| Generate cả chương 3 segment | ✅ 1.83s, cả 3 `ready` |
+| File `.ogg` là audio thật | ✅ magic `OggS`, > 9 KB mỗi file |
+| `audioBytes` trong DB vs đĩa | ✅ khớp từng byte |
+| Timing ghi ra đĩa (nợ P2.4) | ✅ 13–14 từ/segment, `timingSource: phoneme` |
+| Bitrate settings có tác dụng | ✅ 16 kbps → 6797 B · 32 kbps → **12574 B** |
+| Khôi phục job mồ côi | ✅ job kẹt `running` chạy lại và xong |
+| Huỷ giữa chừng | ✅ cắt thật, segment về `pending` cả 3 |
+
+Tìm ra **1 lỗi thật mà 1319 unit test không lộ** — xem mục 4.35.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1192 passed** (+12 ở P2.4) |
-| Unit test sidecar (pytest) | **345 passed** (+100 ở P2.4) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | 5 kịch bản |
+| Unit test TypeScript | **1323 passed** (+131 ở P2.5) |
+| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.5 không đụng sidecar) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | 9 kịch bản (+4 ở P2.5) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
@@ -440,38 +472,36 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 | P2.3 | Voice manager: catalog, download + verify SHA256, progress UI | ✅ Xong |
 | — | *(kèm P2.3)* Đóng gói sidecar `.exe` + catalog vào installer | ✅ Xong |
 | P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | ✅ Xong |
-| P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | ⬅️ **Tiếp theo** |
-| P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | Chưa |
+| P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | ✅ Xong |
+| P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | ⬅️ **Tiếp theo** |
 | P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | Chưa |
 
 **DoD Phase 2:** Generate chương 1 → có audio, phát được, xem & xoá được dung lượng.
 
-### Ghi chú cho P2.5 (Job queue persist SQLite)
+### Ghi chú cho P2.6 (Generate theo chương + prefetch + ước lượng)
 
-Những gì P2.4 để lại sẵn:
+Những gì P2.5 để lại sẵn:
 
-- **Gọi generate một segment**: `client.synthesize({ text, voiceId, outPath,
-  bitrate, lang, signal })` ở `sidecar-client.ts`. `outPath` **bắt buộc** lấy
-  qua `segmentAudioPath()` của `services/paths.ts` — sidecar từ chối mọi đường
-  dẫn ngoài `audioDir` (mục 4.33).
-- **Huỷ job đã nối sẵn**: truyền `signal` vào `synthesize()`. Không truyền thì
-  job "đã huỷ" vẫn chiếm sidecar cho tới khi tổng hợp xong.
-- **Sidecar xử lý tuần tự một segment mỗi lần** (`PiperEngine` có `Lock`). Queue
-  bên main **không nên** bắn nhiều request song song: không nhanh hơn (CPU-bound)
-  mà còn làm hàng đợi bên trong sidecar không quan sát được. Một worker là đủ.
-- **Đo thật để ước lượng ở P2.6**: RTF ~0.76 cho lần đầu (gồm nạp model 1.5 s),
-  ~0.04 cho các segment sau nhờ cache. `SYNTHESIS_RTF_ESTIMATE = 0.15` trong
-  `constants.ts` nằm giữa hai con số đó — dùng tạm được, nhưng nếu ước lượng
-  "generate cả sách" lệch nhiều thì đo lại trên máy thật rồi chỉnh.
-- **`durationMs` trả về là số thật**, tính từ số mẫu — dùng nó cập nhật
-  `Segment.durationMs`, đừng ước lượng lại từ độ dài text.
-- **`timingSource`** cho biết timing lấy từ đâu. Cả hai đều ứng với
-  `alignStatus = 'estimated'`; chỉ CTC ở Phase 4 mới lên `'aligned'`.
-- **`timings` chưa được ghi ra đĩa.** Route mới chỉ trả về qua HTTP. Theo domain
-  model thì phải nằm ở `{audioDir}/{bookId}/{segmentId}.json` — đã có
-  `segmentTimingsPath()` sẵn, nhưng **chưa ai gọi**. P2.5 ghi khi job xong.
-- Bitrate lấy từ `AppSettings.bitrate` (16/24/32), **vẫn chưa ai đọc** — queue
-  phải truyền nó xuống, nếu không mọi segment đều 24 kbps mặc định.
+- **Xếp cả chương chỉ là một lời gọi**: `queue:enqueueChapter` đã tự lọc segment
+  chưa có audio (`listPendingByChapter`) rồi tự `start()`. P2.6 chỉ cần nối nút
+  bấm vào, **không** phải tự dựng danh sách segment.
+- **Prefetch dùng priority, không dùng hàng đợi riêng.** `enqueueSegments` nhận
+  `priority`; đọc tới 80% thì xếp chương kế với `JOB_PRIORITY_PREFETCH`, còn
+  segment sắp phát dùng `JOB_PRIORITY_URGENT`. Enqueue lại một segment đã nằm
+  trong hàng đợi chỉ **nâng** priority chứ không tạo job thứ hai — bấm bao nhiêu
+  lần cũng an toàn.
+- **Ước lượng "cả sách"**: `estimate.ts` bên `shared` đã có `bytesPerSecondAt()`
+  và `CHARS_PER_SECOND_ESTIMATE`. Số đo thật ở P2.5: **3 segment VI ~2.8s
+  audio, mỗi file ~9.3 KB ở 24 kbps**, tổng hợp 1.83s cho cả 3 (~0.22 RTF gồm
+  cả nạp model). `SYNTHESIS_RTF_ESTIMATE = 0.15` vẫn hợp lý.
+- **UI đã có nguồn dữ liệu**: `queue:getStatus` cho số đếm, `queue:statusChanged`
+  đẩy mỗi lần đổi, `queue:segmentUpdated` cho biết segment nào vừa xong. Không
+  cần hỏi vòng.
+- **Chưa có màn hình nào gọi `queue:*`** — toàn bộ 9 channel đã nối tới main và
+  chạy thật, nhưng renderer chưa có nút. Đây là việc chính của P2.6.
+- **Chọn giọng đọc chưa có UI.** `AppSettings.voiceVi`/`voiceEn` mặc định rỗng,
+  mà rỗng thì hàng đợi **dừng** và báo "Chưa cài giọng đọc nào" (xem 4.36). Phải
+  làm màn chọn giọng trong Settings, nếu không P2.6 chạy thử sẽ luôn dừng ngay.
 
 ### Ghi chú cho Phase 2 (TTS + player)
 
@@ -1290,6 +1320,52 @@ Ba thứ **phải** khai tường minh vì hook không phủ:
 
 Sidecar onedir: 29 → **145 MB**. Phần lớn là ONNX Runtime + espeak data.
 
+### 4.35 Huỷ hàng loạt quên dọn segment — 1319 unit test không lộ, probe lộ ngay
+
+`cancelJob` (huỷ một job) làm đúng: huỷ job **và** đưa segment về `pending`.
+Nhưng `cancelAll`/`cancelByBook` chỉ chạy một câu `UPDATE jobs` rồi thôi.
+
+Hậu quả: segment kẹt ở `queued` **vĩnh viễn**. UI quay vòng cho một việc không
+còn ai làm, mà bấm generate lại cũng không cứu được — job cũ đã `cancelled` nên
+`enqueue` tạo job mới, nhưng trạng thái segment thì không ai sửa.
+
+**Vì sao unit test không thấy.** Test của `cancelAll` kiểm đúng thứ nó nghĩ là
+kết quả — `jobs.counts().cancelled === 2` — và điều đó **đúng**. Nó không kiểm
+`segments`, vì lúc viết test tôi đang nghĩ về bảng `jobs`. Cả 1319 test xanh.
+
+Probe với sidecar thật bắt được ngay lượt chạy đầu, vì nó kiểm cái mà **user**
+nhìn thấy chứ không phải cái mà hàm vừa gọi trả về:
+
+```
+Trạng thái segment sau huỷ: pending, queued, queued   ← hỏng
+Trạng thái segment sau huỷ: pending, pending, pending ← đã sửa
+```
+
+**Cách sửa.** `cancelByBook`/`cancelAll` trả về **danh sách segment ID** bị ảnh
+hưởng thay vì con số, để nơi gọi còn dọn. Phải đọc danh sách **trước** khi
+`UPDATE` (trong cùng transaction) — sau đó thì không còn `queued`/`running` nào
+để lọc ra nữa. Đã khoá lại bằng 3 unit test ở tầng nhanh.
+
+**Bài học lặp lại lần thứ ba** (sau 4.19 pdfjs và 4.34 numpy): test xanh chứng
+minh hàm làm đúng thứ nó được viết để làm, không chứng minh tính năng chạy.
+
+### 4.36 Giọng đọc lưu theo NGÔN NGỮ, không phải một giá trị duy nhất
+
+Hàng đợi cần biết dùng voice nào, mà trước P2.5 không có chỗ nào lưu lựa chọn
+đó — `AppSettings` có `bitrate`, `audioDir`, nhưng không có `voiceId`.
+
+Chọn `voiceVi` + `voiceEn` chứ không phải một `voiceId`: thư viện có cả sách VI
+lẫn sách EN, mà một cuốn thì không đổi ngôn ngữ giữa chừng. Một giá trị duy nhất
+nghĩa là user phải vào Settings đổi giọng mỗi lần chuyển sách — và nếu quên thì
+sách EN bị đọc bằng giọng Việt, ra âm thanh vô nghĩa mà vẫn "generate thành
+công".
+
+Mặc định là **chuỗi rỗng**, không phải một voiceId đoán sẵn. Đoán sẵn
+`vi_VN-vais1000-medium` thì máy chưa tải model sẽ hỏng ở tận lớp engine với lỗi
+khó hiểu, trong khi rỗng cho ra đúng câu user cần đọc: *"Chưa cài giọng đọc nào.
+Vào màn Giọng đọc để tải."* — và hàng đợi **dừng hẳn** thay vì đốt sạch 3 lượt
+thử của từng job vào cùng một nguyên nhân.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -1422,13 +1498,16 @@ apps/main/src/
   db/migrations.ts         Schema SQL theo version (KHÔNG sửa migration đã phát hành)
   db/migrator.ts           Runner theo PRAGMA user_version
   db/connection.ts         Instance dùng chung, WAL
-  db/repositories/         MỌI SQL nằm ở đây — books / chapters / segments
+  db/repositories/         MỌI SQL nằm ở đây — books / chapters / segments / jobs
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
   ipc/handlers/            app / settings / window / import / library / sidecar
                            / voices (tải chạy nền, chặn tải trùng)
+                           / queue (9 channel, handler mỏng — policy ở service)
   services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
   services/library.ts      Copy file + hash + dựng segment + lưu DB
+  services/queue.ts        Hàng đợi generate: MỘT worker tuần tự, persist SQLite
+  services/timings-store.ts Đọc/ghi {segmentId}.json cạnh file .ogg
   services/paths.ts        NGUỒN DUY NHẤT sinh path + chặn path traversal
   services/sidecar-paths.ts      Tìm sidecar: venv (dev) vs .exe (đóng gói)
   services/sidecar-process.ts    Spawn + bắt tay stdout + kill (hợp đồng 4.26)
@@ -1546,15 +1625,20 @@ scripts/
 | ~~Sidecar chưa đóng gói~~ | ✅ Xong | `build.py` + `extraResources` đã có. **Đã kiểm thật ở bản đóng gói**: sidecar `.exe` lên `ready`, tải voice 63 MB xong trong app đã build. Lộ ra 1 lỗi thật (mục 4.29a). Phần **CI** vẫn còn nợ — xem hàng dưới |
 | ~~Renderer chưa hiện trạng thái sidecar~~ | ✅ Xong | `SidecarBadge` hiện ở màn Giọng đọc, có cả 5 trạng thái. Đã đo màu thật trong app đóng gói ở cả dark lẫn light |
 | Đóng gói sidecar chưa vào CI | **Cao** | `pnpm build:win` **không** tự gọi `pnpm build:sidecar` — quên chạy thì installer ra vẫn thành công nhưng thiếu sidecar, hỏng lặng lẽ. Cố ý chưa nối vào vì PyInstaller cần venv Python mà CI chưa dựng; nối cùng lúc với `pnpm test:sidecar`. Trong lúc chờ: **luôn chạy `pnpm build:sidecar` trước `pnpm build:win`**. P2.4 lại xác nhận rủi ro này: `.exe` hỏng mà 340 test vẫn xanh (mục 4.34) |
-| Chưa dựng lại installer sau P2.4 | TB | `.exe` sidecar **đã** build và chạy thật (bắt tay, `/synthesize`, `.ogg` nghe được). Nhưng `pnpm build:win` chưa chạy lại nên chưa biết installer mới bao nhiêu MB và electron-builder có chép trọn 145 MB onedir không. Làm cùng lúc với P2.5 |
+| Chưa dựng lại installer sau P2.4/P2.5 | TB | `.exe` sidecar **đã** build và chạy thật (bắt tay, `/synthesize`, `.ogg` nghe được). Nhưng `pnpm build:win` chưa chạy lại nên chưa biết installer mới bao nhiêu MB và electron-builder có chép trọn 145 MB onedir không. P2.5 không đụng sidecar nên rủi ro không tăng thêm |
 | Chỉ có 2 voice trong catalog | Thấp | VI (`vais1000`) + EN (`lessac`), đều `medium`. Đủ cho P2.4, nhưng user muốn giọng khác thì phải sửa file — chưa có đường thêm voice từ UI |
 | Tải voice không resume được | TB | Đứt giữa chừng là mất cả 63 MB, tải lại từ đầu. HF có hỗ trợ `Range` nên làm được, nhưng phải giữ trạng thái băm dở — băm theo dòng chảy hiện tại không nối tiếp được. Để lại tới khi thấy người dùng thật kêu |
 | Nút "Giọng đọc" chỉ có ở màn thư viện | Thấp | Vào đọc sách rồi thì phải quay ra mới tải voice được. Hợp lý cho tới khi có nút generate trong reader (P2.6) |
 | Supervisor chưa có backoff luỹ tiến | Thấp | Chờ cố định `SIDECAR_RESTART_DELAY_MS` (1s) giữa các lần thử. Với trần 3 lượt thì đủ; nếu sau này nới trần thì nên tăng dần để không dội liên tục |
-| **`timings` chưa ghi ra đĩa** | **Cao** | `/synthesize` trả `timings` qua HTTP nhưng **chưa ai lưu**. Domain model bắt buộc `{audioDir}/{bookId}/{segmentId}.json`; `segmentTimingsPath()` đã có sẵn mà chưa được gọi. Không có nó thì mở lại app là mất hết timing, phải generate lại. P2.5 ghi khi job xong |
-| Chưa nối `/synthesize` vào UI | TB | Có route + client nhưng chưa có nút nào gọi. Cố ý: generate phải đi qua job queue (P2.5) chứ không phải nút gọi thẳng — bấm hai lần là hai lượt tổng hợp song song không huỷ được |
-| Bitrate trong settings vẫn chưa ai đọc | TB | `AppSettings.bitrate` (16/24/32) đã có từ Phase 0. `/synthesize` nhận tham số `bitrate` nhưng main chưa truyền giá trị thật xuống — mọi segment sẽ là 24 kbps mặc định cho tới khi P2.5 nối vào |
+| ~~**`timings` chưa ghi ra đĩa**~~ | ✅ Xong | `services/timings-store.ts` ghi `{audioDir}/{bookId}/{segmentId}.json` (ghi `.part` rồi rename). **Đã kiểm thật**: 3 segment × 13–14 từ, `durationMs` khớp DB |
+| Chưa có màn hình nào gọi `queue:*` | **TB** | 9 channel đã nối tới main và **chạy thật** qua probe, nhưng renderer chưa có nút generate nào. Việc chính của P2.6 |
+| Chưa có UI chọn giọng đọc | **TB** | `AppSettings.voiceVi`/`voiceEn` đã có và hàng đợi đọc thật, nhưng mặc định rỗng và **không có màn nào để đặt**. Rỗng thì hàng đợi dừng với "Chưa cài giọng đọc nào" — P2.6 chạy thử sẽ luôn dừng ngay nếu chưa làm phần này (xem 4.36) |
+| ~~Bitrate trong settings chưa ai đọc~~ | ✅ Xong | Hàng đợi truyền `AppSettings.bitrate` xuống mỗi job. **Đo trên file thật**: 16 kbps → 6797 B, 32 kbps → 12574 B cho cùng một câu |
 | Sidecar `.exe` 29 → 145 MB | TB | ONNX Runtime + espeak-ng data (mọi ngôn ngữ, gồm `ru_dict` 9 MB) + numpy. Installer sẽ vượt mốc 200 MB của plan.md. Cắt được: loại bớt `espeak-ng-data/*_dict` không dùng (chỉ cần `vi`, `en`) — nhưng phải chắc piper không nạp động cái nào khác trước khi cắt |
+| Hàng đợi không tự chạy lại sau khi sidecar hồi phục | TB | `index.ts` gọi `queue.resume()` khi sidecar về `ready`, nhưng **chưa kiểm thật** đường này: probe dựng queue riêng chứ không qua `index.ts`. Kiểm khi P2.6 có UI để giết sidecar giữa lúc generate |
+| Retry không có backoff | Thấp | Job hỏng quay lại hàng đợi và có thể được `claimNext` ngay lượt sau — 3 lượt thử cháy hết trong vài chục ms nếu lỗi là tức thời (sidecar từ chối luôn). Đủ dùng vì `markError` vẫn đếm đúng, nhưng lỗi tạm thời (mạng, khoá file) sẽ không kịp qua cơn |
+| `queue:listPending` chưa ai gọi | Thấp | Trần 200 job đã đặt, nhưng bảng hàng đợi ở UI thì P2.6/P2.7 mới dựng |
+| Job `align` khai trong schema nhưng chưa dùng | Thấp | `JobType` có `'align'` từ schema v1, hàng đợi hiện chỉ tạo job `'synthesize'`. Dành cho CTC forced alignment ở Phase 4 — `findActiveBySegment` đã nhận `type` nên không phải sửa gì thêm lúc đó |
 | Engine chỉ giữ MỘT voice trong RAM | Thấp | Sách VI và EN xen kẽ sẽ nạp lại model mỗi lần đổi (~1.5 s). Giữ hai model là ~400 MB RAM. Chấp nhận được vì generate thường chạy theo cả chương cùng một giọng |
 | Timing chưa kiểm trên giọng EN | TB | Cách gộp phoneme → từ mới đo thật trên `vi_VN-vais1000-medium`. Voice EN chưa tải nên chưa biết espeak tách từ tiếng Anh có khớp regex `\w+` không (viết tắt `Mr.`, sở hữu cách `John's`). Có lưới an toàn nên không vỡ, nhưng có thể rơi về `estimate` nhiều hơn cần thiết |
 | `SYNTHESIS_RTF_ESTIMATE` chưa hiệu chỉnh | Thấp | Hằng số 0.15 đặt từ Phase 0 theo plan.md. Đo thật: ~0.76 lần đầu (gồm nạp model), ~0.04 các lần sau. Ước lượng "generate cả sách" ở P2.6 sẽ hơi lệch — đo lại rồi chỉnh khi làm phần đó |

@@ -26,6 +26,10 @@ import { createLibraryService } from './services/library.js';
 import { createBookRepository } from './db/repositories/books.js';
 import { createChapterRepository } from './db/repositories/chapters.js';
 import { createSegmentRepository } from './db/repositories/segments.js';
+import { createJobRepository } from './db/repositories/jobs.js';
+import { createGenerateQueue } from './services/queue.js';
+import { createTimingsStore } from './services/timings-store.js';
+import { createQueueHandlers, toQueueStatusInfo } from './ipc/handlers/queue.js';
 import { createWindowHandlers, readWindowState } from './ipc/handlers/window.js';
 import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './window.js';
 import { createNodeParserRegistry, nodeDocxConverter } from '@ln/parsers/node';
@@ -116,6 +120,7 @@ const start = (): void => {
   const bookRepo = createBookRepository(db);
   const chapterRepo = createChapterRepository(db);
   const segmentRepo = createSegmentRepository(db);
+  const jobRepo = createJobRepository(db);
 
   const libraryHandlers = createLibraryHandlers({
     library: createLibraryService({
@@ -157,9 +162,58 @@ const start = (): void => {
     baseEnv: process.env as Record<string, string>,
     onStatusChanged: (status) => {
       mainWindow?.webContents.send('sidecar:statusChanged', status);
+      // Sidecar chết thì hàng đợi phải nghỉ: chạy tiếp khi không có sidecar chỉ
+      // sinh ra một loạt job lỗi và đốt sạch số lượt thử lại của chúng.
+      if (status.state === 'ready') {
+        queue.resume();
+      } else if (status.state !== 'starting') {
+        queue.pause();
+      }
     },
   });
   sidecar = supervisor;
+  // Hàng đợi generate. Dựng SAU supervisor vì cần `getClient`, nhưng chính
+  // supervisor lại gọi `queue.resume()/pause()` ở callback trạng thái — callback
+  // đó chỉ chạy sau khi `supervisor.start()` được gọi ở cuối hàm, lúc `queue` đã
+  // tồn tại.
+  const queue = createGenerateQueue({
+    jobs: jobRepo,
+    segments: segmentRepo,
+    timings: createTimingsStore(),
+    getClient: () => supervisor.getClient(),
+    // Đọc lúc chạy chứ không chốt sẵn: user đổi thư mục audio và bitrate trong
+    // Settings giữa lúc hàng đợi đang chạy.
+    getAudioDir: () => settings.getAll().audioDir,
+    getBitrate: () => settings.getAll().bitrate,
+    getVoiceId: (lang) => {
+      const current = settings.getAll();
+      const voiceId = lang === 'vi' ? current.voiceVi : current.voiceEn;
+      return voiceId === '' ? undefined : voiceId;
+    },
+    getBookLang: (bookId) => bookRepo.findById(bookId)?.lang ?? 'vi',
+    onStatusChanged: (status) => {
+      mainWindow?.webContents.send('queue:statusChanged', toQueueStatusInfo(status));
+    },
+    onSegmentChanged: (segmentId) => {
+      const segment = segmentRepo.findById(segmentId);
+      if (segment !== undefined) {
+        mainWindow?.webContents.send('queue:segmentUpdated', segment);
+      }
+    },
+    logger,
+  });
+
+  // Job đang chạy lúc app bị tắt đột ngột mắc kẹt ở `running` mãi mãi nếu không
+  // dọn: worker mới không nhận nó, mà unique index lại chặn tạo job mới cho
+  // segment đó. Chạy MỘT lần, trước khi có bất kỳ worker nào.
+  queue.recover();
+
+  const queueHandlers = createQueueHandlers({
+    queue,
+    jobs: jobRepo,
+    segments: segmentRepo,
+  });
+
   const sidecarHandlers = createSidecarHandlers({ getStatus: () => supervisor.getStatus() });
   const voicesHandlers = createVoicesHandlers({
     // Lấy client mỗi lần gọi chứ không giữ lại: sidecar restart thì client cũ
@@ -196,6 +250,15 @@ const start = (): void => {
   registerHandler('voices:download', voicesHandlers.download, logger);
   registerHandler('voices:cancelDownload', voicesHandlers.cancelDownload, logger);
   registerHandler('voices:remove', voicesHandlers.remove, logger);
+  registerHandler('queue:enqueueSegments', queueHandlers.enqueueSegments, logger);
+  registerHandler('queue:enqueueChapter', queueHandlers.enqueueChapter, logger);
+  registerHandler('queue:getStatus', queueHandlers.getStatus, logger);
+  registerHandler('queue:listPending', queueHandlers.listPending, logger);
+  registerHandler('queue:pause', queueHandlers.pause, logger);
+  registerHandler('queue:resume', queueHandlers.resume, logger);
+  registerHandler('queue:cancelJob', queueHandlers.cancelJob, logger);
+  registerHandler('queue:cancelBook', queueHandlers.cancelBook, logger);
+  registerHandler('queue:cancelAll', queueHandlers.cancelAll, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);

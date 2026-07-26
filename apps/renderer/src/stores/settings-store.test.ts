@@ -100,6 +100,8 @@ describe('applyExternal', () => {
       theme: 'light',
       audioDir: 'D:\\khac',
       bitrate: 16,
+      voiceVi: '',
+      voiceEn: '',
       storageWarnBytes: 0,
       alignmentEnabled: false,
       viewerPaneRatio: 0.5,

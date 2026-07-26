@@ -263,6 +263,15 @@ export type AppSettings = {
   /** Thư mục lưu audio — user đổi được, không giả định nằm trong userData */
   audioDir: string;
   bitrate: AudioBitrate;
+  /**
+   * Giọng đọc đã chọn cho từng ngôn ngữ.
+   *
+   * Theo ngôn ngữ chứ không phải một giá trị duy nhất: sách VI và sách EN cần
+   * hai voice khác nhau, mà một cuốn không đổi ngôn ngữ giữa chừng. Chuỗi rỗng
+   * = chưa chọn (hoặc voice đã bị xoá) → hàng đợi dừng và báo user đi cài.
+   */
+  voiceVi: string;
+  voiceEn: string;
   /** Ngưỡng cảnh báo dung lượng audio, đơn vị byte. 0 = tắt cảnh báo */
   storageWarnBytes: number;
   /** Tắt để chạy chế độ "Fast" — chỉ dùng timing ước lượng */

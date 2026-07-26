@@ -50,11 +50,42 @@ const toSegment = (row: SegmentRow): Segment => ({
   ...(row.error_message === null ? {} : { errorMessage: row.error_message }),
 });
 
+/** Kết quả một lượt generate, ghi lại sau khi sidecar trả về */
+export type SegmentAudioResult = {
+  audioPath: string;
+  durationMs: number;
+  audioBytes: number;
+  /**
+   * Timing từ phoneme lẫn ước lượng đều là `'estimated'` — chỉ CTC forced
+   * alignment ở Phase 4 mới được lên `'aligned'`.
+   */
+  alignStatus: AlignStatus;
+};
+
 export type SegmentRepository = {
   insertMany(segments: readonly Segment[]): void;
   listByChapter(chapterId: string): Segment[];
   findById(id: string): Segment | undefined;
   countByChapter(chapterId: string): number;
+  /** Segment đã vào hàng đợi nhưng chưa tới lượt */
+  markQueued(id: string): void;
+  markGenerating(id: string): void;
+  /**
+   * Ghi kết quả generate và cập nhật `audio_bytes` + `generate_status` của
+   * chương trong **cùng một transaction**.
+   *
+   * Gộp làm một vì hai con số này phải khớp nhau: tách ra thì app tắt đúng giữa
+   * hai câu lệnh sẽ để lại chương báo dung lượng khác tổng segment con, và
+   * storage manager hiện số sai mà không có cách nào tự phát hiện.
+   */
+  markReady(id: string, result: SegmentAudioResult): void;
+  markError(id: string, message: string): void;
+  /** Đưa segment về `pending` khi job bị huỷ — không có audio thì không phải `ready` */
+  resetToPending(id: string): void;
+  /** ID sách chứa segment, đi ngược qua chapter. `undefined` khi segment không còn */
+  findBookId(segmentId: string): string | undefined;
+  /** Segment chưa có audio của một chương, theo thứ tự đọc — nguồn để enqueue */
+  listPendingByChapter(chapterId: string): Segment[];
 };
 
 export const createSegmentRepository = (db: Database): SegmentRepository => {
@@ -92,6 +123,76 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
   const byId = db.prepare('SELECT * FROM segments WHERE id = ?');
   const countStmt = db.prepare('SELECT COUNT(*) AS n FROM segments WHERE chapter_id = ?');
 
+  const setStatus = db.prepare('UPDATE segments SET status = ? WHERE id = ?');
+
+  const readyStmt = db.prepare(`
+    UPDATE segments
+    SET status = 'ready', audio_path = @audioPath, duration_ms = @durationMs,
+        audio_bytes = @audioBytes, align_status = @alignStatus, error_message = NULL
+    WHERE id = @id
+  `);
+
+  const errorStmt = db.prepare(`
+    UPDATE segments SET status = 'error', error_message = ? WHERE id = ?
+  `);
+
+  const pendingStmt = db.prepare(`
+    UPDATE segments
+    SET status = 'pending', error_message = NULL
+    WHERE id = ? AND status IN ('queued', 'generating')
+  `);
+
+  const chapterOf = db.prepare('SELECT chapter_id FROM segments WHERE id = ?');
+
+  const bookOf = db.prepare(`
+    SELECT c.book_id AS book_id
+    FROM segments s JOIN chapters c ON c.id = s.chapter_id
+    WHERE s.id = ?
+  `);
+
+  const pendingByChapter = db.prepare(`
+    SELECT * FROM segments
+    WHERE chapter_id = ? AND status != 'ready'
+    ORDER BY idx
+  `);
+
+  /**
+   * Tính lại dung lượng và tiến độ của chương từ chính các segment con.
+   *
+   * Cộng dồn (`audio_bytes = audio_bytes + ?`) sẽ đếm trùng khi một segment
+   * được generate lại — mà generate lại là chuyện thường (đổi bitrate, đổi
+   * giọng). Tính lại từ tổng thì không có đường nào lệch.
+   */
+  const refreshChapter = db.prepare(`
+    UPDATE chapters SET
+      audio_bytes = (
+        SELECT COALESCE(SUM(audio_bytes), 0) FROM segments WHERE chapter_id = @chapterId
+      ),
+      generate_status = (
+        SELECT CASE
+          WHEN COUNT(*) = 0 THEN 'none'
+          WHEN SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) = 0 THEN 'none'
+          WHEN SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) = COUNT(*) THEN 'complete'
+          ELSE 'partial'
+        END
+        FROM segments WHERE chapter_id = @chapterId
+      )
+    WHERE id = @chapterId
+  `);
+
+  const applyReady = db.transaction((id: string, result: SegmentAudioResult) => {
+    readyStmt.run({
+      id,
+      audioPath: result.audioPath,
+      durationMs: result.durationMs,
+      audioBytes: result.audioBytes,
+      alignStatus: result.alignStatus,
+    });
+
+    const row = chapterOf.get(id) as { chapter_id: string } | undefined;
+    if (row !== undefined) refreshChapter.run({ chapterId: row.chapter_id });
+  });
+
   return {
     insertMany(segments) {
       if (segments.length === 0) return;
@@ -109,6 +210,35 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
 
     countByChapter(chapterId) {
       return (countStmt.get(chapterId) as { n: number }).n;
+    },
+
+    markQueued(id) {
+      setStatus.run('queued', id);
+    },
+
+    markGenerating(id) {
+      setStatus.run('generating', id);
+    },
+
+    markReady(id, result) {
+      applyReady(id, result);
+    },
+
+    markError(id, message) {
+      errorStmt.run(message, id);
+    },
+
+    resetToPending(id) {
+      pendingStmt.run(id);
+    },
+
+    findBookId(segmentId) {
+      const row = bookOf.get(segmentId) as { book_id: string } | undefined;
+      return row?.book_id;
+    },
+
+    listPendingByChapter(chapterId) {
+      return (pendingByChapter.all(chapterId) as SegmentRow[]).map(toSegment);
     },
   };
 };

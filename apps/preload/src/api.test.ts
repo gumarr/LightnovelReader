@@ -14,6 +14,8 @@ const settings: AppSettings = {
   theme: 'dark',
   audioDir: 'E:\\audio',
   bitrate: 24,
+  voiceVi: '',
+  voiceEn: '',
   storageWarnBytes: 0,
   alignmentEnabled: true,
   viewerPaneRatio: 0.66,
@@ -66,6 +68,15 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.voices.download('vi_VN-vais1000-medium'),
     () => api.voices.cancelDownload('vi_VN-vais1000-medium'),
     () => api.voices.remove('vi_VN-vais1000-medium'),
+    () => api.queue.enqueueSegments({ segmentIds: ['seg-1'] }),
+    () => api.queue.enqueueChapter({ chapterId: 'ch-1' }),
+    () => api.queue.getStatus(),
+    () => api.queue.listPending(),
+    () => api.queue.pause(),
+    () => api.queue.resume(),
+    () => api.queue.cancelJob('job-1'),
+    () => api.queue.cancelBook('book-1'),
+    () => api.queue.cancelAll(),
     () => api.window.minimize(),
     () => api.window.toggleMaximize(),
     () => api.window.close(),
@@ -103,6 +114,7 @@ describe('bề mặt window.api', () => {
       'app',
       'import',
       'library',
+      'queue',
       'reader',
       'settings',
       'sidecar',
@@ -132,6 +144,8 @@ describe('đăng ký event', () => {
     api.window.onStateChanged(() => {});
     api.sidecar.onStatusChanged(() => {});
     api.voices.onDownloadProgress(() => {});
+    api.queue.onStatusChanged(() => {});
+    api.queue.onSegmentUpdated(() => {});
 
     const registered = ipcRenderer.on.mock.calls.map((c) => c[0]);
     for (const event of registered) {

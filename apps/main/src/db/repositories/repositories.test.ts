@@ -527,3 +527,178 @@ describe('ChapterRepository — dung lượng audio cả sách (P2.6)', () => {
     expect(chapters.audioBytesByBook('book-khong-co')).toBe(0);
   });
 });
+
+describe('SegmentRepository — xoá audio (P2.7)', () => {
+  const ready = (bytes: number) => ({
+    audioPath: 'D:/audio/book-1/seg.ogg',
+    durationMs: 3000,
+    audioBytes: bytes,
+    alignStatus: 'estimated' as const,
+  });
+
+  beforeEach(() => {
+    books.insert(book());
+    chapters.insertMany([
+      chapter({ id: 'chap-1', index: 0 }),
+      chapter({ id: 'chap-2', index: 1 }),
+    ]);
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0 }),
+      segment({ id: 'seg-2', chapterId: 'chap-1', index: 1 }),
+      segment({ id: 'seg-3', chapterId: 'chap-2', index: 0 }),
+    ]);
+    segments.markReady('seg-1', ready(4000));
+    segments.markReady('seg-2', ready(6000));
+    segments.markReady('seg-3', ready(5000));
+  });
+
+  it('liệt kê segment ĐÃ có audio — nguồn để biết file nào cần xoá', () => {
+    segments.resetToPending('seg-2');
+    // `resetToPending` không đụng segment `ready`, nên vẫn đủ hai
+    expect(segments.listReadyByChapter('chap-1').map((s) => s.id)).toEqual(['seg-1', 'seg-2']);
+  });
+
+  it('chỉ liệt kê segment ready, bỏ segment chưa generate', () => {
+    segments.insertMany([segment({ id: 'seg-4', chapterId: 'chap-1', index: 2 })]);
+
+    expect(segments.listReadyByChapter('chap-1').map((s) => s.id)).toEqual(['seg-1', 'seg-2']);
+  });
+
+  it('liệt kê cả sách theo thứ tự chương rồi thứ tự đọc', () => {
+    expect(segments.listReadyByBook('book-1').map((s) => s.id)).toEqual([
+      'seg-1',
+      'seg-2',
+      'seg-3',
+    ]);
+  });
+
+  it('xoá audio đưa segment về pending, KHÔNG để kẹt ở ready', () => {
+    // Đây là lỗi cùng loại với 4.35: để nguyên `ready` cho file đã xoá thì
+    // reader vẫn hiện nút phát cho một file không còn tồn tại.
+    expect(segments.clearAudioByChapter('chap-1')).toBe(2);
+
+    expect(segments.findById('seg-1')?.status).toBe('pending');
+    expect(segments.findById('seg-2')?.status).toBe('pending');
+  });
+
+  it('xoá audio bỏ luôn audioPath, durationMs, audioBytes', () => {
+    segments.clearAudioByChapter('chap-1');
+    const found = segments.findById('seg-1');
+
+    expect(found).not.toHaveProperty('audioPath');
+    expect(found).not.toHaveProperty('durationMs');
+    expect(found).not.toHaveProperty('audioBytes');
+    expect(found?.alignStatus).toBe('none');
+  });
+
+  it('xoá audio tính lại dung lượng chương về 0', () => {
+    segments.clearAudioByChapter('chap-1');
+
+    expect(chapters.findById('chap-1')?.audioBytes).toBe(0);
+    expect(chapters.findById('chap-1')?.generateStatus).toBe('none');
+  });
+
+  it('xoá một chương KHÔNG đụng chương khác', () => {
+    segments.clearAudioByChapter('chap-1');
+
+    expect(segments.findById('seg-3')?.status).toBe('ready');
+    expect(chapters.findById('chap-2')?.audioBytes).toBe(5000);
+  });
+
+  it('xoá audio KHÔNG xoá tiến độ đọc — ràng buộc CLAUDE.md', () => {
+    books.markOpened('book-1', 9000, 'seg-1');
+    segments.clearAudioByChapter('chap-1');
+
+    expect(books.findById('book-1')?.lastSegmentId).toBe('seg-1');
+  });
+
+  it('xoá audio KHÔNG xoá segment hay cấu trúc chương', () => {
+    segments.clearAudioByChapter('chap-1');
+
+    expect(segments.listByChapter('chap-1')).toHaveLength(2);
+    expect(chapters.listByBook('book-1')).toHaveLength(2);
+    expect(segments.findById('seg-1')?.text).toBe('Câu văn đầu tiên.');
+  });
+
+  it('xoá cả sách dọn mọi chương và mọi dung lượng', () => {
+    expect(segments.clearAudioByBook('book-1')).toBe(3);
+
+    expect(chapters.audioBytesByBook('book-1')).toBe(0);
+    expect(segments.listReadyByBook('book-1')).toEqual([]);
+  });
+
+  it('xoá lần thứ hai trả 0 chứ không lỗi', () => {
+    segments.clearAudioByChapter('chap-1');
+    expect(segments.clearAudioByChapter('chap-1')).toBe(0);
+  });
+
+  it('KHÔNG đụng segment đang generating — job của nó còn chạy', () => {
+    // Đưa segment đang chạy về `pending` sẽ đụng nhau với `markReady` của chính
+    // job đó ngay sau, để lại DB nói `pending` cho file vừa ghi xong.
+    segments.markGenerating('seg-3');
+    segments.clearAudioByBook('book-1');
+
+    expect(segments.findById('seg-3')?.status).toBe('generating');
+  });
+
+  it('chương không tồn tại trả 0', () => {
+    expect(segments.clearAudioByChapter('khong-co')).toBe(0);
+  });
+});
+
+describe('ChapterRepository — dung lượng toàn thư viện (P2.7)', () => {
+  beforeEach(() => {
+    books.insert(book({ id: 'book-1' }));
+    books.insert(book({ id: 'book-2', fileHash: 'hash-2' }));
+    chapters.insertMany([
+      chapter({ id: 'chap-1', bookId: 'book-1', index: 0 }),
+      chapter({ id: 'chap-2', bookId: 'book-2', index: 0 }),
+    ]);
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1' }),
+      segment({ id: 'seg-2', chapterId: 'chap-2' }),
+    ]);
+    segments.markReady('seg-1', {
+      audioPath: 'D:/audio/book-1/seg-1.ogg',
+      durationMs: 1000,
+      audioBytes: 3000,
+      alignStatus: 'estimated',
+    });
+    segments.markReady('seg-2', {
+      audioPath: 'D:/audio/book-2/seg-2.ogg',
+      durationMs: 1000,
+      audioBytes: 7000,
+      alignStatus: 'estimated',
+    });
+  });
+
+  it('trả dung lượng từng sách trong MỘT truy vấn', () => {
+    const perBook = chapters.audioBytesPerBook();
+
+    expect(perBook.get('book-1')).toBe(3000);
+    expect(perBook.get('book-2')).toBe(7000);
+  });
+
+  it('sách chưa generate vẫn có mặt với 0 — không rơi khỏi bảng', () => {
+    // Sách chưa có audio vẫn chiếm chỗ bằng bản copy file gốc; mất tích khỏi
+    // danh sách thì user không xoá được nó từ Storage Manager.
+    books.insert(book({ id: 'book-3', fileHash: 'hash-3' }));
+    const perBook = chapters.audioBytesPerBook();
+
+    expect(perBook.has('book-3')).toBe(true);
+    expect(perBook.get('book-3')).toBe(0);
+  });
+
+  it('tổng toàn thư viện cộng mọi sách', () => {
+    expect(chapters.audioBytesTotal()).toBe(10_000);
+  });
+
+  it('thư viện rỗng trả 0 chứ không NULL', () => {
+    const empty = new Database(':memory:');
+    applyConnectionPragmas(empty);
+    migrate(empty);
+
+    expect(createChapterRepository(empty).audioBytesTotal()).toBe(0);
+    empty.close();
+  });
+});

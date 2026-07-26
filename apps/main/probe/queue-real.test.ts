@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { AudioBitrate, Book, Chapter, Segment } from '@ln/shared';
@@ -28,6 +28,8 @@ import { createJobRepository } from '../src/db/repositories/jobs.js';
 import { createGenerateQueue } from '../src/services/queue.js';
 import { createTimingsStore } from '../src/services/timings-store.js';
 import { createQueueHandlers } from '../src/ipc/handlers/queue.js';
+import { createStorageHandlers } from '../src/ipc/handlers/storage.js';
+import { createStorageService } from '../src/services/storage.js';
 import { createSidecarSupervisor } from '../src/services/sidecar-supervisor.js';
 import { nodeSpawnSidecar } from '../src/services/sidecar-spawn.js';
 import { VENV_PYTHON_RELATIVE } from '../src/services/sidecar-paths.js';
@@ -66,6 +68,8 @@ type Harness = {
   jobs: ReturnType<typeof createJobRepository>;
   /** Handler thật, dựng như `index.ts` — để kiểm cả đường ước lượng của P2.6 */
   handlers: ReturnType<typeof createQueueHandlers>;
+  /** Handler Storage Manager thật (P2.7) — xoá file thật do sidecar vừa ghi */
+  storage: ReturnType<typeof createStorageHandlers>;
   supervisor: ReturnType<typeof createSidecarSupervisor>;
   cleanup: () => Promise<void>;
 };
@@ -149,6 +153,15 @@ const setup = async (bitrate: AudioBitrate = 24): Promise<Harness> => {
     getBitrate: () => bitrate,
   });
 
+  const storage = createStorageHandlers({
+    storage: createStorageService({ books, chapters, segments, logger }),
+    books,
+    chapters,
+    queue,
+    getAudioDir: () => audioDir,
+    getWarnBytes: () => 5 * 1024 ** 3,
+  });
+
   return {
     audioDir,
     db,
@@ -157,6 +170,7 @@ const setup = async (bitrate: AudioBitrate = 24): Promise<Harness> => {
     chapters,
     jobs,
     handlers,
+    storage,
     supervisor,
     cleanup: async () => {
       await supervisor.stop();
@@ -445,4 +459,146 @@ describe.skipIf(!canRun)('hàng đợi thật + sidecar thật + model thật', 
       await harness.cleanup();
     }
   }, 240_000);
+
+  /**
+   * P2.7: Storage Manager xoá **file thật do sidecar vừa ghi**.
+   *
+   * Unit test của `storage.ts` tự tạo file bằng `writeFileSync` nên chỉ chứng
+   * minh phép xoá đúng trên file nó tự dựng. Ở đây file do sidecar ghi qua
+   * `outPath` mà main dựng, tên do `paths.ts` sinh — nếu hai bên lệch nhau một
+   * ký tự thì xoá không trúng gì mà DB vẫn báo đã xoá xong.
+   */
+  it('xoá audio dọn đúng file sidecar đã ghi, DB và đĩa cùng về 0', async () => {
+    const harness = await setup();
+    try {
+      harness.queue.enqueueSegments({
+        segmentIds: TEXTS.map((_, i) => `probe-seg-${String(i)}`),
+      });
+      harness.queue.start();
+      await waitForIdle(harness, 240_000);
+
+      const dir = join(harness.audioDir, 'probe-book');
+      const before = readdirSync(dir).sort();
+      // 3 segment × (ogg + json)
+      expect(before).toHaveLength(TEXTS.length * 2);
+
+      const usageBefore = await harness.storage.getUsage();
+      expect(usageBefore.ok).toBe(true);
+      if (!usageBefore.ok) return;
+      console.log(
+        `  Trước khi xoá: DB ${String(usageBefore.data.audioBytes)} B, ` +
+          `đĩa ${String(usageBefore.data.audioBytesOnDisk)} B, ` +
+          `${String(before.length)} file`,
+      );
+
+      // Số DB không được lớn hơn số đĩa: DB chỉ đếm `.ogg`, đĩa đếm cả `.json`
+      expect(usageBefore.data.audioBytesOnDisk).toBeGreaterThan(usageBefore.data.audioBytes);
+
+      const deleted = await harness.storage.deleteBookAudio('probe-book');
+      expect(deleted.ok).toBe(true);
+      if (!deleted.ok) return;
+
+      console.log(
+        `  Đã xoá ${String(deleted.data.filesDeleted)} file, ` +
+          `giải phóng ${String(deleted.data.freedBytes)} B`,
+      );
+
+      // Đúng số file đã xoá — không sót `.json` nào
+      expect(deleted.data.filesDeleted).toBe(TEXTS.length * 2);
+      expect(deleted.data.segments).toBe(TEXTS.length);
+      expect(existsSync(dir)).toBe(false);
+
+      const usageAfter = await harness.storage.getUsage();
+      if (!usageAfter.ok) return;
+      expect(usageAfter.data.audioBytes).toBe(0);
+      expect(usageAfter.data.audioBytesOnDisk).toBe(0);
+      expect(usageAfter.data.orphanFiles).toBe(0);
+
+      // Segment về `pending` và generate lại được — xoá không phá cấu trúc
+      const statuses = harness.segments.listByChapter('probe-chap').map((s) => s.status);
+      expect(statuses).toEqual(['pending', 'pending', 'pending']);
+      expect(harness.chapters.findById('probe-chap')?.generateStatus).toBe('none');
+
+      // Generate lại từ trạng thái đã xoá: đây là thứ user sẽ làm ngay sau khi
+      // xoá nhầm, và nó phải chạy chứ không kẹt vì job cũ còn trong DB.
+      const again = harness.handlers.enqueueBook('probe-book');
+      expect(again.ok).toBe(true);
+      if (!again.ok) return;
+      expect(again.data.added).toBe(TEXTS.length);
+
+      await waitForIdle(harness, 240_000);
+      expect(harness.segments.listByChapter('probe-chap').map((s) => s.status)).toEqual([
+        'ready',
+        'ready',
+        'ready',
+      ]);
+      console.log('  Generate lại sau khi xoá: xong cả 3 segment');
+    } finally {
+      await harness.cleanup();
+    }
+  }, 600_000);
+
+  /**
+   * P2.7: xoá audio giữa lúc hàng đợi đang chạy.
+   *
+   * Đây là ca mà unit test không dựng được: handler phải huỷ job **trước** khi
+   * xoá file, nếu không worker ghi lại đúng những file vừa xoá và DB nói
+   * `pending` cho file đang tồn tại — user bấm xoá mà dung lượng không giảm.
+   */
+  it('xoá audio giữa lúc đang generate: không segment nào kẹt, không file mồ côi', async () => {
+    const harness = await setup();
+    try {
+      harness.queue.enqueueSegments({
+        segmentIds: TEXTS.map((_, i) => `probe-seg-${String(i)}`),
+      });
+      harness.queue.start();
+
+      // Chờ segment đầu xong rồi cắt giữa chừng — lúc này còn job đang chạy
+      const deadline = Date.now() + 240_000;
+      while (Date.now() < deadline) {
+        if (harness.segments.findById('probe-seg-0')?.status === 'ready') break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      expect(harness.segments.findById('probe-seg-0')?.status).toBe('ready');
+
+      const deleted = await harness.storage.deleteBookAudio('probe-book');
+      expect(deleted.ok).toBe(true);
+
+      // Chờ hàng đợi lắng hẳn: request đang bay bị cắt, worker phải thoát vòng
+      await waitForIdle(harness, 120_000);
+
+      // KHÔNG segment nào được kẹt ở `queued`/`generating` — cùng loại lỗi 4.35
+      const statuses = harness.segments.listByChapter('probe-chap').map((s) => s.status);
+      console.log(`  Trạng thái sau khi xoá giữa chừng: ${statuses.join(', ')}`);
+      expect(statuses.some((s) => s === 'queued' || s === 'generating')).toBe(false);
+
+      // Job đang bay có thể ghi xong file sau lượt xoá — đó chính là lý do
+      // handler phải huỷ job trước. Kiểm bằng số thật: DB và đĩa phải khớp.
+      const usage = await harness.storage.getUsage();
+      if (!usage.ok) return;
+
+      const dir = join(harness.audioDir, 'probe-book');
+      const leftover = existsSync(dir) ? readdirSync(dir) : [];
+      console.log(
+        `  Còn lại: DB ${String(usage.data.audioBytes)} B, ` +
+          `đĩa ${String(usage.data.audioBytesOnDisk)} B, ${String(leftover.length)} file`,
+      );
+
+      // Mỗi segment `ready` phải có file thật; mỗi file thật phải thuộc một
+      // segment `ready`. Lệch một chiều nào cũng là rác hoặc nút phát hỏng.
+      const readyIds = harness.segments
+        .listByChapter('probe-chap')
+        .filter((s) => s.status === 'ready')
+        .map((s) => s.id);
+
+      for (const id of readyIds) {
+        expect(existsSync(join(dir, `${id}.ogg`))).toBe(true);
+      }
+      const oggFiles = leftover.filter((name) => name.endsWith('.ogg'));
+      expect(oggFiles).toHaveLength(readyIds.length);
+      expect(usage.data.orphanFiles).toBe(0);
+    } finally {
+      await harness.cleanup();
+    }
+  }, 600_000);
 });

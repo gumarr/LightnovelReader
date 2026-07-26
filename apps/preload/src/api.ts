@@ -10,6 +10,8 @@ import {
   type BookHtml,
   type ChapterPreview,
   type ChapterPreviewRequest,
+  type ChapterUsageInfo,
+  type DeleteAudioResultInfo,
   type EnqueueChapterRequest,
   type EnqueueResult,
   type EnqueueSegmentsRequest,
@@ -25,6 +27,7 @@ import {
   type SaveBookResponse,
   type Segment,
   type SidecarStatus,
+  type StorageUsageInfo,
   type IpcEventName,
   type IpcEventPayload,
   type IpcInput,
@@ -163,6 +166,21 @@ export const api = {
     /** Một segment vừa xong hoặc vừa hỏng — reader đổi nút phát theo cái này */
     onSegmentUpdated: (listener: (segment: Segment) => void): (() => void) =>
       subscribe('queue:segmentUpdated', listener),
+  },
+
+  storage: {
+    getUsage: (): Promise<Result<StorageUsageInfo>> => invoke('storage:getUsage', undefined),
+    getChapterUsage: (bookId: string): Promise<Result<ChapterUsageInfo[]>> =>
+      invoke('storage:getChapterUsage', bookId),
+    /** Xoá audio một chương — metadata và tiến độ đọc giữ nguyên */
+    deleteChapterAudio: (chapterId: string): Promise<Result<DeleteAudioResultInfo>> =>
+      invoke('storage:deleteChapterAudio', chapterId),
+    deleteBookAudio: (bookId: string): Promise<Result<DeleteAudioResultInfo>> =>
+      invoke('storage:deleteBookAudio', bookId),
+    deleteReadAudio: (bookId: string): Promise<Result<DeleteAudioResultInfo>> =>
+      invoke('storage:deleteReadAudio', bookId),
+    deleteOrphans: (): Promise<Result<DeleteAudioResultInfo>> =>
+      invoke('storage:deleteOrphans', undefined),
   },
 
   window: {

@@ -10,12 +10,15 @@ export type LibraryGridProps = {
   onImport: () => void;
   /** Mở màn quản lý giọng đọc (P2.3) */
   onManageVoices: () => void;
+  /** Mở Storage Manager (P2.7) */
+  onManageStorage: () => void;
   onOpen: (bookId: string) => void;
 };
 
 export const LibraryGrid = ({
   onImport,
   onManageVoices,
+  onManageStorage,
   onOpen,
 }: LibraryGridProps): JSX.Element => {
   const entries = useLibraryStore((s) => s.entries);
@@ -66,6 +69,15 @@ export const LibraryGrid = ({
             className="rounded border border-border px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-subtle"
           >
             Giọng đọc
+          </button>
+
+          <button
+            type="button"
+            onClick={onManageStorage}
+            data-testid="open-storage"
+            className="rounded border border-border px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-subtle"
+          >
+            Dung lượng
           </button>
 
           <button
@@ -136,8 +148,11 @@ const ConfirmRemove = ({
   >
     <div className="w-full max-w-sm rounded-lg border border-border bg-bg-elevated p-4">
       <h2 className="text-sm font-medium text-fg">Xoá &quot;{title}&quot;?</h2>
+      {/* Nói đúng những gì bị xoá: từ P2.7 lượt xoá này dọn cả bản copy trong
+          thư viện và audio đã tạo. File user tự chọn lúc nhập thì vẫn còn. */}
       <p className="mt-1 text-sm text-fg-muted">
-        Mất luôn {chapterCount} chương đã xác nhận. File sách gốc vẫn còn trên máy.
+        Mất luôn {chapterCount} chương đã xác nhận và toàn bộ audio đã tạo. File gốc bạn chọn lúc
+        nhập vẫn còn trên máy.
       </p>
 
       <div className="mt-4 flex justify-end gap-2">

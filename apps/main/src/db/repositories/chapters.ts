@@ -41,6 +41,17 @@ export type ChapterRepository = {
    * cùng một nguồn sự thật mà không phải đọc hàng nghìn hàng.
    */
   audioBytesByBook(bookId: string): number;
+  /**
+   * Dung lượng audio của **mọi** sách, một truy vấn.
+   *
+   * Storage Manager cần con số này cho từng sách cùng lúc; gọi
+   * `audioBytesByBook` trong vòng lặp là N+1 query cho một màn hình chỉ hiện
+   * một bảng. Sách chưa generate gì vẫn có mặt với `0` — nó vẫn chiếm chỗ bằng
+   * file sách đã copy, nên không được rơi khỏi danh sách.
+   */
+  audioBytesPerBook(): Map<string, number>;
+  /** Tổng dung lượng audio toàn thư viện — dùng để so với ngưỡng cảnh báo */
+  audioBytesTotal(): number;
 };
 
 export const createChapterRepository = (db: Database): ChapterRepository => {
@@ -79,6 +90,16 @@ export const createChapterRepository = (db: Database): ChapterRepository => {
     'SELECT COALESCE(SUM(audio_bytes), 0) AS bytes FROM chapters WHERE book_id = ?',
   );
 
+  // LEFT JOIN từ `books`: sách chưa có chương nào (hoặc chưa generate) vẫn ra
+  // một hàng với 0 thay vì mất tích khỏi bảng dung lượng.
+  const bytesPerBook = db.prepare(`
+    SELECT b.id AS book_id, COALESCE(SUM(c.audio_bytes), 0) AS bytes
+    FROM books b LEFT JOIN chapters c ON c.book_id = b.id
+    GROUP BY b.id
+  `);
+
+  const bytesTotal = db.prepare('SELECT COALESCE(SUM(audio_bytes), 0) AS bytes FROM chapters');
+
   return {
     insertMany(chapters) {
       if (chapters.length === 0) return;
@@ -100,6 +121,15 @@ export const createChapterRepository = (db: Database): ChapterRepository => {
 
     audioBytesByBook(bookId) {
       return (bytesOfBook.get(bookId) as { bytes: number }).bytes;
+    },
+
+    audioBytesPerBook() {
+      const rows = bytesPerBook.all() as { book_id: string; bytes: number }[];
+      return new Map(rows.map((row) => [row.book_id, row.bytes]));
+    },
+
+    audioBytesTotal() {
+      return (bytesTotal.get() as { bytes: number }).bytes;
     },
   };
 };

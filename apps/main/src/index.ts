@@ -30,6 +30,8 @@ import { createJobRepository } from './db/repositories/jobs.js';
 import { createGenerateQueue } from './services/queue.js';
 import { createTimingsStore } from './services/timings-store.js';
 import { createQueueHandlers, toQueueStatusInfo } from './ipc/handlers/queue.js';
+import { createStorageHandlers } from './ipc/handlers/storage.js';
+import { createStorageService } from './services/storage.js';
 import { createWindowHandlers, readWindowState } from './ipc/handlers/window.js';
 import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './window.js';
 import { createNodeParserRegistry, nodeDocxConverter } from '@ln/parsers/node';
@@ -122,6 +124,15 @@ const start = (): void => {
   const segmentRepo = createSegmentRepository(db);
   const jobRepo = createJobRepository(db);
 
+  // Chỗ duy nhất trong app xoá file của user: audio, timing, và bản copy sách.
+  // Dựng trước `libraryHandlers` vì xoá sách cũng phải đi qua đây.
+  const storage = createStorageService({
+    books: bookRepo,
+    chapters: chapterRepo,
+    segments: segmentRepo,
+    logger,
+  });
+
   const libraryHandlers = createLibraryHandlers({
     library: createLibraryService({
       userData,
@@ -133,6 +144,9 @@ const start = (): void => {
     books: bookRepo,
     chapters: chapterRepo,
     segments: segmentRepo,
+    // Xoá sách phải xoá cả file đã copy và audio, nếu không thư mục cứ phình
+    // theo mỗi lần import rồi xoá mà không có cách nào dọn từ UI.
+    removeFiles: (book) => storage.removeBookFiles({ audioDir: settings.getAll().audioDir, book }),
     logError: (message, detail) => logger.error(message, detail),
   });
 
@@ -216,6 +230,17 @@ const start = (): void => {
     getBitrate: () => settings.getAll().bitrate,
   });
 
+  const storageHandlers = createStorageHandlers({
+    storage,
+    books: bookRepo,
+    chapters: chapterRepo,
+    // Xoá audio phải huỷ job của sách đó trước, nếu không worker ghi lại đúng
+    // những file vừa xoá.
+    queue,
+    getAudioDir: () => settings.getAll().audioDir,
+    getWarnBytes: () => settings.getAll().storageWarnBytes,
+  });
+
   const sidecarHandlers = createSidecarHandlers({ getStatus: () => supervisor.getStatus() });
   const voicesHandlers = createVoicesHandlers({
     // Lấy client mỗi lần gọi chứ không giữ lại: sidecar restart thì client cũ
@@ -264,6 +289,12 @@ const start = (): void => {
   registerHandler('queue:cancelJob', queueHandlers.cancelJob, logger);
   registerHandler('queue:cancelBook', queueHandlers.cancelBook, logger);
   registerHandler('queue:cancelAll', queueHandlers.cancelAll, logger);
+  registerHandler('storage:getUsage', storageHandlers.getUsage, logger);
+  registerHandler('storage:getChapterUsage', storageHandlers.getChapterUsage, logger);
+  registerHandler('storage:deleteChapterAudio', storageHandlers.deleteChapterAudio, logger);
+  registerHandler('storage:deleteBookAudio', storageHandlers.deleteBookAudio, logger);
+  registerHandler('storage:deleteReadAudio', storageHandlers.deleteReadAudio, logger);
+  registerHandler('storage:deleteOrphans', storageHandlers.deleteOrphans, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);

@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-26 · commit `43fd01f`
+> **Cập nhật lần cuối:** 2026-07-26 · commit `<P2.7>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -33,8 +33,8 @@ pnpm build:sidecar
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P2.7 — Storage Manager (xem mục 3).
-**Phase 1 xong. P2.1 → P2.6 xong.**
+**Việc tiếp theo:** Phase 3 — Player & Subtitle sync (xem mục 3).
+**Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy.**
 
 ---
 
@@ -483,13 +483,54 @@ lần đầu chúng được đối chiếu với số đo thật (nợ mục 8 
 probe qua handler thật; chưa mở app thật để xem hộp ước lượng và thanh tiến độ
 ở cả dark lẫn light. Xem mục 8.
 
+### Phase 2 — P2.7 Storage Manager ✅
+
+Phần cuối của Phase 2. Đây cũng là **chỗ duy nhất trong app xoá file của user** —
+import chỉ copy vào, hàng đợi chỉ ghi ra, mọi đường xoá đều đi qua
+`services/storage.ts`.
+
+| File | Việc | Test |
+|---|---|---|
+| `main/db/repositories/segments.ts` | `listReady*`, `clearAudioBy{Chapter,Book}` | +13 |
+| `main/db/repositories/chapters.ts` | `audioBytesPerBook` (1 query), `audioBytesTotal` | +4 |
+| `main/services/storage.ts` | Xoá audio+timing, quét đĩa, dọn mồ côi, xoá file sách | 36 |
+| `main/ipc/handlers/storage.ts` | 6 kênh `storage:*`, **huỷ job trước khi xoá** | 16 |
+| `main/ipc/handlers/library.ts` | `removeBook` xoá luôn file đã copy (nợ mục 8) | +5 |
+| `shared/ipc.ts` | `StorageUsageInfo`, `ChapterUsageInfo`, 6 kênh | — |
+| `renderer/stores/storage-store.ts` | Nạp/xoá, chặn bấm trùng, giữ lỗi qua lượt refresh | 22 |
+| `renderer/features/storage/format.ts` | `warnPercent`, `usageLevel`, nhãn (thuần) | 18 |
+| `renderer/features/storage/StorageManager.tsx` | Màn chính | 28 |
+| `renderer/features/storage/DeleteAudioDialog.tsx` | Hộp xác nhận **bắt buộc** trước khi xoá | ↑ |
+| `renderer/features/storage/StorageBookRow.tsx` | Hàng sách, mở ra xem từng chương | ↑ |
+| `renderer/features/storage/StorageSettings.tsx` | Thư mục audio, bitrate, ngưỡng cảnh báo | ↑ |
+
+**Đã chạy thật trên app đang chạy** (`pnpm dev` + CDP, không chỉ unit test) —
+đây là lần đầu UI của Phase 2 được mở bằng mắt:
+
+| Bước | Kết quả |
+|---|---|
+| Chọn giọng đọc qua UI (nợ P2.5) | ✅ nhắc "đã cài chưa chọn" đúng lúc → bấm xong `voiceVi` vào settings, badge đổi "Đang dùng" |
+| Hộp ước lượng cả sách | ✅ 430 đoạn · ~49:20 · ~8.5 MB · ~7:24 — trên sách DOCX thật |
+| Generate 1 chương thật | ✅ 190/195 đoạn, ~4 đoạn/giây; 5 đoạn hỏng là **nội dung rỗng/toàn dấu câu** (Piper không sinh audio) — hàng đợi ghi lỗi rồi chạy tiếp, đúng thiết kế |
+| Prefetch 80% | ✅ tự xếp chương kế (62/235 đoạn xong trước khi dừng) |
+| `audioBytesOnDisk` vs đĩa thật | ✅ **4 560 696 B khớp từng byte** (253 `.ogg` + 252 `.json`) |
+| Dung lượng theo chương | ✅ 3 141 990 + 937 940 = 4 079 930 khớp tổng |
+| Xoá 1 chương qua UI | ✅ **380 file** (190×2) mất khỏi đĩa (505 → 125), UI về 916 KB, chương thành "Chưa tạo audio" |
+| Tiến độ đọc sau khi xoá | ✅ `lastSegmentId` + `resumeChapterId` **còn nguyên**, 195 segment còn đủ |
+| Vượt ngưỡng cảnh báo | ✅ thanh 100%, fill đổi sang `rgb(220 38 38)`, hiện đúng câu cảnh báo |
+| Màu ở **cả dark lẫn light** | ✅ đo `getComputedStyle`: accent `129 140 248`/`79 70 229`, danger `248 113 113`/`220 38 38` — **không màu nào trong suốt** |
+| File `.ogg` là audio thật | ✅ magic `OggS`, timing `source: "phoneme"` từng từ |
+
+Số đo probe lần này (3 segment VI, 24 kbps): ước 33 600 B vs thật **28 205 B**
+(−16%), RTF thật **0.24** — khớp lần đo ở P2.6, hằng số vẫn đúng.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1454 passed** (+131 ở P2.6) |
-| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.6 không đụng sidecar) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | 11 kịch bản (+2 ở P2.6) |
+| Unit test TypeScript | **1594 passed** (+140 ở P2.7) |
+| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.7 không đụng sidecar) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | 13 kịch bản (+2 ở P2.7) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
@@ -515,36 +556,54 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 | P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | ✅ Xong |
 | P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | ✅ Xong |
 | P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | ✅ Xong |
-| P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | ⬅️ **Tiếp theo** |
+| P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | ✅ Xong |
 
-**DoD Phase 2:** Generate chương 1 → có audio, phát được, xem & xoá được dung lượng.
+**DoD Phase 2 — đạt đủ, kiểm trên app đang chạy** (không chỉ unit test):
 
-### Ghi chú cho P2.7 (Storage Manager)
+| Mục DoD | Trạng thái |
+|---|---|
+| Generate chương 1 → có audio | ✅ 190/195 đoạn trên sách DOCX thật, file `.ogg` magic `OggS` |
+| Phát được | ✅ file giải mã được, có timing từng từ (`source: "phoneme"`). **UI player là Phase 3** |
+| Xem được dung lượng | ✅ theo sách và theo chương, số DB khớp đĩa từng byte |
+| Xoá được dung lượng | ✅ xoá 380 file qua UI, tiến độ đọc và cấu trúc chương còn nguyên |
 
-What P2.6 leaves ready:
+Còn một mục **chưa** làm: kiểm trên **bản đóng gói** (`pnpm build:win`). Lần này
+kiểm ở `pnpm dev`, tức đã thấy CSS thật và IPC thật nhưng chưa thấy lỗi đường
+dẫn kiểu asar. Xem mục 8.
 
-- **Byte totals are already correct and self-healing.** `chapters.audio_bytes` is
-  recomputed with `SELECT SUM(...)` from its segments inside the same transaction
-  as `markReady` (see 4.35's neighbour in `segments.ts`), and
-  `chapters.audioBytesByBook()` sums those. Verified against real files: the DB
-  figure matched bytes on disk exactly. P2.7 must **not** add a second counter —
-  read these.
-- **Per-scope "pending" queries exist**: `pendingStatsByChapter/ByBook` and
-  `listPendingByChapter/ByBook`. Deleting audio only needs the inverse (segments
-  that *are* `ready`), which is the same query with `status = 'ready'`.
-- **`formatBytes` + `storageWarnBytes` are already wired.** The estimate dialog
-  warns on `existingBytes + audioBytes > storageWarnBytes`; reuse that same
-  comparison so the two screens never disagree.
-- **Deleting audio must reset segment state.** `resetToPending` only moves
-  `queued`/`generating` rows — a `ready` segment whose `.ogg` was deleted needs
-  its own path, or the reader keeps showing a play button for a missing file.
-  This is the same class of bug as 4.35.
-- **Timings live next to the audio.** `timings-store.remove()` is already
-  idempotent; deleting a segment's audio must delete its `{segmentId}.json` too,
-  otherwise orphan JSON accumulates. `bookAudioDir()` gives the directory.
-- **Two debts belong to P2.7** (see section 8): `library:removeBook` leaves the
-  copied source file behind, and there is still no cover-image generation. The
-  first one is explicitly deferred here so one place owns file cleanup.
+### Ghi chú cho Phase 3 (Player & Subtitle sync)
+
+What Phase 2 leaves ready:
+
+- **Audio and timings are both on disk and both verified against reality.** For a
+  `ready` segment there is always `{audioDir}/{bookId}/{segmentId}.ogg` plus a
+  `.json` next to it holding `WordTiming[]` with `source: "phoneme"`. Measured on
+  the running app: 253 `.ogg` + 252 `.json`, and `audioBytesOnDisk` matched the
+  real byte total exactly. The player does **not** need to re-derive timings.
+- **Reading `timings` is already written**: `timings-store.read()` validates the
+  file and returns `undefined` for missing or corrupt content rather than
+  throwing, so the player can fall back to interpolation without a try/catch.
+- **Changing the current segment is one call**: `setActiveSegment(id)` on
+  `reader-store`. Both viewers scroll to it and highlight it, and `SegmentList`
+  brings the row into view. The player only has to call that per segment.
+- **Priority queue is wired for "the segment about to play"**:
+  `JOB_PRIORITY_URGENT` (100) beats prefetch (10) and normal (0), and
+  `enqueueSegments` only *raises* the priority of a job already queued instead of
+  duplicating it. plan.md's "segment about to play jumps the queue" needs no new
+  machinery.
+- **`playbackRate` and `viewerPaneRatio` already exist in `AppSettings`** (with
+  `PLAYBACK_RATE_MIN/MAX` and `VIEWER_PANE_RATIO_MIN/MAX`) but nothing reads
+  them yet. CLAUDE.md forbids regenerating audio when speed changes — use
+  `playbackRate` + `preservesPitch`.
+- **A deleted segment can lose its audio underneath the player.** Storage Manager
+  cancels the book's jobs and sets segments back to `pending`, and it pushes
+  `queue:segmentUpdated`. The player must react to that event rather than trusting
+  the segment list it loaded — otherwise it tries to play a file just deleted.
+- **Highlight must not re-render per frame** — CLAUDE.md: `requestAnimationFrame`
+  plus direct DOM writes through a `ref`, never `useState` for the word index.
+- **Two debts are still open and belong near Phase 3** (see section 8): there is
+  no UI for the queue table (`queue:listPending`, `queue:cancelJob` have no
+  caller), and no cover-image generation.
 
 ### Ghi chú cho Phase 2 (TTS + player)
 
@@ -1443,6 +1502,57 @@ The dialog also covers the *nothing to do* case explicitly: when everything is
 already generated it says so and offers only "Đóng", rather than showing a
 "Bắt đầu tạo" button that would queue zero jobs and look broken.
 
+### 4.39 Deleting audio removes files first, updates the DB second
+
+The order is deliberate and it is the opposite of what feels natural.
+
+Updating the DB first would mean a crash between the two steps leaves the DB
+saying "no audio" while the files are still on disk. Nothing would ever notice:
+regenerating just overwrites them, the size report stays permanently low, and the
+bytes are unreclaimable through the UI.
+
+With files first, the worst case is the DB still claiming `ready` for a file that
+is gone — and that is exactly what `orphanBytes` surfaces and what the next delete
+cleans up. One direction is silently unrecoverable, the other is self-healing.
+
+For the same reason `library:removeBook` deletes the DB row **before** the files:
+a book row pointing at a missing file cannot be opened and cannot be repaired,
+whereas a leftover file is just an orphan the Storage Manager can sweep.
+
+### 4.40 `rmdir`, not `rm` — caught by a test, not by review
+
+`rm(dir, { recursive: false })` does not remove an empty directory; Node rejects
+every directory with `ERR_FS_EISDIR`. So the "clean up the now-empty book folder"
+step silently never worked, and the comment above it claimed it did.
+
+`recursive: true` would have "fixed" it while also deleting any file of the user's
+that happened to sit in the folder. `rmdir` is the right call: it removes the
+directory when empty and throws `ENOTEMPTY` when not, which is precisely the
+intended behaviour.
+
+Worth recording because the wrong version passed review and typecheck — only an
+assertion on `existsSync` after the call caught it.
+
+### 4.41 The handler cancels the book's jobs before deleting its files
+
+`storage:delete*Audio` calls `queue.cancelBook()` first. Without it the worker
+rewrites the very files just removed: `clearAudioBy*` has already run, so the DB
+says `pending` for a file that exists, the user sees the size not drop, and there
+is no way to tell from the UI what happened.
+
+Cancelling by *book* when deleting one *chapter* is slightly heavy-handed — the
+queue has no `cancelByChapter`. Accepted on purpose: jobs for other chapters write
+to different files so keeping them would be safe, but there is no cheap way to be
+sure a job for *this* chapter is not in flight, and the cost of over-cancelling is
+one re-queue while the cost of under-cancelling is a corrupt size report.
+
+`clearAudioBy*` deliberately targets only `status = 'ready'` and leaves
+`generating` rows alone, so a job that slips through mid-flight still finishes
+consistently rather than racing `markReady`.
+
+Verified in the probe with a job genuinely in flight: all segments ended
+`pending`, disk went to 0 B, no orphans.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -1595,6 +1705,8 @@ apps/main/src/
   services/sidecar-spawn.ts      Nối child_process thật (chỗ DUY NHẤT chạm nó)
   probe/                   Chạy thật với sidecar Python (KHÔNG trong pnpm test
                            — xem apps/main/probe/README.md)
+  services/storage.ts      CHỖ DUY NHẤT xoá file của user (audio, timing, bản copy
+                           sách). Xoá file trước, DB sau — mục 4.39
   services/settings.ts     electron-store, file hỏng → rơi về mặc định từng field
   services/logger.ts       Log file + xoay vòng
 
@@ -1602,7 +1714,8 @@ apps/preload/src/
   api.ts                   window.api.* — không lộ ipcRenderer
 
 apps/renderer/src/
-  App.tsx                  Điều hướng 3 màn: thư viện / nhập sách / chi tiết
+  App.tsx                  Điều hướng: thư viện / nhập sách / chi tiết / đọc /
+                           giọng đọc / dung lượng
   lib/theme.ts             Logic theme thuần
   features/theme/          use-theme + ThemeToggle
   features/titlebar/       TitleBar + WindowControls
@@ -1621,11 +1734,18 @@ apps/renderer/src/
   stores/library-store.ts  Danh sách sách + sách đang mở
   stores/voice-store.ts    Catalog + tiến độ tải theo voiceId
   stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng
+  stores/storage-store.ts  Dung lượng + xoá; giữ lỗi qua lượt nạp lại
   features/generate/
     GenerateControls.tsx   Nút tạo audio chương/cả sách (chỗ DUY NHẤT gọi queue:*)
     GenerateEstimateDialog.tsx  Hộp ước lượng BẮT BUỘC trước khi generate (4.38)
     QueueProgress.tsx      Thanh tiến độ + tạm dừng/huỷ
     format.ts              queuePercent, nhãn, mốc prefetch (thuần — 4.37)
+  features/storage/
+    StorageManager.tsx     Màn Dung lượng (chỗ DUY NHẤT gọi storage:*)
+    DeleteAudioDialog.tsx  Hộp xác nhận BẮT BUỘC trước khi xoá audio
+    StorageBookRow.tsx     Hàng sách, mở ra xem từng chương (tải khi bấm)
+    StorageSettings.tsx    Thư mục audio, bitrate, ngưỡng cảnh báo
+    format.ts              warnPercent, usageLevel, nhãn chương (thuần)
   features/voices/
     VoiceManager.tsx       Màn quản lý giọng đọc
     VoiceRow.tsx           Một voice: thông tin + tải/huỷ/xoá + thanh tiến trình
@@ -1700,7 +1820,7 @@ scripts/
 | Ảnh trong DOCX bị bỏ khi render | Thấp | `sanitizeDocxHtml` bỏ `<img>` (danh sách trắng không có). LN có minh hoạ sẽ mất ảnh ở viewer DOCX — PDF không bị vì vẽ cả trang |
 | `import:*` chưa chặn đường dẫn tuỳ ý | TB | Renderer gọi `parseFile` với path bất kỳ và main sẽ đọc. Hiện chưa lộ ra ngoài (chỉ dialog gọi tới), nhưng khi thêm kéo-thả thì phải kiểm path qua `services/paths.ts` |
 | Ngôn ngữ sách hardcode `'vi'` | **TB** | `import-store.save()` luôn gửi `lang: 'vi'`. Sách EN sẽ nhận voice sai ở Phase 2. Cần cho user chọn ở màn xác nhận — xem ghi chú P1.6b |
-| Xoá sách không xoá file đã copy | TB | `library:removeBook` xoá bản ghi DB (chương/segment theo CASCADE) nhưng để lại file trong `libraryDir`. Cố ý dồn cho Storage Manager (Phase 2) xử lý cùng audio — một chỗ duy nhất chịu trách nhiệm dọn file |
+| ~~Xoá sách không xoá file đã copy~~ | ✅ Xong | P2.7: `library:removeBook` gọi `storage.removeBookFiles()` — xoá bản copy trong `libraryDir` **và** cả thư mục audio. Xoá DB trước, file sau (mục 4.39). Lỗi xoá file không làm hỏng lượt xoá sách |
 | Chưa sinh ảnh bìa | Thấp | `Book.coverPath` có trong schema nhưng chưa ai ghi. Grid đang dùng bìa tạm (chữ cái đầu + sắc độ suy từ tên) |
 | Segment dựng đồng bộ trong main | Thấp | 4817 segment mất ~400ms, chấp nhận được. Sách lớn hơn nhiều lần thì sẽ thấy đơ — lúc đó chuyển sang worker thread |
 | DOCX chưa xử lý ảnh và bảng | Thấp | `extractBlocks` chỉ nhận `<h1>`–`<h6>` và `<p>`. File mẫu A4 có 2 `<img>` bị bỏ qua — chấp nhận được vì TTS không đọc ảnh, nhưng bảng có nội dung thì sẽ mất |
@@ -1718,7 +1838,14 @@ scripts/
 | ~~**`timings` chưa ghi ra đĩa**~~ | ✅ Xong | `services/timings-store.ts` ghi `{audioDir}/{bookId}/{segmentId}.json` (ghi `.part` rồi rename). **Đã kiểm thật**: 3 segment × 13–14 từ, `durationMs` khớp DB |
 | ~~Chưa có màn hình nào gọi `queue:*`~~ | ✅ Xong | `GenerateControls` gọi 8/12 channel từ trình đọc và màn chi tiết sách. Còn `queue:listPending` và `queue:cancelJob` chưa có UI — xem hàng dưới |
 | ~~Chưa có UI chọn giọng đọc~~ | ✅ Xong | Nút "Dùng giọng này" ở `VoiceRow`, chỉ hiện với voice **đã cài**. Xoá voice đang chọn thì tự bỏ chọn, nên settings không bao giờ trỏ tới model đã mất |
-| P2.6 UI chưa kiểm trên bản đóng gói | **Cao** | Hộp ước lượng, thanh tiến độ, dấu trạng thái segment mới chỉ có unit test (jsdom) + probe qua handler thật. **Chưa mở app thật lần nào** để xem cả dark lẫn light. Đây đúng chỗ đã lộ lỗi 4.22/4.23 trước đây — jsdom không tính CSS nên màu trong suốt vẫn lọt |
+| ~~P2.6 UI chưa mở app thật lần nào~~ | ✅ Xong | P2.7 đã kiểm ở `pnpm dev` bằng CDP: hộp ước lượng, thanh tiến độ, generate 190 đoạn thật, prefetch, xoá 380 file. Đo `getComputedStyle` ở **cả dark lẫn light** — không màu nào trong suốt. Phần **bản đóng gói** vẫn còn nợ, xem hàng dưới |
+| UI Phase 2 chưa kiểm trên bản đóng gói | **Cao** | Đã kiểm ở `pnpm dev` (thấy CSS thật + IPC thật) nhưng **chưa** `pnpm build:win`. Bản dev không lộ được lỗi đường dẫn kiểu asar — đúng loại lỗi 4.19 và 4.29a. Phải chạy `pnpm build:sidecar` trước rồi `pnpm build:win`, mở `.exe` và đi lại luồng: nhập sách → generate → xem/xoá dung lượng |
+| Quy trình kiểm UI bằng CDP vẫn viết tay mỗi lần | **TB** | P2.7 lái app qua `--remote-debugging-port=9222` + `Runtime.evaluate`, nhưng script là file tạm rồi xoá. Lần thứ năm làm lại từ đầu. Nên có `scripts/ui-check.mjs` cố định: mở app, đi luồng, đo `getComputedStyle` những token màu, chụp ảnh cả 2 theme |
+| Xoá 1 chương huỷ job của CẢ sách | Thấp | Hàng đợi không có `cancelByChapter` nên `storage:deleteChapterAudio` gọi `cancelBook` (mục 4.41). Quá tay: job của chương khác bị huỷ oan rồi phải xếp lại. Đổi được nếu thêm `cancelByChapter` vào `jobs.ts` |
+| `deleteReadAudio` chưa có nút trong UI | TB | Handler + service + 5 test đã có (xoá chương **trước** chương đang đọc), nhưng `StorageManager` chưa gọi. plan.md có nhắc nút "Xoá audio các chương đã đọc xong" — thiếu chỗ bấm thì tính năng không tồn tại với user |
+| Ngưỡng cảnh báo nhỏ nhất là 2 GB | Thấp | Nhánh `near`/`over` chỉ tới được khi user có >1.6 GB audio. Đúng với app này (1 vol ≈ 97 MB → cảnh báo ở ~16 vol) nhưng nghĩa là đường cảnh báo hiếm khi chạy thật. Đã kiểm bằng cách hạ ngưỡng qua IPC: thanh 100%, fill đổi đỏ, câu cảnh báo đúng |
+| Lớp phủ hộp thoại chỉ mờ 70% | Thấp | `bg/0.7` nên chữ dưới vẫn lộ quanh mép hộp, hơi nhiễu mắt — thấy rõ trên ảnh chụp dark. Cả `GenerateEstimateDialog` (P2.6) lẫn `DeleteAudioDialog` dùng cùng mẫu nên ít nhất là nhất quán |
+| `getUsage` quét cả thư mục audio mỗi lần gọi | Thấp | Một vol có ~9600 file; `stat` từng file để so DB với đĩa. Với 1–2 sách thì tức thời, nhưng thư viện 50 vol sẽ thấy chậm khi mở màn Dung lượng. Lúc đó nên cache theo `mtime` của thư mục hoặc chỉ quét khi user bấm "dọn rác" |
 | Không có UI cho bảng hàng đợi | TB | `queue:listPending` (trần 200 job) và `queue:cancelJob` (huỷ **một** job) vẫn chưa ai gọi. Hiện chỉ huỷ được cả sách hoặc tất cả. Đủ dùng cho P2.6 nhưng user không thấy được job nào đang hỏng |
 | Prefetch không huỷ khi rời sách | Thấp | Đọc tới 80% chương 3 rồi đóng sách thì chương 4 vẫn generate xong trong nền. Không sai — audio đó vẫn dùng được sau này — nhưng tốn CPU cho việc user không còn cần. `queue:cancelBook` đã có sẵn nếu muốn đổi |
 | `prefetched` mất khi reload renderer | Thấp | Danh sách chương đã prefetch giữ trong store, không persist. Reload thì prefetch lại chương đó — nhưng `enqueueChapter` tự lọc segment đã `ready` nên chỉ tốn một lượt IPC, không sinh job trùng |

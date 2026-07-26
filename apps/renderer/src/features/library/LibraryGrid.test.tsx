@@ -25,7 +25,7 @@ const setup = async (
   const onOpen = vi.fn();
 
   await act(async () => {
-    render(<LibraryGrid onImport={onImport} onManageVoices={vi.fn()} onOpen={onOpen} />);
+    render(<LibraryGrid onImport={onImport} onManageVoices={vi.fn()} onManageStorage={vi.fn()} onOpen={onOpen} />);
   });
 
   return { onImport, onOpen };
@@ -88,7 +88,7 @@ describe('hiển thị', () => {
     fake.api.library.list.mockResolvedValueOnce(err('DB_ERROR', 'Không đọc được DB'));
 
     await act(async () => {
-      render(<LibraryGrid onImport={vi.fn()} onManageVoices={vi.fn()} onOpen={vi.fn()} />);
+      render(<LibraryGrid onImport={vi.fn()} onManageVoices={vi.fn()} onManageStorage={vi.fn()} onOpen={vi.fn()} />);
     });
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Không đọc được DB'));
@@ -177,7 +177,10 @@ describe('thao tác', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText(/10 chương/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/File sách gốc vẫn còn/)).toBeInTheDocument();
+    // Từ P2.7 lượt xoá này dọn cả bản copy trong thư viện và audio đã tạo, nên
+    // hộp thoại phải nói đúng: chỉ file user tự chọn lúc nhập là còn.
+    expect(within(dialog).getByText(/toàn bộ audio đã tạo/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/File gốc bạn chọn lúc nhập vẫn còn/)).toBeInTheDocument();
   });
 
   it('xác nhận thì mới xoá thật', async () => {

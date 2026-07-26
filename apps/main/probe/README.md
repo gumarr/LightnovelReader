@@ -43,6 +43,8 @@ tự bỏ qua chứ không hỏng.
 | Huỷ giữa chừng | Cắt được request đang bay; **không** segment nào kẹt ở `generating`/`queued` |
 | Estimate vs reality (P2.6) | The estimate shown to the user before "generate whole book" is checked against bytes actually written. Unit tests stub both the char count and the bitrate, so they only prove the multiplication — they cannot tell whether `CHARS_PER_SECOND_ESTIMATE` and `SYNTHESIS_RTF_ESTIMATE` describe real Piper output at all |
 | `enqueueBook` skips finished work (P2.6) | Generates one segment, then queues the whole book: only the remaining segments get jobs, and `chapters.audio_bytes` still matches the sum on disk |
+| Deleting audio hits the right files (P2.7) | The unit tests for `storage.ts` create their own `.ogg` files with `writeFileSync`, so they only prove the delete works on files the test itself wrote. Here the files were written by the **sidecar** through the `outPath` main built, with names from `paths.ts` — if those two disagree by one character the delete matches nothing while the DB still reports success. Also checks regenerating right after a delete, which is what a user does after deleting by mistake |
+| Deleting audio mid-generate (P2.7) | The handler must cancel the book's jobs **before** removing files. Without that the worker rewrites the very files just deleted, and the DB says `pending` for a file that exists. Cannot be staged in a unit test: it needs a job genuinely in flight. Asserts every `ready` segment still has its file and every file belongs to a `ready` segment — a mismatch either way is orphaned bytes or a play button for a missing file |
 
 Measured on 3 real Vietnamese segments at 24 kbps (2026-07-26):
 

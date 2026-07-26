@@ -43,11 +43,15 @@ const setup = (options: {
   findBook?: (id: string) => Book | undefined;
   findSegment?: (id: string) => { id: string; chapterId: string } | undefined;
   removeResult?: boolean;
+  /** Lỗi khi dọn file — dùng để kiểm xoá sách không bị chặn bởi lỗi đĩa */
+  removeFilesError?: Error;
 } = {}) => {
   const saved: SaveBookInput[] = [];
   const discarded: string[] = [];
   const opened: { id: string; at: number; lastSegmentId?: string }[] = [];
   const removed: string[] = [];
+  /** Sách được yêu cầu dọn file — kiểm xoá sách có dọn đĩa hay không */
+  const filesRemoved: Book[] = [];
 
   const sessions = {
     create: vi.fn(),
@@ -100,8 +104,13 @@ const setup = (options: {
       books,
       chapters,
       segments,
+      removeFiles: async (b: Book) => {
+        filesRemoved.push(b);
+        if (options.removeFilesError !== undefined) throw options.removeFilesError;
+      },
       now: () => 5000,
     }),
+    filesRemoved,
     saved,
     discarded,
     opened,
@@ -320,25 +329,53 @@ describe('library:setProgress', () => {
 });
 
 describe('library:removeBook', () => {
-  it('xoá sách theo id', () => {
+  it('xoá sách theo id', async () => {
     const { handlers, removed } = setup();
-    const result = handlers.removeBook('book-1');
+    const result = await handlers.removeBook('book-1');
 
     expect(result.ok).toBe(true);
     expect(removed).toEqual(['book-1']);
   });
 
-  it('xoá sách không tồn tại trả NOT_FOUND', () => {
+  it('xoá luôn file đã copy và audio, không chỉ bản ghi DB', async () => {
+    const { handlers, filesRemoved } = setup();
+    await handlers.removeBook('book-1');
+
+    // Phải nhận cả `filePath` — thư mục thư viện phình mãi nếu chỉ xoá DB
+    expect(filesRemoved).toHaveLength(1);
+    expect(filesRemoved[0]?.filePath).toBe('D:\\lib\\book-1.pdf');
+  });
+
+  it('sách không tồn tại thì KHÔNG dọn file nào', async () => {
+    const { handlers, filesRemoved } = setup({ findBook: () => undefined });
+    const result = await handlers.removeBook('không-có');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+    expect(filesRemoved).toEqual([]);
+  });
+
+  it('xoá sách không tồn tại trả NOT_FOUND', async () => {
     const { handlers } = setup({ removeResult: false });
-    const result = handlers.removeBook('không-có');
+    const result = await handlers.removeBook('không-có');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
   });
 
-  it('từ chối bookId rỗng', () => {
+  it('lỗi xoá file KHÔNG làm hỏng lượt xoá sách', async () => {
+    // Bản ghi đã ra khỏi DB rồi — báo lỗi lúc này chỉ khiến user bấm xoá lại
+    // một cuốn sách không còn, và lần sau nhận NOT_FOUND. File còn sót thì
+    // Storage Manager dọn được.
+    const { handlers, removed } = setup({ removeFilesError: new Error('EBUSY') });
+
+    await expect(handlers.removeBook('book-1')).rejects.toThrow('EBUSY');
+    expect(removed).toEqual(['book-1']);
+  });
+
+  it('từ chối bookId rỗng', async () => {
     const { handlers } = setup();
-    expect(() => handlers.removeBook('')).toThrow(InvalidInputError);
+    await expect(handlers.removeBook('')).rejects.toThrow(InvalidInputError);
   });
 });
 

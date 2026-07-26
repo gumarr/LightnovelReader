@@ -10,6 +10,8 @@ import {
   type BookHtml,
   type Chapter,
   type ChapterPreviewRequest,
+  type ChapterUsageInfo,
+  type DeleteAudioResultInfo,
   type EnqueueChapterRequest,
   type EnqueueResult,
   type GenerateEstimateInfo,
@@ -23,6 +25,7 @@ import {
   type SaveBookRequest,
   type Segment,
   type SidecarStatus,
+  type StorageUsageInfo,
   type VoiceCatalogItem,
   type VoiceDownloadProgress,
   type WindowState,
@@ -54,6 +57,10 @@ export type FakeApiOptions = {
   queueStatus?: Partial<QueueStatusInfo>;
   /** Ước lượng trả về cho `queue:estimate*`. Mặc định một chương nhỏ */
   estimate?: Partial<GenerateEstimateInfo>;
+  /** Dung lượng cho Storage Manager. Mặc định suy từ `library`, mọi số là 0 */
+  usage?: Partial<StorageUsageInfo>;
+  /** Dung lượng từng chương. `chapterId` phải bắt đầu bằng `bookId` để lọc đúng */
+  chapterUsage?: ChapterUsageInfo[];
 };
 
 /** Voice mẫu cho test voice manager */
@@ -182,6 +189,39 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
     processingMs: 1_500,
     existingBytes: 0,
     ...options.estimate,
+  };
+
+  // Dung lượng: mặc định suy từ `options.library` để hai màn hình không nói
+  // khác nhau về cùng một thư viện. Test nào cần số cụ thể thì truyền `usage`.
+  const usage: StorageUsageInfo = {
+    audioDir: settings.audioDir,
+    audioBytes: 0,
+    audioBytesOnDisk: 0,
+    orphanBytes: 0,
+    orphanFiles: 0,
+    warnBytes: settings.storageWarnBytes,
+    books: libraryEntries.map((entry) => ({
+      bookId: entry.book.id,
+      title: entry.book.title,
+      bookFileBytes: 30 * 1024 ** 2,
+      audioBytes: 0,
+      chapterCount: entry.chapterCount,
+      completeChapters: 0,
+    })),
+    ...options.usage,
+  };
+
+  const chapterUsage: ChapterUsageInfo[] = options.chapterUsage ?? [];
+
+  /**
+   * Trừ dung lượng đã xoá khỏi tổng.
+   *
+   * Cả `audioBytes` (DB) lẫn `audioBytesOnDisk` (đĩa) đều phải giảm: chỉ trừ
+   * một bên thì bản giả tự sinh ra file mồ côi mà không có thật.
+   */
+  const shrinkUsage = (bytes: number): void => {
+    usage.audioBytes = Math.max(0, usage.audioBytes - bytes);
+    usage.audioBytesOnDisk = Math.max(0, usage.audioBytesOnDisk - bytes);
   };
 
   const catalogVoices: VoiceCatalogItem[] = options.voices ?? [
@@ -359,6 +399,58 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       }),
     },
 
+    storage: {
+      getUsage: vi.fn(async (): Promise<Result<StorageUsageInfo>> => ok(usage)),
+      getChapterUsage: vi.fn(
+        async (bookId: string): Promise<Result<ChapterUsageInfo[]>> =>
+          ok(chapterUsage.filter((c) => c.chapterId.startsWith(bookId))),
+      ),
+      // Xoá thật trong bản giả: trừ đi dung lượng để test kiểm được màn hình có
+      // nạp lại số mới hay vẫn hiện số cũ.
+      deleteChapterAudio: vi.fn(async (chapterId: string): Promise<Result<DeleteAudioResultInfo>> => {
+        const chapter = chapterUsage.find((c) => c.chapterId === chapterId);
+        if (chapter === undefined) return err('NOT_FOUND', 'Không tìm thấy chương này.');
+
+        const freedBytes = chapter.audioBytes;
+        const segments = chapter.readySegments;
+        chapter.audioBytes = 0;
+        chapter.readySegments = 0;
+        shrinkUsage(freedBytes);
+
+        return ok({ segments, freedBytes, filesDeleted: segments * 2 });
+      }),
+      deleteBookAudio: vi.fn(async (bookId: string): Promise<Result<DeleteAudioResultInfo>> => {
+        const book = usage.books.find((b) => b.bookId === bookId);
+        if (book === undefined) return err('NOT_FOUND', 'Không tìm thấy sách này.');
+
+        const freedBytes = book.audioBytes;
+        let segments = 0;
+        for (const chapter of chapterUsage) {
+          if (!chapter.chapterId.startsWith(bookId)) continue;
+          segments += chapter.readySegments;
+          chapter.audioBytes = 0;
+          chapter.readySegments = 0;
+        }
+        book.audioBytes = 0;
+        book.completeChapters = 0;
+        shrinkUsage(freedBytes);
+
+        return ok({ segments, freedBytes, filesDeleted: segments * 2 });
+      }),
+      deleteReadAudio: vi.fn(
+        async (_bookId: string): Promise<Result<DeleteAudioResultInfo>> =>
+          ok({ segments: 0, freedBytes: 0, filesDeleted: 0 }),
+      ),
+      deleteOrphans: vi.fn(async (): Promise<Result<DeleteAudioResultInfo>> => {
+        const freedBytes = usage.orphanBytes;
+        const filesDeleted = usage.orphanFiles;
+        usage.orphanBytes = 0;
+        usage.orphanFiles = 0;
+        usage.audioBytesOnDisk = Math.max(0, usage.audioBytesOnDisk - freedBytes);
+        return ok({ segments: 0, freedBytes, filesDeleted });
+      }),
+    },
+
     window: {
       minimize: vi.fn(async () => ok(undefined)),
       toggleMaximize: vi.fn(async () => {
@@ -414,6 +506,10 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
     },
     queueStatusListenerCount: () => queueStatusListeners.size,
     segmentUpdateListenerCount: () => segmentUpdateListeners.size,
+
+    /** Dung lượng hiện tại của bản giả — kiểm xoá có thật sự trừ đi hay không */
+    getUsage: () => usage,
+    getChapterUsage: () => chapterUsage,
   };
 };
 

@@ -4,6 +4,7 @@ import {
   ok,
   readingProgressSchema,
   saveBookRequestSchema,
+  type Book,
   type BookDetail,
   type LibraryEntry,
   type Result,
@@ -25,7 +26,7 @@ export type LibraryHandlers = {
   list: () => Result<LibraryEntry[]>;
   openBook: (input: unknown) => Result<BookDetail>;
   setProgress: (input: unknown) => Result<void>;
-  removeBook: (input: unknown) => Result<void>;
+  removeBook: (input: unknown) => Promise<Result<void>>;
 };
 
 export type LibraryHandlerDeps = {
@@ -34,6 +35,13 @@ export type LibraryHandlerDeps = {
   books: BookRepository;
   chapters: ChapterRepository;
   segments: SegmentRepository;
+  /**
+   * Dọn file của sách bị xoá: bản copy trong `libraryDir` + thư mục audio.
+   *
+   * Tiêm vào chứ không gọi thẳng `StorageService` để handler này không phụ
+   * thuộc vào `audioDir` — nó không biết và không cần biết thư mục audio ở đâu.
+   */
+  removeFiles: (book: Book) => Promise<void>;
   now?: () => number;
   logError?: (message: string, detail: string) => void;
 };
@@ -90,16 +98,27 @@ export const createLibraryHandlers = (deps: LibraryHandlerDeps): LibraryHandlers
     return ok(undefined);
   },
 
-  removeBook: (input) => {
+  removeBook: async (input) => {
     const parsed = bookIdSchema.safeParse(input);
     if (!parsed.success) throw new InvalidInputError('bookId không hợp lệ');
 
-    // Chương và segment tự đi theo nhờ ON DELETE CASCADE. File sách đã copy
-    // vào thư viện thì chưa xoá — Storage Manager (Phase 2) lo việc đó cùng
-    // với audio, để một chỗ duy nhất chịu trách nhiệm dọn file.
+    // Đọc bản ghi TRƯỚC khi xoá: `filePath` chỉ có trong DB, mà sau `remove()`
+    // thì không tra lại được nữa.
+    const book = deps.books.findById(parsed.data);
+    if (book === undefined) {
+      return err('NOT_FOUND', 'Không tìm thấy sách này trong thư viện.');
+    }
+
+    // Chương và segment tự đi theo nhờ ON DELETE CASCADE.
     if (!deps.books.remove(parsed.data)) {
       return err('NOT_FOUND', 'Không tìm thấy sách này trong thư viện.');
     }
+
+    // Xoá DB trước, file sau: ngược lại thì xoá file xong mà DB lỗi sẽ để lại
+    // sách trong thư viện trỏ vào file không còn — mở lên là lỗi không cứu được.
+    // Theo thứ tự này, xấu nhất là file mồ côi, mà Storage Manager dọn được.
+    // Lỗi xoá file **không** làm hỏng lượt xoá sách: bản ghi đã đi rồi.
+    await deps.removeFiles(book);
 
     return ok(undefined);
   },

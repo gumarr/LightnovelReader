@@ -228,6 +228,54 @@ export type GenerateEstimateInfo = {
   existingBytes: number;
 };
 
+/**
+ * Dung lượng của một sách trong Storage Manager.
+ *
+ * Kèm `bookFileBytes` vì bản copy sách gốc cũng chiếm chỗ (PDF 270 trang ~30 MB)
+ * — user thấy "sách này 0 B" trong khi thư mục vẫn nặng thì con số vô nghĩa.
+ */
+export type BookUsageInfo = {
+  bookId: string;
+  title: string;
+  bookFileBytes: number;
+  audioBytes: number;
+  chapterCount: number;
+  completeChapters: number;
+};
+
+export type ChapterUsageInfo = {
+  chapterId: string;
+  title: string;
+  index: number;
+  segmentCount: number;
+  readySegments: number;
+  audioBytes: number;
+};
+
+/**
+ * Toàn cảnh dung lượng.
+ *
+ * Có **cả** `audioBytes` (cộng từ DB) và `audioBytesOnDisk` (quét thư mục) vì
+ * hai số này lệch nhau là dấu hiệu có file mồ côi — xoá sách lúc app không chạy,
+ * hoặc user xoá tay bên ngoài. Trả cả hai để UI nói được điều đó thay vì im
+ * lặng tin vào DB.
+ */
+export type StorageUsageInfo = {
+  audioDir: string;
+  audioBytes: number;
+  audioBytesOnDisk: number;
+  orphanBytes: number;
+  orphanFiles: number;
+  warnBytes: number;
+  books: BookUsageInfo[];
+};
+
+export type DeleteAudioResultInfo = {
+  segments: number;
+  freedBytes: number;
+  filesDeleted: number;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -300,6 +348,18 @@ export type IpcContract = {
   'queue:cancelJob': { in: string; out: Result<void> };
   'queue:cancelBook': { in: string; out: Result<EnqueueResult> };
   'queue:cancelAll': { in: void; out: Result<EnqueueResult> };
+
+  /** Toàn cảnh dung lượng: theo sách + tổng + file mồ côi. Có quét đĩa nên async */
+  'storage:getUsage': { in: void; out: Result<StorageUsageInfo> };
+  /** Dung lượng từng chương của một sách — chỉ tải khi user mở sách đó ra xem */
+  'storage:getChapterUsage': { in: string; out: Result<ChapterUsageInfo[]> };
+  /** Xoá audio một chương, giữ nguyên metadata và tiến độ đọc */
+  'storage:deleteChapterAudio': { in: string; out: Result<DeleteAudioResultInfo> };
+  'storage:deleteBookAudio': { in: string; out: Result<DeleteAudioResultInfo> };
+  /** Xoá audio các chương nằm trước chương đang đọc */
+  'storage:deleteReadAudio': { in: string; out: Result<DeleteAudioResultInfo> };
+  /** Dọn file `.ogg`/`.json` của sách không còn trong thư viện */
+  'storage:deleteOrphans': { in: void; out: Result<DeleteAudioResultInfo> };
 
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
@@ -386,6 +446,12 @@ export const IPC_CHANNELS = [
   'queue:cancelJob',
   'queue:cancelBook',
   'queue:cancelAll',
+  'storage:getUsage',
+  'storage:getChapterUsage',
+  'storage:deleteChapterAudio',
+  'storage:deleteBookAudio',
+  'storage:deleteReadAudio',
+  'storage:deleteOrphans',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',

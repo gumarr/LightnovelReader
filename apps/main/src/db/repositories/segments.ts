@@ -105,6 +105,22 @@ export type SegmentRepository = {
   /** Số liệu ước lượng cho một chương — chỉ tính segment chưa có audio */
   pendingStatsByChapter(chapterId: string): PendingStats;
   pendingStatsByBook(bookId: string): PendingStats;
+  /** Segment ĐÃ có audio của một chương — nguồn để xoá file. Ngược với `listPending*` */
+  listReadyByChapter(chapterId: string): Segment[];
+  listReadyByBook(bookId: string): Segment[];
+  /**
+   * Xoá dấu vết audio của cả một chương: đưa segment về `pending` và bỏ
+   * `audio_path`/`duration_ms`/`audio_bytes`, rồi tính lại dung lượng chương.
+   *
+   * Khác `resetToPending` ở hai điểm quan trọng: hàm kia chỉ nhận
+   * `queued`/`generating` (dùng khi huỷ job, segment chưa từng có file), còn
+   * hàm này nhắm đúng vào `ready` — segment có file trên đĩa vừa bị xoá. Để
+   * nguyên `status = 'ready'` thì reader vẫn hiện nút phát cho file không còn.
+   *
+   * **Không** đụng `books.last_segment_id`: xoá audio giữ nguyên tiến độ đọc.
+   */
+  clearAudioByChapter(chapterId: string): number;
+  clearAudioByBook(bookId: string): number;
 };
 
 export const createSegmentRepository = (db: Database): SegmentRepository => {
@@ -222,6 +238,47 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
     WHERE id = @chapterId
   `);
 
+  const readyByChapter = db.prepare(`
+    SELECT * FROM segments
+    WHERE chapter_id = ? AND status = 'ready'
+    ORDER BY idx
+  `);
+
+  const readyByBook = db.prepare(`
+    SELECT s.* FROM segments s
+    JOIN chapters c ON c.id = s.chapter_id
+    WHERE c.book_id = ? AND s.status = 'ready'
+    ORDER BY c.idx, s.idx
+  `);
+
+  // Chỉ nhắm `ready`: segment đang `generating` có job chạy dở, đưa nó về
+  // `pending` ở đây sẽ đụng nhau với `markReady` của job đó ngay sau.
+  const clearAudioStmt = db.prepare(`
+    UPDATE segments
+    SET status = 'pending', audio_path = NULL, duration_ms = NULL,
+        audio_bytes = NULL, align_status = 'none', error_message = NULL
+    WHERE chapter_id = ? AND status = 'ready'
+  `);
+
+  const chaptersOfBook = db.prepare('SELECT id FROM chapters WHERE book_id = ?');
+
+  const applyClearChapter = db.transaction((chapterId: string): number => {
+    const changes = clearAudioStmt.run(chapterId).changes;
+    refreshChapter.run({ chapterId });
+    return changes;
+  });
+
+  // Một transaction cho cả sách: dừng giữa chừng sẽ để lại vài chương báo có
+  // audio mà file đã xoá, đúng loại lệch mà `markReady` cố tránh.
+  const applyClearBook = db.transaction((bookId: string): number => {
+    let changes = 0;
+    for (const row of chaptersOfBook.all(bookId) as { id: string }[]) {
+      changes += clearAudioStmt.run(row.id).changes;
+      refreshChapter.run({ chapterId: row.id });
+    }
+    return changes;
+  });
+
   const applyReady = db.transaction((id: string, result: SegmentAudioResult) => {
     readyStmt.run({
       id,
@@ -295,6 +352,22 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
     pendingStatsByBook(bookId) {
       const row = statsByBook.get(bookId) as { n: number; chars: number };
       return { segmentCount: row.n, totalChars: row.chars };
+    },
+
+    listReadyByChapter(chapterId) {
+      return (readyByChapter.all(chapterId) as SegmentRow[]).map(toSegment);
+    },
+
+    listReadyByBook(bookId) {
+      return (readyByBook.all(bookId) as SegmentRow[]).map(toSegment);
+    },
+
+    clearAudioByChapter(chapterId) {
+      return applyClearChapter(chapterId);
+    },
+
+    clearAudioByBook(bookId) {
+      return applyClearBook(bookId);
     },
   };
 };

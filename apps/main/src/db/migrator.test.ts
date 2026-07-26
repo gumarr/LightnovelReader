@@ -146,3 +146,104 @@ describe('applyConnectionPragmas', () => {
     }
   });
 });
+
+describe('migration v2 — chapter_error_count', () => {
+  /** Chỉ chạy tới v1, để mô phỏng DB của user đã dùng app từ trước */
+  const migrateToV1 = (): void => {
+    const v1 = MIGRATIONS.filter((m) => m.version === 1);
+    migrate(db, v1);
+  };
+
+  it('thêm cột error_count vào bảng chapters', () => {
+    migrate(db);
+    const columns = (db.pragma('table_info(chapters)') as { name: string }[]).map((c) => c.name);
+
+    expect(columns).toContain('error_count');
+  });
+
+  it('nâng cấp từ v1 đếm LẠI số segment lỗi đang có', () => {
+    // DB của user đã chạy P2.6 có sẵn segment `error`. Để nguyên DEFAULT 0 thì
+    // con số sai cho tới lần generate kế tiếp — mà chương đã xong thì không bao
+    // giờ generate lại nữa.
+    migrateToV1();
+
+    db.prepare(
+      `INSERT INTO books (id, title, format, file_path, file_hash, lang, added_at)
+       VALUES ('b1', 'Sách', 'pdf', 'D:/a.pdf', 'h1', 'vi', 1000)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO chapters (id, book_id, idx, title) VALUES ('c1', 'b1', 0, 'Chương 1')`,
+    ).run();
+    const rows: readonly [string, string][] = [
+      ['s1', 'error'],
+      ['s2', 'error'],
+      ['s3', 'ready'],
+    ];
+    for (const [index, [id, status]] of rows.entries()) {
+      db.prepare(
+        `INSERT INTO segments (id, chapter_id, idx, text, anchor, status)
+         VALUES (?, 'c1', ?, 'x', '{"kind":"pdf","page":1,"rects":[]}', ?)`,
+      ).run(id, index, status);
+    }
+
+    migrate(db);
+
+    const row = db.prepare('SELECT error_count FROM chapters WHERE id = ?').get('c1') as {
+      error_count: number;
+    };
+    expect(row.error_count).toBe(2);
+  });
+
+  it('chương không có segment lỗi vẫn về 0, không NULL', () => {
+    migrateToV1();
+    db.prepare(
+      `INSERT INTO books (id, title, format, file_path, file_hash, lang, added_at)
+       VALUES ('b1', 'Sách', 'pdf', 'D:/a.pdf', 'h1', 'vi', 1000)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO chapters (id, book_id, idx, title) VALUES ('c1', 'b1', 0, 'Chương 1')`,
+    ).run();
+
+    migrate(db);
+
+    const row = db.prepare('SELECT error_count FROM chapters WHERE id = ?').get('c1') as {
+      error_count: number;
+    };
+    expect(row.error_count).toBe(0);
+  });
+
+  it('nâng cấp không mất dữ liệu cũ', () => {
+    migrateToV1();
+    db.prepare(
+      `INSERT INTO books (id, title, format, file_path, file_hash, lang, added_at, last_segment_id)
+       VALUES ('b1', 'Sách cũ', 'pdf', 'D:/a.pdf', 'h1', 'vi', 1000, 'seg-42')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO chapters (id, book_id, idx, title, audio_bytes, generate_status)
+       VALUES ('c1', 'b1', 0, 'Chương giữ nguyên', 12345, 'complete')`,
+    ).run();
+
+    migrate(db);
+
+    const chapter = db.prepare('SELECT * FROM chapters WHERE id = ?').get('c1') as {
+      title: string;
+      audio_bytes: number;
+      generate_status: string;
+    };
+    expect(chapter.title).toBe('Chương giữ nguyên');
+    expect(chapter.audio_bytes).toBe(12345);
+    expect(chapter.generate_status).toBe('complete');
+
+    const book = db.prepare('SELECT last_segment_id FROM books WHERE id = ?').get('b1') as {
+      last_segment_id: string;
+    };
+    // Tiến độ đọc phải sống qua mọi lần nâng cấp schema
+    expect(book.last_segment_id).toBe('seg-42');
+  });
+
+  it('chạy migrate hai lần không ném — v2 đã áp dụng thì bỏ qua', () => {
+    migrate(db);
+    expect(() => migrate(db)).not.toThrow();
+    expect(getSchemaVersion(db)).toBe(2);
+  });
+});

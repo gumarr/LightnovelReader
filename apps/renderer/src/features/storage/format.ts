@@ -35,6 +35,14 @@ export const chapterProgressLabel = (chapter: ChapterUsageInfo): string => {
   if (chapter.segmentCount === 0) return 'Không có đoạn nào';
   if (chapter.readySegments === 0) return 'Chưa tạo audio';
   if (chapter.readySegments >= chapter.segmentCount) return 'Đủ audio';
+
+  // Đã tổng hợp hết những đoạn tổng hợp được: phần thiếu đúng bằng số đoạn lỗi.
+  // Nói "Đủ audio" là sai, mà để nguyên "1055/1058 đoạn" thì user cứ bấm tạo
+  // lại mãi cho ba đoạn không bao giờ xong được.
+  if (chapter.readySegments + chapter.errorCount >= chapter.segmentCount) {
+    return `Đủ audio · ${String(chapter.errorCount)} đoạn lỗi`;
+  }
+
   return `${String(chapter.readySegments)}/${String(chapter.segmentCount)} đoạn`;
 };
 

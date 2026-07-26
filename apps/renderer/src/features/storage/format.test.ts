@@ -11,7 +11,7 @@ import {
 const usage = (overrides: Partial<StorageUsageInfo> = {}): StorageUsageInfo => ({
   audioDir: 'E:\\ln-audio',
   audioBytes: 0,
-  audioBytesOnDisk: 0,
+    audioBytesOnDisk: 0,
   orphanBytes: 0,
   orphanFiles: 0,
   warnBytes: 1000,
@@ -26,6 +26,7 @@ const chapter = (overrides: Partial<ChapterUsageInfo> = {}): ChapterUsageInfo =>
   segmentCount: 10,
   readySegments: 0,
   audioBytes: 0,
+  errorCount: 0,
   ...overrides,
 });
 
@@ -114,5 +115,32 @@ describe('orphanSummary', () => {
 
   it('chưa nạp thì trả undefined', () => {
     expect(orphanSummary(null)).toBeUndefined();
+  });
+});
+
+describe('chapterProgressLabel với đoạn lỗi (P2.7b)', () => {
+  it('đã tổng hợp hết đoạn tổng hợp được thì nói "Đủ audio" kèm số lỗi', () => {
+    // 1055 xong + 3 lỗi = 1058 tổng: không còn gì để tạo nữa. Để nguyên
+    // "1055/1058" thì user bấm tạo lại mãi cho ba đoạn không bao giờ xong.
+    expect(
+      chapterProgressLabel(chapter({ segmentCount: 1058, readySegments: 1055, errorCount: 3 })),
+    ).toBe('Đủ audio · 3 đoạn lỗi');
+  });
+
+  it('còn đoạn chưa tạo thì vẫn hiện tỉ lệ, không nói đủ', () => {
+    expect(
+      chapterProgressLabel(chapter({ segmentCount: 10, readySegments: 4, errorCount: 1 })),
+    ).toBe('4/10 đoạn');
+  });
+
+  it('không lỗi và xong hết thì vẫn là "Đủ audio" trơn', () => {
+    expect(chapterProgressLabel(chapter({ segmentCount: 10, readySegments: 10 }))).toBe('Đủ audio');
+  });
+
+  it('toàn bộ chương đều lỗi thì không nói "Đủ audio"', () => {
+    // `readySegments === 0` xét trước: chương không có audio nào thì "đủ" là sai
+    expect(
+      chapterProgressLabel(chapter({ segmentCount: 5, readySegments: 0, errorCount: 5 })),
+    ).toBe('Chưa tạo audio');
   });
 });

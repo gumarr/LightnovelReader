@@ -23,6 +23,7 @@ const chapter = (index: number, overrides: Partial<Chapter> = {}): Chapter => ({
   pageEnd: (index + 1) * 10,
   segmentCount: 100,
   audioBytes: 0,
+  errorCount: 0,
   generateStatus: 'none',
   ...overrides,
 });
@@ -217,5 +218,61 @@ describe('tạo audio (P2.6)', () => {
     expect(badges).toHaveLength(2);
     expect(badges[0]).toHaveTextContent('Đủ audio');
     expect(badges[1]).toHaveTextContent('Một phần');
+  });
+});
+
+describe('số đoạn lỗi (P2.7b)', () => {
+  it('không có lỗi thì không hiện gì', async () => {
+    await renderView(<BookDetailView detail={detail({ chapters: [chapter(0)] })} onBack={vi.fn()} />);
+
+    expect(screen.queryByTestId('chapter-error-count')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('book-error-count')).not.toBeInTheDocument();
+  });
+
+  it('hiện số đoạn lỗi của từng chương', async () => {
+    await renderView(
+      <BookDetailView
+        detail={detail({ chapters: [chapter(0, { errorCount: 5, generateStatus: 'partial' })] })}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('chapter-error-count')).toHaveTextContent('5 đoạn lỗi');
+  });
+
+  it('giải thích nguyên nhân trong tooltip — user không tự đoán được', async () => {
+    await renderView(
+      <BookDetailView detail={detail({ chapters: [chapter(0, { errorCount: 3 })] })} onBack={vi.fn()} />,
+    );
+
+    // Đa số lỗi là đoạn chỉ chứa ký hiệu; generate lại không cứu được
+    expect(screen.getByTestId('chapter-error-count')).toHaveAttribute(
+      'title',
+      expect.stringContaining('ký hiệu'),
+    );
+  });
+
+  it('cộng tổng số đoạn lỗi ở đầu trang', async () => {
+    await renderView(
+      <BookDetailView
+        detail={detail({ chapters: [chapter(0, { errorCount: 3 }), chapter(1, { errorCount: 2 })] })}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('book-error-count')).toHaveTextContent('5 đoạn lỗi');
+  });
+
+  it('vẫn hiện nhãn tiến độ riêng — hai thông tin khác nhau', async () => {
+    // Chương 1058 đoạn hỏng 3 đoạn cũng là "Một phần" y như chương mới xong nửa
+    await renderView(
+      <BookDetailView
+        detail={detail({ chapters: [chapter(0, { errorCount: 3, generateStatus: 'partial' })] })}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('chapter-error-count')).toBeInTheDocument();
+    expect(screen.getByTestId('chapter-generate-status')).toHaveTextContent('Một phần');
   });
 });

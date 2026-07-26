@@ -46,6 +46,15 @@ export type Chapter = {
   segmentCount: number;
   /** Tổng dung lượng audio của các segment con, phục vụ storage manager */
   audioBytes: number;
+  /**
+   * Số segment tổng hợp lỗi.
+   *
+   * Cần riêng khỏi `generateStatus`: một chương 1058 segment có 3 đoạn hỏng vẫn
+   * là `partial` giống chương mới generate được một nửa, nhưng hai ca đó user
+   * phải xử lý khác nhau. Đa số lỗi là đoạn chỉ chứa ký hiệu (`"???,,,..."`) mà
+   * Piper không đọc được — không phải lỗi có thể sửa bằng cách generate lại.
+   */
+  errorCount: number;
   generateStatus: ChapterGenerateStatus;
 };
 

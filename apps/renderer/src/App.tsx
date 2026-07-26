@@ -90,6 +90,7 @@ export const App = (): JSX.Element => {
             setScreen('library');
             void loadLibrary();
           }}
+          onBack={() => setScreen('library')}
         />
       );
     }

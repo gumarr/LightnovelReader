@@ -40,6 +40,7 @@ const chapter = (index: number): Chapter => ({
   pageEnd: (index + 1) * 10,
   segmentCount: 3,
   audioBytes: 0,
+  errorCount: 0,
   generateStatus: 'none',
 });
 
@@ -338,5 +339,57 @@ describe('prefetch chương kế (P2.6)', () => {
     });
 
     expect(fake.api.queue.enqueueChapter).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('bố cục khung đoạn (P2.7b)', () => {
+  /**
+   * Lỗi thật: danh sách đoạn bị cắt mất nửa dưới ngay khi mở chương, nhưng ẩn
+   * rồi hiện lại thì đủ.
+   *
+   * Nguyên nhân là ô cuộn `h-full` của `SegmentList` nằm trong flex column mà
+   * không có `flex-1 min-h-0`, nên nó lấy chiều cao theo **nội dung** lúc đo lần
+   * đầu — lúc đó segment chưa nạp xong. Bấm ẩn/hiện dựng lại component sau khi
+   * layout đã xong nên trông như hết lỗi.
+   *
+   * jsdom không tính CSS thật nên không đo được chiều cao. Khoá lại **ràng buộc
+   * cấu trúc** mà bản sửa dựa vào: ô cuộn phải nằm trong một khối co giãn được.
+   */
+  it('ô cuộn nằm trong khối flex-1 min-h-0 — không thì danh sách bị cắt', async () => {
+    await setup();
+
+    const scroll = await screen.findByTestId('segment-scroll');
+    const wrapper = scroll.parentElement;
+
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.className).toContain('flex-1');
+    // `min-h-0` để flex item được phép co dưới chiều cao nội dung; thiếu nó thì
+    // nó đẩy tràn cả `aside` thay vì cuộn bên trong.
+    expect(wrapper?.className).toContain('min-h-0');
+  });
+
+  it('khối bọc ô cuộn KHÔNG phải chính cái aside — header nút tạo audio đứng riêng', async () => {
+    await setup();
+
+    const scroll = await screen.findByTestId('segment-scroll');
+    const panel = screen.getByTestId('segment-panel');
+
+    // Nút tạo audio (`shrink-0`) và danh sách (co giãn) là hai khối chị em;
+    // gộp lại thì header cũng bị co theo và nút biến dạng.
+    expect(scroll.parentElement).not.toBe(panel);
+    expect(panel.contains(scroll)).toBe(true);
+  });
+
+  it('ẩn rồi hiện lại vẫn giữ đúng cấu trúc', async () => {
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ẩn đoạn' }));
+    expect(screen.queryByTestId('segment-scroll')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện đoạn' }));
+
+    const scroll = await screen.findByTestId('segment-scroll');
+    expect(scroll.parentElement?.className).toContain('min-h-0');
   });
 });

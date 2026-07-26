@@ -37,6 +37,7 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
   pageEnd: 10,
   segmentCount: 0,
   audioBytes: 0,
+  errorCount: 0,
   generateStatus: 'none',
   ...overrides,
 });
@@ -700,5 +701,105 @@ describe('ChapterRepository — dung lượng toàn thư viện (P2.7)', () => {
 
     expect(createChapterRepository(empty).audioBytesTotal()).toBe(0);
     empty.close();
+  });
+});
+
+describe('ChapterRepository — đếm segment lỗi (P2.7b)', () => {
+  const ready = {
+    audioPath: 'D:/audio/book-1/seg.ogg',
+    durationMs: 3000,
+    audioBytes: 4000,
+    alignStatus: 'estimated' as const,
+  };
+
+  beforeEach(() => {
+    books.insert(book());
+    chapters.insertMany([chapter({ id: 'chap-1', index: 0 }), chapter({ id: 'chap-2', index: 1 })]);
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0 }),
+      segment({ id: 'seg-2', chapterId: 'chap-1', index: 1 }),
+      segment({ id: 'seg-3', chapterId: 'chap-2', index: 0 }),
+    ]);
+  });
+
+  it('chương mới nhập chưa có lỗi nào', () => {
+    expect(chapters.findById('chap-1')?.errorCount).toBe(0);
+  });
+
+  it('markError tăng số lỗi của chương', () => {
+    segments.markError('seg-1', 'Piper không sinh ra audio nào');
+
+    expect(chapters.findById('chap-1')?.errorCount).toBe(1);
+  });
+
+  it('đếm đúng nhiều segment lỗi trong cùng chương', () => {
+    segments.markError('seg-1', 'lỗi');
+    segments.markError('seg-2', 'lỗi');
+
+    expect(chapters.findById('chap-1')?.errorCount).toBe(2);
+  });
+
+  it('KHÔNG tính lỗi của chương khác', () => {
+    segments.markError('seg-3', 'lỗi');
+
+    expect(chapters.findById('chap-1')?.errorCount).toBe(0);
+    expect(chapters.findById('chap-2')?.errorCount).toBe(1);
+  });
+
+  it('markError hai lần cùng segment vẫn chỉ đếm một — tính LẠI, không cộng dồn', () => {
+    // Job thử lại 3 lượt rồi mới hỏng hẳn; cộng dồn thì một segment thành 3 lỗi
+    segments.markError('seg-1', 'lần một');
+    segments.markError('seg-1', 'lần hai');
+
+    expect(chapters.findById('chap-1')?.errorCount).toBe(1);
+  });
+
+  it('generate lại thành công thì hết lỗi', () => {
+    segments.markError('seg-1', 'lỗi');
+    segments.markReady('seg-1', ready);
+
+    expect(chapters.findById('chap-1')?.errorCount).toBe(0);
+  });
+
+  it('resetToPending KHÔNG xoá lỗi — segment error không phải queued/generating', () => {
+    // `pendingStmt` chỉ nhận `queued`/`generating`, nên segment `error` giữ
+    // nguyên trạng thái. Số lỗi phải khớp với thực tế đó.
+    segments.markError('seg-1', 'lỗi');
+    segments.resetToPending('seg-1');
+
+    expect(segments.findById('seg-1')?.status).toBe('error');
+    expect(chapters.findById('chap-1')?.errorCount).toBe(1);
+  });
+
+  it('huỷ job của segment đang chờ thì số lỗi không đổi', () => {
+    segments.markError('seg-1', 'lỗi');
+    segments.markQueued('seg-2');
+    segments.resetToPending('seg-2');
+
+    expect(chapters.findById('chap-1')?.errorCount).toBe(1);
+  });
+
+  it('xoá audio cả chương thì lỗi cũng về 0', () => {
+    // Xoá audio là bỏ hết dấu vết lượt generate trước, gồm cả segment lỗi:
+    // `clearAudioByChapter` chỉ đụng `ready`, nhưng chương phải tính lại.
+    segments.markReady('seg-1', ready);
+    segments.markError('seg-2', 'lỗi');
+    expect(chapters.findById('chap-1')?.errorCount).toBe(1);
+
+    segments.clearAudioByChapter('chap-1');
+
+    // seg-2 vẫn `error` (không phải `ready`) nên số lỗi vẫn là 1 — đúng thực tế
+    expect(segments.findById('seg-2')?.status).toBe('error');
+    expect(chapters.findById('chap-1')?.errorCount).toBe(1);
+  });
+
+  it('chương có lỗi vẫn lên complete khi mọi segment còn lại đã xong', () => {
+    // `generate_status` xét `status = 'ready'`, nên chương có đoạn lỗi không bao
+    // giờ `complete`. Đây là lý do phải hiện `errorCount` riêng ở UI.
+    segments.markReady('seg-1', ready);
+    segments.markError('seg-2', 'lỗi');
+
+    expect(chapters.findById('chap-1')?.generateStatus).toBe('partial');
+    expect(chapters.findById('chap-1')?.errorCount).toBe(1);
   });
 });

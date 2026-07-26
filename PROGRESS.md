@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-26 · commit `a48f3fc`
+> **Cập nhật lần cuối:** 2026-07-26 · commit `<P2.7b>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -524,13 +524,34 @@ import chỉ copy vào, hàng đợi chỉ ghi ra, mọi đường xoá đều �
 Số đo probe lần này (3 segment VI, 24 kbps): ước 33 600 B vs thật **28 205 B**
 (−16%), RTF thật **0.24** — khớp lần đo ở P2.6, hằng số vẫn đúng.
 
+### Phase 2 — P2.7b Ba lỗi UI user tìm ra khi dùng thật ✅
+
+User mở app và tìm ra ba lỗi mà **1594 unit test không lộ**. Lần thứ sáu ghi
+nhận "test xanh mà UI vẫn hỏng".
+
+| Lỗi | Nguyên nhân | Sửa |
+|---|---|---|
+| Màn Nhập sách không có đường ra | Bước chọn file không có nút nào về thư viện — vào rồi kẹt, phải đóng app. Bước xác nhận chương thì có "Huỷ" nên không ai để ý bước trước thiếu | Thêm `← Thư viện` ở góc trên như mọi màn khác + `ImportScreen.test.tsx` (6 test) |
+| Không thấy số đoạn lỗi | `generateStatus` chỉ có 3 giá trị; chương 1058 đoạn hỏng 3 đoạn hiện y như chương mới xong nửa. User không biết vì sao chương không bao giờ "Đủ audio" | Migration **v2**: cột `chapters.error_count`, tính LẠI từ segment con trong cùng transaction với `markReady`/`markError`/`resetToPending`. Badge riêng ở màn chi tiết sách + tổng ở header (mục 4.42) |
+| Danh sách đoạn bị cắt mất nửa dưới | **Hai lỗi cùng lúc** — xem mục 4.43 | `flex-1 min-h-0` ở khối bọc + đo lại theo `segments.length` |
+
+**Đã kiểm lại trên app đang chạy** (CDP, không chỉ unit test):
+
+| | Kết quả |
+|---|---|
+| Nút về ở màn Nhập sách | ✅ hiện đúng, bấm về `Thư viện` |
+| Số đoạn lỗi trên **dữ liệu thật** | ✅ 5 đoạn hỏng từ lần test P2.7 hiện đúng ở cả chương lẫn header, màu `rgb(248 113 113)` trên nền `rgba(…, 0.12)` |
+| Danh sách đoạn lần đầu mở chương | ✅ **15 dòng** (trước khi sửa: 4 dòng), khung 764/811 px |
+| Ẩn rồi hiện lại | ✅ vẫn 15 dòng — không còn khác biệt giữa hai đường |
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1594 passed** (+140 ở P2.7) |
+| Unit test TypeScript | **1627 passed** (+140 ở P2.7, +33 ở P2.7b) |
 | Unit test sidecar (pytest) | **345 passed** (không đổi — P2.7 không đụng sidecar) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | 13 kịch bản (+2 ở P2.7) |
+| Schema DB | **v2** (v2 thêm `chapters.error_count` — mục 4.42) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
@@ -1553,6 +1574,63 @@ consistently rather than racing `markReady`.
 Verified in the probe with a job genuinely in flight: all segments ended
 `pending`, disk went to 0 B, no orphans.
 
+### 4.42 `error_count` is a column, not a count-on-read
+
+`generateStatus` has three values, and a chapter of 1058 segments with 3 broken
+ones lands on `partial` — identical to a chapter that is genuinely half done. The
+user cannot tell why the chapter never reaches "Đủ audio", and re-running generate
+will never fix it: almost every failure is a segment that is only punctuation or
+symbols (`"???,,,...."`), which Piper cannot voice at all.
+
+Stored as a column rather than counted when needed because the book detail screen
+shows 10–30 chapters at once, and `COUNT(*) WHERE status='error'` per chapter is
+N+1 queries over a 5000-row table on every open.
+
+It is **recomputed, never incremented** — same rule as `audio_bytes`. A job
+retries up to 3 times, so `markError` fires repeatedly for one segment; adding
+would turn one broken segment into three. `refreshChapter` now runs inside the
+transaction of `markReady`, `markError` **and** `resetToPending`, because the count
+has to move in both directions with the segment that caused it.
+
+Migration v2 backfills with a single `UPDATE`: users already have `error` segments
+from P2.6, and leaving them at the `DEFAULT 0` would show a wrong number until the
+next generate — which for a finished chapter never comes.
+
+The Storage Manager label also had to change: when `ready + error === total` there
+is nothing left to generate, so it now reads "Đủ audio · 3 đoạn lỗi" instead of
+"1055/1058 đoạn", which invited the user to keep retrying forever.
+
+### 4.43 The cut-off segment list was two bugs stacked, and the second one is the real lesson
+
+Symptom the user reported: open a chapter and the segment list is cut off halfway;
+toggle "Ẩn đoạn" then "Hiện đoạn" and it renders in full.
+
+**First bug — layout.** The scroll box inside `SegmentList` is `h-full`, but its
+parent `<aside>` is a flex column and the box was a plain flex item with no
+`flex-1 min-h-0`. So its height came from its own content, not from the panel.
+
+**Second bug — and this is the one that mattered.** Fixing the layout raised the
+box to the right size (measured: 764 of 811 px) but the list still rendered only
+**4 rows**. The `useEffect` doing the measurement had `[]` as its dependency, so it
+ran once on the first render — when `segments` was still empty and the flex box had
+not been laid out, giving `clientHeight === 0`. `ResizeObserver` then never fired
+again, because the box's own size never changes after that first layout. `height`
+stayed 0 and `visibleRange` kept returning a handful of rows.
+
+Observing the *parent* as well does not help: the parent is already at full height
+from the start. The fix is `[segments.length]` — re-measure exactly when the list
+goes from empty to populated, and again on chapter change.
+
+Two things worth keeping from this:
+
+- Toggling "worked" purely because unmount/remount re-ran the effect after layout
+  had settled. A workaround that looks like a fix is a strong hint the real cause
+  is initialisation order, not the thing being toggled.
+- jsdom computes no layout, so `clientHeight` is always 0 there and **no unit test
+  can catch this class of bug**. The tests added here lock the structural contract
+  (`flex-1 min-h-0` on the wrapper) and were verified to fail without the fix; the
+  row-count proof came from measuring the running app over CDP.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -1682,7 +1760,8 @@ samples/                   File PDF/DOCX mẫu (KHÔNG commit — xem samples/RE
 apps/main/src/
   index.ts                 Entry: settings → logger → DB → IPC → cửa sổ
   window.ts                BrowserWindow frameless, cấu hình bảo mật
-  db/migrations.ts         Schema SQL theo version (KHÔNG sửa migration đã phát hành)
+  db/migrations.ts         Schema SQL theo version (KHÔNG sửa migration đã phát hành).
+                           v1 schema gốc · v2 thêm chapters.error_count (4.42)
   db/migrator.ts           Runner theo PRAGMA user_version
   db/connection.ts         Instance dùng chung, WAL
   db/repositories/         MỌI SQL nằm ở đây — books / chapters / segments / jobs
@@ -1720,7 +1799,7 @@ apps/renderer/src/
   features/theme/          use-theme + ThemeToggle
   features/titlebar/       TitleBar + WindowControls
   features/import/
-    ImportScreen.tsx       Chọn file → xác nhận
+    ImportScreen.tsx       Chọn file → xác nhận (có nút về thư viện — 2.7b)
     ChapterConfirm.tsx     Danh sách chương + nút xác nhận
     ChapterRow.tsx         Một hàng: tên, khoảng trang, preview, tách/gộp/xoá
     confidence.ts          Điểm detector → nhãn; "trang" vs "đoạn"
@@ -1840,6 +1919,7 @@ scripts/
 | ~~Chưa có UI chọn giọng đọc~~ | ✅ Xong | Nút "Dùng giọng này" ở `VoiceRow`, chỉ hiện với voice **đã cài**. Xoá voice đang chọn thì tự bỏ chọn, nên settings không bao giờ trỏ tới model đã mất |
 | ~~P2.6 UI chưa mở app thật lần nào~~ | ✅ Xong | P2.7 đã kiểm ở `pnpm dev` bằng CDP: hộp ước lượng, thanh tiến độ, generate 190 đoạn thật, prefetch, xoá 380 file. Đo `getComputedStyle` ở **cả dark lẫn light** — không màu nào trong suốt. Phần **bản đóng gói** vẫn còn nợ, xem hàng dưới |
 | UI Phase 2 chưa kiểm trên bản đóng gói | **Cao** | Đã kiểm ở `pnpm dev` (thấy CSS thật + IPC thật) nhưng **chưa** `pnpm build:win`. Bản dev không lộ được lỗi đường dẫn kiểu asar — đúng loại lỗi 4.19 và 4.29a. Phải chạy `pnpm build:sidecar` trước rồi `pnpm build:win`, mở `.exe` và đi lại luồng: nhập sách → generate → xem/xoá dung lượng |
+| Không test nào bắt được lỗi bố cục/chiều cao | **Cao** | jsdom không tính layout nên `clientHeight` luôn 0 — lỗi 4.43 (danh sách đoạn bị cắt) **không thể** bắt bằng unit test, và nó nằm im suốt P1.6c → P2.7. Test hiện chỉ khoá được ràng buộc *cấu trúc* (`flex-1 min-h-0` có mặt), không khoá được kết quả thật. Cần script CDP đo `clientHeight` + số dòng render trong app đang chạy |
 | Quy trình kiểm UI bằng CDP vẫn viết tay mỗi lần | **TB** | P2.7 lái app qua `--remote-debugging-port=9222` + `Runtime.evaluate`, nhưng script là file tạm rồi xoá. Lần thứ năm làm lại từ đầu. Nên có `scripts/ui-check.mjs` cố định: mở app, đi luồng, đo `getComputedStyle` những token màu, chụp ảnh cả 2 theme |
 | Xoá 1 chương huỷ job của CẢ sách | Thấp | Hàng đợi không có `cancelByChapter` nên `storage:deleteChapterAudio` gọi `cancelBook` (mục 4.41). Quá tay: job của chương khác bị huỷ oan rồi phải xếp lại. Đổi được nếu thêm `cancelByChapter` vào `jobs.ts` |
 | `deleteReadAudio` chưa có nút trong UI | TB | Handler + service + 5 test đã có (xoá chương **trước** chương đang đọc), nhưng `StorageManager` chưa gọi. plan.md có nhắc nút "Xoá audio các chương đã đọc xong" — thiếu chỗ bấm thì tính năng không tồn tại với user |

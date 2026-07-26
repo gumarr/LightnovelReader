@@ -143,6 +143,7 @@ export const createLibraryService = (deps: LibraryDeps): LibraryService => {
           pageEnd: draft.pageEnd,
           segmentCount: built.length,
           audioBytes: 0,
+          errorCount: 0,
           generateStatus: 'none',
         });
       }

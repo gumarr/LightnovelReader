@@ -12,6 +12,7 @@ type ChapterRow = {
   page_end: number | null;
   segment_count: number;
   audio_bytes: number;
+  error_count: number;
   generate_status: string;
 };
 
@@ -24,6 +25,7 @@ const toChapter = (row: ChapterRow): Chapter => ({
   ...(row.page_end === null ? {} : { pageEnd: row.page_end }),
   segmentCount: row.segment_count,
   audioBytes: row.audio_bytes,
+  errorCount: row.error_count,
   generateStatus: row.generate_status as ChapterGenerateStatus,
 });
 
@@ -58,10 +60,10 @@ export const createChapterRepository = (db: Database): ChapterRepository => {
   const insertStmt = db.prepare(`
     INSERT INTO chapters (
       id, book_id, idx, title, page_start, page_end,
-      segment_count, audio_bytes, generate_status
+      segment_count, audio_bytes, error_count, generate_status
     ) VALUES (
       @id, @bookId, @idx, @title, @pageStart, @pageEnd,
-      @segmentCount, @audioBytes, @generateStatus
+      @segmentCount, @audioBytes, @errorCount, @generateStatus
     )
   `);
 
@@ -78,6 +80,7 @@ export const createChapterRepository = (db: Database): ChapterRepository => {
         pageEnd: chapter.pageEnd ?? null,
         segmentCount: chapter.segmentCount,
         audioBytes: chapter.audioBytes,
+        errorCount: chapter.errorCount,
         generateStatus: chapter.generateStatus,
       });
     }

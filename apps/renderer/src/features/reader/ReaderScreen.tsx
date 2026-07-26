@@ -235,11 +235,22 @@ export const ReaderScreen = ({
               />
             </div>
 
-            <SegmentList
-              segments={segments}
-              activeSegmentId={activeSegmentId}
-              onSelect={setActiveSegment}
-            />
+            {/*
+              `flex-1 min-h-0` là bắt buộc, không phải trang trí. Thiếu nó thì ô
+              cuộn bên trong `SegmentList` (`h-full`) lấy chiều cao theo **nội
+              dung** lúc đo lần đầu — mà lúc đó segment chưa nạp xong nên nó chốt
+              ở một chiều cao nhỏ và danh sách bị cắt mất nửa dưới. Bấm ẩn rồi
+              hiện lại thì component dựng lại sau khi layout đã xong nên trông
+              như hết lỗi. `min-h-0` để flex item được phép co dưới chiều cao nội
+              dung, nếu không nó đẩy tràn cả `aside`.
+            */}
+            <div className="min-h-0 flex-1">
+              <SegmentList
+                segments={segments}
+                activeSegmentId={activeSegmentId}
+                onSelect={setActiveSegment}
+              />
+            </div>
           </aside>
         ) : null}
       </div>

@@ -226,6 +226,10 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
       audio_bytes = (
         SELECT COALESCE(SUM(audio_bytes), 0) FROM segments WHERE chapter_id = @chapterId
       ),
+      error_count = (
+        SELECT COUNT(*) FROM segments
+        WHERE chapter_id = @chapterId AND status = 'error'
+      ),
       generate_status = (
         SELECT CASE
           WHEN COUNT(*) = 0 THEN 'none'
@@ -279,6 +283,12 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
     return changes;
   });
 
+  /** Tính lại số liệu chương chứa segment này. Không tìm được chương thì bỏ qua. */
+  const refreshChapterOf = (segmentId: string): void => {
+    const row = chapterOf.get(segmentId) as { chapter_id: string } | undefined;
+    if (row !== undefined) refreshChapter.run({ chapterId: row.chapter_id });
+  };
+
   const applyReady = db.transaction((id: string, result: SegmentAudioResult) => {
     readyStmt.run({
       id,
@@ -288,8 +298,22 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
       alignStatus: result.alignStatus,
     });
 
-    const row = chapterOf.get(id) as { chapter_id: string } | undefined;
-    if (row !== undefined) refreshChapter.run({ chapterId: row.chapter_id });
+    refreshChapterOf(id);
+  });
+
+  // `error_count` của chương phải đổi theo cả hai chiều trong cùng transaction
+  // với chính segment: tách ra thì app tắt giữa hai câu lệnh sẽ để lại chương
+  // báo số lỗi khác thực tế, mà không có cách nào tự phát hiện.
+  const applyError = db.transaction((id: string, message: string) => {
+    errorStmt.run(message, id);
+    refreshChapterOf(id);
+  });
+
+  // Về `pending` là hết lỗi — generate lại được. Không tính lại thì chương giữ
+  // mãi con số cũ và UI báo lỗi cho segment đã bình thường.
+  const applyPending = db.transaction((id: string) => {
+    pendingStmt.run(id);
+    refreshChapterOf(id);
   });
 
   return {
@@ -324,11 +348,11 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
     },
 
     markError(id, message) {
-      errorStmt.run(message, id);
+      applyError(id, message);
     },
 
     resetToPending(id) {
-      pendingStmt.run(id);
+      applyPending(id);
     },
 
     findBookId(segmentId) {

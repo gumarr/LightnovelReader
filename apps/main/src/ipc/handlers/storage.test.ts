@@ -32,6 +32,7 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
   title: 'Chương 1',
   segmentCount: 10,
   audioBytes: 5000,
+  errorCount: 0,
   generateStatus: 'complete',
   ...overrides,
 });
@@ -65,6 +66,7 @@ const setup = (options: {
         segmentCount: 10,
         readySegments: 10,
         audioBytes: 5000,
+        errorCount: 0,
       },
     ]),
     deleteChapterAudio: vi.fn(async () => {
@@ -249,6 +251,7 @@ describe('đọc thiết lập lúc gọi, không chốt sẵn', () => {
       usage: vi.fn(async () => ({
         audioDir: dir,
         audioBytes: 0,
+        errorCount: 0,
         audioBytesOnDisk: 0,
         orphanBytes: 0,
         orphanFiles: 0,

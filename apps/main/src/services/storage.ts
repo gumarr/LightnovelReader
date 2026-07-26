@@ -33,6 +33,8 @@ export type ChapterUsage = {
   /** Số segment đã có audio. `0` nghĩa là chương chưa generate gì */
   readySegments: number;
   audioBytes: number;
+  /** Số segment tổng hợp lỗi — vì sao chương này không bao giờ lên `complete` */
+  errorCount: number;
 };
 
 export type BookUsage = {
@@ -276,6 +278,7 @@ export const createStorageService = (deps: StorageDeps): StorageService => {
         segmentCount: chapter.segmentCount,
         readySegments: segments.listReadyByChapter(chapter.id).length,
         audioBytes: chapter.audioBytes,
+        errorCount: chapter.errorCount,
       }));
     },
 

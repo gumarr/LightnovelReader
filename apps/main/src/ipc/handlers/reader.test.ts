@@ -24,6 +24,7 @@ const chapter = (id = 'ch-1'): Chapter => ({
   title: 'Chương 1',
   segmentCount: 2,
   audioBytes: 0,
+  errorCount: 0,
   generateStatus: 'none',
 });
 

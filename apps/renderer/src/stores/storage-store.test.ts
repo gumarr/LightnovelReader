@@ -21,6 +21,7 @@ const chapters: ChapterUsageInfo[] = [
     segmentCount: 10,
     readySegments: 10,
     audioBytes: 40_000,
+    errorCount: 0,
   },
   {
     chapterId: 'book-1-c2',
@@ -29,6 +30,7 @@ const chapters: ChapterUsageInfo[] = [
     segmentCount: 10,
     readySegments: 0,
     audioBytes: 0,
+    errorCount: 0,
   },
 ];
 
@@ -49,7 +51,7 @@ const install = (): FakeApi =>
     library: [fakeLibraryEntry(fakeBook())],
     usage: {
       audioBytes: 40_000,
-      audioBytesOnDisk: 41_000,
+            audioBytesOnDisk: 41_000,
       books: [
         {
           bookId: 'book-1',

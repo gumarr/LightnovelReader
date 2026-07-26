@@ -100,4 +100,28 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX idx_bookmarks_book ON bookmarks(book_id, created_at DESC);
     `,
   },
+  {
+    version: 2,
+    name: 'chapter_error_count',
+    /**
+     * Số segment tổng hợp lỗi của từng chương.
+     *
+     * Lưu thành cột thay vì đếm lúc cần: màn chi tiết sách hiện 10–30 chương
+     * cùng lúc, mà `COUNT(*) WHERE status='error'` cho từng chương là N+1 truy
+     * vấn trên bảng 5000 hàng mỗi lần mở sách. Cột này được tính LẠI (không cộng
+     * dồn) từ chính segment con trong cùng transaction với `markReady`, đúng
+     * cách `audio_bytes` đang làm — xem `refreshChapter` ở `segments.ts`.
+     *
+     * `DEFAULT 0` rồi `UPDATE` một lượt: DB của user đang chạy đã có segment
+     * `error` từ P2.6, để nguyên 0 thì con số sai cho tới lần generate kế tiếp.
+     */
+    up: `
+      ALTER TABLE chapters ADD COLUMN error_count INTEGER NOT NULL DEFAULT 0;
+
+      UPDATE chapters SET error_count = (
+        SELECT COUNT(*) FROM segments
+        WHERE segments.chapter_id = chapters.id AND segments.status = 'error'
+      );
+    `,
+  },
 ];

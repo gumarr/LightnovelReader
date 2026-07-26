@@ -250,6 +250,8 @@ export type ChapterUsageInfo = {
   segmentCount: number;
   readySegments: number;
   audioBytes: number;
+  /** Số đoạn tổng hợp lỗi — giải thích vì sao chương không bao giờ đủ audio */
+  errorCount: number;
 };
 
 /**

@@ -121,6 +121,7 @@ const fakeChapters = (entry: LibraryEntry): Chapter[] =>
     pageEnd: (i + 1) * 10,
     segmentCount: Math.floor(entry.segmentCount / entry.chapterCount),
     audioBytes: 0,
+    errorCount: 0,
     generateStatus: 'none' as const,
   }));
 

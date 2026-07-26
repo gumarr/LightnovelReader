@@ -42,6 +42,7 @@ export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps):
   const hasRealPages = book.format !== 'docx';
   const totalSegments = chapters.reduce((sum, c) => sum + c.segmentCount, 0);
   const audioBytes = chapters.reduce((sum, c) => sum + c.audioBytes, 0);
+  const errorCount = chapters.reduce((sum, c) => sum + c.errorCount, 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -59,6 +60,12 @@ export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps):
           <p className="text-xs text-fg-muted">
             {formatLabel(book.format)} · {chapters.length} chương · {totalSegments} segment
             {audioBytes > 0 && ` · ${formatBytes(audioBytes)} audio`}
+            {errorCount > 0 && (
+              <span data-testid="book-error-count" className="text-danger">
+                {' · '}
+                {errorCount} đoạn lỗi
+              </span>
+            )}
           </p>
         </div>
 
@@ -106,6 +113,22 @@ export const BookDetailView = ({ detail, onBack, onRead }: BookDetailViewProps):
                       {chapter.audioBytes > 0 && ` · ${formatBytes(chapter.audioBytes)}`}
                     </span>
                   </span>
+
+                  {/* Số đoạn hỏng đứng RIÊNG khỏi nhãn tiến độ: chương 1058 đoạn
+                      hỏng 3 đoạn cũng là "Một phần" y như chương mới xong nửa,
+                      nhưng hai ca đó user xử lý khác nhau. Đa số lỗi là đoạn chỉ
+                      chứa ký hiệu (`"???,,,..."`) — generate lại không cứu được,
+                      nên hiện con số để user biết mà bỏ qua. */}
+                  {chapter.errorCount > 0 ? (
+                    <span
+                      data-testid="chapter-error-count"
+                      title={`${String(chapter.errorCount)} đoạn không tổng hợp được — thường là đoạn chỉ có ký hiệu hoặc dấu câu`}
+                      className="shrink-0 rounded px-2 py-0.5 text-xs text-danger"
+                      style={{ backgroundColor: 'rgb(var(--danger) / 0.12)' }}
+                    >
+                      {chapter.errorCount} đoạn lỗi
+                    </span>
+                  ) : null}
 
                   {/* Chương đã có audio hay chưa là thứ user cần thấy trước khi
                       bấm generate — không thì phải mở từng chương ra mới biết. */}

@@ -73,6 +73,7 @@ export const chapterSchema = z.object({
   pageEnd: z.number().int().nonnegative().optional(),
   segmentCount: z.number().int().nonnegative(),
   audioBytes: z.number().int().nonnegative(),
+  errorCount: z.number().int().nonnegative(),
   generateStatus: chapterGenerateStatusSchema,
 });
 

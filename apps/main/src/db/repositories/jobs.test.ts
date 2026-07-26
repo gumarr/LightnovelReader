@@ -36,6 +36,7 @@ const chapter = (id: string, bookId: string, index = 0): Chapter => ({
   title: `Chương ${index + 1}`,
   segmentCount: 0,
   audioBytes: 0,
+  errorCount: 0,
   generateStatus: 'none',
 });
 

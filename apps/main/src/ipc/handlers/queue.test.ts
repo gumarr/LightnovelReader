@@ -38,6 +38,7 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
   title: 'Chương Một',
   segmentCount: 3,
   audioBytes: 0,
+  errorCount: 0,
   generateStatus: 'none',
   ...overrides,
 });

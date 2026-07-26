@@ -49,19 +49,37 @@ export const SegmentList = ({
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(0);
 
+  /**
+   * Đo chiều cao khung để biết cần render bao nhiêu dòng.
+   *
+   * **Phụ thuộc `segments.length`, không phải `[]`** — đây là chỗ đã hỏng thật:
+   * lượt render đầu xảy ra khi `segments` còn rỗng và khung chưa được layout, nên
+   * `clientHeight` đo ra 0. `ResizeObserver` sau đó **không bao giờ kêu** vì kích
+   * thước của chính ô cuộn không đổi nữa (cha đã cao sẵn từ đầu). Kết quả là
+   * `height` kẹt ở 0, `visibleRange` chỉ trả vài dòng, và danh sách trông như bị
+   * cắt mất nửa dưới. Bấm ẩn rồi hiện lại dựng lại component sau khi mọi thứ đã
+   * xong nên trông như hết lỗi — đúng triệu chứng user báo.
+   *
+   * Đo lại khi số segment đổi vá đúng ca đó: rỗng → có dữ liệu, và đổi chương.
+   */
   useEffect(() => {
     const element = scrollRef.current;
     if (element === null) return;
 
-    const measure = (): void => setHeight(element.clientHeight);
+    // Chỉ ghi khi số thật đổi: `setHeight` với cùng giá trị mỗi lần
+    // ResizeObserver kêu sẽ làm `visibleRange` tính lại vô ích trong lúc cuộn.
+    const measure = (): void => {
+      setHeight((current) => (current === element.clientHeight ? current : element.clientHeight));
+    };
     measure();
 
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [segments.length]);
 
   const offsets = useMemo(
     () => cumulativeOffsets(new Array<number>(segments.length).fill(ROW_HEIGHT)),

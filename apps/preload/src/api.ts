@@ -17,6 +17,7 @@ import {
   type SaveBookRequest,
   type SaveBookResponse,
   type Segment,
+  type SidecarStatus,
   type IpcEventName,
   type IpcEventPayload,
   type IpcInput,
@@ -105,6 +106,12 @@ export const api = {
       invoke('reader:getBookHtml', bookId),
     listSegments: (chapterId: string): Promise<Result<Segment[]>> =>
       invoke('reader:listSegments', chapterId),
+  },
+
+  sidecar: {
+    getStatus: (): Promise<Result<SidecarStatus>> => invoke('sidecar:getStatus', undefined),
+    onStatusChanged: (listener: (status: SidecarStatus) => void): (() => void) =>
+      subscribe('sidecar:statusChanged', listener),
   },
 
   window: {

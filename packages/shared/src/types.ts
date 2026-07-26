@@ -114,6 +114,35 @@ export type Job = {
   errorMessage?: string;
 };
 
+/**
+ * Trạng thái sidecar mà UI cần phân biệt.
+ *
+ * `starting` → đang spawn hoặc chờ dòng bắt tay.
+ * `ready`    → đã bắt tay, `/health` trả lời được.
+ * `restarting` → vừa chết, supervisor đang thử lại (còn lượt).
+ * `failed`   → hết lượt thử lại hoặc không tìm thấy sidecar. Cần user can thiệp.
+ * `stopped`  → chủ động dừng (app đang thoát). KHÔNG phải lỗi.
+ */
+export type SidecarState = 'starting' | 'ready' | 'restarting' | 'failed' | 'stopped';
+
+export type SidecarStatus = {
+  state: SidecarState;
+  /**
+   * Số lần đã restart trong phiên hiện tại. Reset về 0 khi sidecar sống ổn
+   * định đủ lâu — xem `SIDECAR_STABLE_MS`.
+   */
+  restarts: number;
+  /** Chỉ có khi `state === 'ready'` */
+  port?: number;
+  /**
+   * Engine TTS đã nạp xong chưa. `false` suốt tới P2.4 — "tiến trình sống"
+   * không đồng nghĩa "generate được".
+   */
+  engineReady: boolean;
+  /** Lý do hỏng, hiển thị cho user khi `state === 'failed'` */
+  message?: string;
+};
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 /** Bitrate Opus cho phép, mặc định 24 kbps */

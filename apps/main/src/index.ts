@@ -1,13 +1,19 @@
 import { app, type BrowserWindow } from 'electron';
-import { join } from 'node:path';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import Store from 'electron-store';
 import type { AppSettings } from '@ln/shared';
 import { closeDatabase, initDatabase } from './db/connection.js';
 import { createFileLogger } from './services/logger.js';
 import { createSettingsService } from './services/settings.js';
-import { dbPath, logsDir } from './services/paths.js';
+import { dbPath, logsDir, modelsDir } from './services/paths.js';
+import {
+  createSidecarSupervisor,
+  type SidecarSupervisor,
+} from './services/sidecar-supervisor.js';
+import { nodeSpawnSidecar } from './services/sidecar-spawn.js';
+import { createSidecarHandlers } from './ipc/handlers/sidecar.js';
 import { registerHandler, clearRegisteredChannels } from './ipc/registry.js';
 import { getAppInfo } from './ipc/handlers/app.js';
 import { createImportHandlers } from './ipc/handlers/import.js';
@@ -61,6 +67,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let sidecar: SidecarSupervisor | undefined;
 
 const getWindow = (): BrowserWindow | null => mainWindow;
 
@@ -132,6 +139,25 @@ const start = (): void => {
     convertDocx: async (filePath) => (await nodeDocxConverter(filePath)).html,
   });
 
+  // Sidecar: chạy từ mã nguồn lúc dev, từ `resources/sidecar/` ở bản đóng gói.
+  // `__dirname` là `apps/main/dist` nên gốc repo lùi ba cấp; ở bản đóng gói
+  // thư mục đó nằm trong asar và không có `sidecar/`, nên nhánh dev tự rụng.
+  const repoRoot = resolve(__dirname, '..', '..', '..');
+  const supervisor = createSidecarSupervisor({
+    resourcesPath: process.resourcesPath,
+    repoRoot,
+    modelsDir: modelsDir(userData),
+    spawn: nodeSpawnSidecar,
+    exists: existsSync,
+    logger,
+    baseEnv: process.env as Record<string, string>,
+    onStatusChanged: (status) => {
+      mainWindow?.webContents.send('sidecar:statusChanged', status);
+    },
+  });
+  sidecar = supervisor;
+  const sidecarHandlers = createSidecarHandlers({ getStatus: () => supervisor.getStatus() });
+
   registerHandler('app:getInfo', getAppInfo, logger);
   registerHandler('settings:getAll', settingsHandlers.getAll, logger);
   registerHandler('settings:update', settingsHandlers.update, logger);
@@ -149,6 +175,7 @@ const start = (): void => {
   registerHandler('reader:getBookFile', readerHandlers.getBookFile, logger);
   registerHandler('reader:getBookHtml', readerHandlers.getBookHtml, logger);
   registerHandler('reader:listSegments', readerHandlers.listSegments, logger);
+  registerHandler('sidecar:getStatus', sidecarHandlers.getStatus, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);
@@ -182,6 +209,11 @@ const start = (): void => {
     mainWindow = null;
   });
 
+  // Khởi động sidecar SAU khi cửa sổ đã tạo, và không `await`: sidecar mất
+  // vài giây nạp Python, chờ nó xong mới vẽ cửa sổ thì app trông như bị treo.
+  // Trạng thái đẩy xuống renderer qua `sidecar:statusChanged` khi sẵn sàng.
+  void supervisor.start();
+
   logger.info('App khởi động xong');
 };
 
@@ -200,5 +232,8 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   clearRegisteredChannels();
+  // Giết sidecar TRƯỚC khi đóng DB: bỏ sót thì tiến trình Python sống tiếp sau
+  // khi app đã thoát, giữ cổng và giữ luôn file model đang mở.
+  void sidecar?.stop();
   closeDatabase();
 });

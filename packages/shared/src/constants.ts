@@ -36,6 +36,22 @@ export const SIDECAR_HEALTH_INTERVAL_MS = 5_000;
 export const SIDECAR_MAX_RESTARTS = 3;
 export const SIDECAR_STARTUP_TIMEOUT_MS = 30_000;
 
+/**
+ * Sống liên tục quá ngưỡng này thì bộ đếm restart về 0.
+ *
+ * Không có nó thì sidecar chết 3 lần rải rác trong nhiều giờ cũng bị coi là
+ * "hỏng hẳn" y như chết 3 lần liên tiếp trong 10 giây — trong khi lần đầu chỉ
+ * là sự cố lẻ tẻ đã tự phục hồi, còn lần sau mới là hỏng thật.
+ */
+export const SIDECAR_STABLE_MS = 60_000;
+
+/**
+ * Chờ trước khi restart. Chết ngay lập tức mà thử lại ngay thì ba lượt cháy
+ * hết trong vài mili-giây, chưa kịp qua cơn hỏng tạm thời (cổng chưa nhả,
+ * antivirus đang quét file .exe vừa giải nén).
+ */
+export const SIDECAR_RESTART_DELAY_MS = 1_000;
+
 /** Priority mặc định của job. Segment sắp phát dùng giá trị cao hơn. */
 export const JOB_PRIORITY_NORMAL = 0;
 export const JOB_PRIORITY_PREFETCH = 10;

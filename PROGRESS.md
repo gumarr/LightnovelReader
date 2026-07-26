@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-25 · commit `f407edd`
+> **Cập nhật lần cuối:** 2026-07-26 · commit `8cfa0d8`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -22,12 +22,15 @@ pnpm dev                 # mở app
 cd sidecar && py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements-dev.txt
 cd .. && pnpm test:sidecar
+
+# Chạy thật supervisor + sidecar Python (ngoài pnpm test — xem apps/main/probe/)
+npx vitest run -c apps/main/probe/vitest.config.ts
 ```
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P2.2 — supervisor sidecar bên main (xem mục 3).
-**Phase 1 xong. P2.1 xong.**
+**Việc tiếp theo:** P2.3 — voice manager (xem mục 3).
+**Phase 1 xong. P2.1, P2.2 xong.**
 
 ---
 
@@ -285,12 +288,44 @@ Phần đầu của Phase 2. **Chưa có engine TTS nào** — cố ý, vì dự
 
 Tìm ra **1 lỗi nặng** mà 90 unit test không lộ — xem mục 4.25.
 
+### Phase 2 — P2.2 Supervisor sidecar bên main ✅
+
+Nối sidecar vào vòng đời app: spawn cùng app, health check 5s, tự dựng lại khi
+chết, hết lượt thì báo UI. Chia bốn tầng vì bốn thứ hỏng theo cách khác nhau —
+gộp lại thì không test được tầng nào mà không dựng tầng kia:
+
+| File | Vai trò | Test |
+|---|---|---|
+| `services/sidecar-paths.ts` | Tìm sidecar: venv lúc dev vs `.exe` lúc đóng gói | 10 |
+| `services/sidecar-process.ts` | Spawn, đọc bắt tay stdout, timeout, kill sạch | 24 |
+| `services/sidecar-client.ts` | HTTP client kèm `X-Session-Token`, timeout riêng cho health | 13 |
+| `services/sidecar-supervisor.ts` | Health check, chính sách restart, trạng thái | 23 |
+| `services/sidecar-spawn.ts` | Nối `child_process` thật (chỗ **duy nhất** chạm nó) | — |
+| `ipc/handlers/sidecar.ts` | `sidecar:getStatus` — chỉ đọc, không cho renderer restart | 3 |
+
+**Đã chạy thật với sidecar Python thật** (`apps/main/probe/`, 5 kịch bản):
+
+| | Kết quả |
+|---|---|
+| Khởi động + `/health` + `/normalize` | ✅ bắt tay khớp giữa Python và TS, token được chấp nhận |
+| Giết PID thật | ✅ phát hiện → dựng lại, cổng **65056 → 61399** (tiến trình mới thật) |
+| `stop()` | ✅ Python chết hẳn, cổng được nhả, không mồ côi |
+| Token sai / thiếu | ✅ 401 cả hai |
+| Hỏng cố định (thiếu env) | ✅ hết lượt → `failed`, không quay vòng vô tận |
+
+**Đã chạy thật trong app Electron** (không chỉ probe): app lên → log
+`Sidecar sẵn sàng ở cổng 63023`, `/health` trả `{"status":"ok"}`; **đóng cửa sổ
+thì tiến trình Python chết theo**, không còn `python.exe` nào và cổng được nhả.
+
+Tìm ra **1 lỗi thật** mà 71 unit test không lộ — xem mục 4.27.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1008 passed** (không đổi ở P2.1) |
-| Unit test sidecar (pytest) | **165 passed** (mới) |
+| Unit test TypeScript | **1081 passed** (+73 ở P2.2) |
+| Unit test sidecar (pytest) | 165 passed (không đổi) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | 5 kịch bản |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Installer | 82 MB (chưa gồm sidecar) |
@@ -310,8 +345,8 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
 | P2.1 | Sidecar skeleton: FastAPI, token, bắt tay, text normalize VI/EN | ✅ Xong |
-| P2.2 | Supervisor bên main: spawn/kill, health check 5s, restart 3 lần | ⬅️ **Tiếp theo** |
-| P2.3 | Voice manager: catalog, download + verify SHA256, progress UI | Chưa |
+| P2.2 | Supervisor bên main: spawn/kill, health check 5s, restart 3 lần | ✅ Xong |
+| P2.3 | Voice manager: catalog, download + verify SHA256, progress UI | ⬅️ **Tiếp theo** |
 | P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | Chưa |
 | P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | Chưa |
 | P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | Chưa |
@@ -319,22 +354,24 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 
 **DoD Phase 2:** Generate chương 1 → có audio, phát được, xem & xoá được dung lượng.
 
-### Ghi chú cho P2.2 (supervisor)
+### Ghi chú cho P2.3 (voice manager)
 
-Những gì P2.1 để lại sẵn:
+Những gì P2.2 để lại sẵn:
 
-- **Hợp đồng bắt tay** đã khoá test: sidecar in đúng một dòng
-  `LN_SIDECAR_READY {"host","port","pid"}` ra **stdout**, log uvicorn đi
-  **stderr**. Supervisor đọc dòng đó rồi mới gọi API. Đừng chờ theo thời
-  gian cứng — cổng là `0` nên phải đọc mới biết.
-- **Token truyền qua env `LN_SIDECAR_TOKEN`**, không qua tham số dòng lệnh
-  (Windows cho mọi tiến trình đọc command line của nhau).
-- `LN_SIDECAR_MODELS_DIR` **bắt buộc** — thiếu thì sidecar thoát mã 2 kèm
-  thông báo rõ. Lấy từ `modelsDir()` ở `services/paths.ts`.
-- `SIDECAR_HEALTH_INTERVAL_MS`, `SIDECAR_MAX_RESTARTS`,
-  `SIDECAR_STARTUP_TIMEOUT_MS` đã có sẵn trong `packages/shared/src/constants.ts`.
-- `/health` trả `engine_ready: false` — P2.4 mới bật lên `true`. Supervisor
-  phải phân biệt "tiến trình sống" với "engine nạp xong".
+- **Gọi sidecar chỉ qua `supervisor.getClient()`**, trả `undefined` khi chưa
+  sẵn sàng — nơi gọi **phải** xử lý nhánh này chứ không được giả định luôn có.
+  Thêm route mới thì thêm hàm vào `services/sidecar-client.ts`, đừng tự dựng
+  URL ở chỗ khác.
+- `LN_SIDECAR_MODELS_DIR` đã truyền sẵn (từ `modelsDir()` ở `paths.ts`), nên
+  sidecar biết chỗ lưu voice model rồi. `voiceDir()` cũng đã có trong `paths.ts`.
+- **Trạng thái sidecar đã đẩy xuống renderer**: `sidecar:getStatus` +
+  event `sidecar:statusChanged`, dùng qua `window.api.sidecar.*`. UI voice
+  manager nên chặn nút tải khi `state !== 'ready'`.
+- `engineReady` vẫn `false` tới P2.4. **Đừng** dùng nó làm điều kiện cho voice
+  manager — tải model không cần engine đã nạp.
+- Tải file lớn từ Hugging Face nên làm ở **sidecar** (background task + SSE
+  progress như CLAUDE.md yêu cầu), không phải ở main: main tải thì mất luôn
+  tiến độ khi renderer reload, và phải tự viết lại phần verify SHA256.
 
 ### Ghi chú cho Phase 2 (TTS + player)
 
@@ -896,6 +933,55 @@ So token bằng `secrets.compare_digest`, không phải `==`: `==` thoát sớm 
 sidecar sống ngay cả khi token hai bên lệch. Trang `/docs` tắt hẳn vì đó là
 đường duy nhất phục vụ request không kèm token.
 
+### 4.27 Khử trùng lặp báo hỏng theo TRẠNG THÁI làm supervisor treo mãi ở `restarting`
+
+Lỗi nặng nhất của P2.2. **71 unit test xanh, chạy thật với sidecar Python là lộ.**
+
+Sidecar chết được báo từ **hai nguồn** bắn gần như cùng lúc cho cùng một cái
+chết: sự kiện `exit` của tiến trình, và health check thất bại. Phải khử trùng
+lặp, nếu không một cái chết ăn hai lượt restart.
+
+**Cách khử ban đầu (sai):** đang ở `restarting` thì bỏ qua báo hỏng mới.
+
+```ts
+if (status.state === 'restarting' || status.state === 'failed') return;  // SAI
+```
+
+Nghe hợp lý, nhưng lần chết **kế tiếp** cũng rơi đúng vào trạng thái đó và bị
+nuốt luôn. Hậu quả: sidecar chết liên tục thì supervisor đứng im ở `restarting`
+**vĩnh viễn** — không đếm lượt, không bao giờ tới `failed`, UI treo mãi ở "đang
+khởi động" mà không có thông báo nào.
+
+**Vì sao unit test không thấy:** tiến trình giả trong test luôn bắt tay thành
+công rồi mới chết, nên lần chết thứ hai luôn xuất phát từ trạng thái `ready`.
+Kịch bản "chết liên tiếp **ngay lúc khởi động**, chưa kịp bắt tay lần nào"
+không dựng được bằng tiến trình giả mặc định.
+
+**Sửa:** khử theo **số hiệu lần chạy** (`generation`), tăng mỗi lần spawn. Mỗi
+lần chạy chỉ được tính một lượt hỏng, nhưng lần chạy mới thì vẫn tính.
+
+Cùng cơ chế này vá luôn một lỗi thứ hai chưa kịp xảy ra: health check kéo dài
+vài giây, trong lúc đó sidecar chết và được dựng lại — báo hỏng theo kết quả cũ
+sẽ **giết oan tiến trình mới** hoàn toàn khoẻ mạnh. Nay `checkHealth` chốt số
+hiệu trước khi gọi và bỏ qua kết quả nếu số hiệu đã đổi.
+
+Test khoá ở `sidecar-supervisor.test.ts` mục "chết LIÊN TIẾP ngay lúc khởi động"
+và "health check trả về muộn KHÔNG giết oan tiến trình đã dựng lại". **Đã kiểm
+chứng test bắt được lỗi**: khôi phục lại dòng cũ thì test đỏ đúng chỗ.
+
+Kèm ba quyết định nhỏ cùng nhóm:
+
+**a) Không tìm thấy sidecar thì `failed` NGAY, không đốt ba lượt.** Thiếu file
+là hỏng cố định — thử lại chỉ tổ chậm và rác log.
+
+**b) Bộ đếm restart reset sau `SIDECAR_STABLE_MS` (60s).** Không có nó thì chết
+3 lần rải rác trong nhiều giờ cũng bị coi là hỏng hẳn y như chết 3 lần trong 10
+giây, trong khi cái đầu đã tự phục hồi.
+
+**c) `shell: false` khi spawn là bắt buộc.** Shell sinh thêm một tiến trình
+trung gian và `kill()` chỉ giết cái vỏ — Python bên trong sống sót, giữ nguyên
+cổng. Ngoài ra đường dẫn Windows có khoảng trắng sẽ bị shell tách sai.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -1025,10 +1111,17 @@ apps/main/src/
   db/repositories/         MỌI SQL nằm ở đây — books / chapters / segments
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
-  ipc/handlers/            app / settings / window / import / library
+  ipc/handlers/            app / settings / window / import / library / sidecar
   services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
   services/library.ts      Copy file + hash + dựng segment + lưu DB
   services/paths.ts        NGUỒN DUY NHẤT sinh path + chặn path traversal
+  services/sidecar-paths.ts      Tìm sidecar: venv (dev) vs .exe (đóng gói)
+  services/sidecar-process.ts    Spawn + bắt tay stdout + kill (hợp đồng 4.26)
+  services/sidecar-client.ts     HTTP client — chỗ DUY NHẤT dựng URL sidecar
+  services/sidecar-supervisor.ts Health check + chính sách restart (mục 4.27)
+  services/sidecar-spawn.ts      Nối child_process thật (chỗ DUY NHẤT chạm nó)
+  probe/                   Chạy thật với sidecar Python (KHÔNG trong pnpm test
+                           — xem apps/main/probe/README.md)
   services/settings.ts     electron-store, file hỏng → rơi về mặc định từng field
   services/logger.ts       Log file + xoay vòng
 
@@ -1113,8 +1206,11 @@ scripts/
 | Segment dựng đồng bộ trong main | Thấp | 4817 segment mất ~400ms, chấp nhận được. Sách lớn hơn nhiều lần thì sẽ thấy đơ — lúc đó chuyển sang worker thread |
 | DOCX chưa xử lý ảnh và bảng | Thấp | `extractBlocks` chỉ nhận `<h1>`–`<h6>` và `<p>`. File mẫu A4 có 2 `<img>` bị bỏ qua — chấp nhận được vì TTS không đọc ảnh, nhưng bảng có nội dung thì sẽ mất |
 | DOCX không có outline | Thấp | mammoth không đọc bookmark/TOC field của Word. Chương chỉ nhận được qua heading style hoặc regex — đã đủ với 2 file mẫu |
-| Sidecar chưa vào `pnpm test` chung | Thấp | pytest cần venv Python mà CI chưa dựng. `pnpm test:sidecar` chạy riêng, thiếu venv thì bỏ qua. Khi thêm sidecar vào CI (P2.2) thì nối vào job `check` |
-| Sidecar chưa đóng gói / chưa vào CI | **TB** | Mới chạy từ mã nguồn bằng venv. `build.py` (PyInstaller onedir) chưa viết, `electron-builder.yml` chưa biết tới `sidecar/`. Rủi ro giống hệt mục 4.19 (pdfjs) — lỗi đóng gói không lộ ra ở unit test. Làm cùng P2.2 hoặc muộn nhất trước P2.4 |
+| Sidecar chưa vào `pnpm test` chung | Thấp | pytest cần venv Python mà CI chưa dựng. `pnpm test:sidecar` chạy riêng, thiếu venv thì bỏ qua. Nối vào job `check` khi dựng venv trên CI (cùng lúc với `build.py`) |
+| Probe chạy thật sidecar chưa vào CI | TB | `apps/main/probe/` đã tìm ra lỗi 4.27 nhưng phải gọi tay. Cần venv nên chưa nối vào CI được — nối cùng lúc với hàng trên. Đây là lần thứ tư "unit test xanh mà đường nối thật hỏng" |
+| Sidecar chưa đóng gói / chưa vào CI | **Cao** | Mới chạy từ mã nguồn bằng venv — **đường đi này đã kiểm thật ở P2.2**, nhưng nhánh `.exe` của `resolveSidecarCommand` thì mới chỉ có unit test. `build.py` (PyInstaller onedir) chưa viết, `electron-builder.yml` chưa biết tới `sidecar/`. Rủi ro giống hệt mục 4.19 (pdfjs). Nâng lên Cao vì P2.4 trở đi sẽ không chạy nổi nếu bản đóng gói thiếu sidecar — **làm trước P2.4** |
+| Renderer chưa hiện trạng thái sidecar | TB | `sidecar:getStatus` + `sidecar:statusChanged` đã sẵn ở `window.api.sidecar.*` nhưng **chưa có UI nào đọc**. Sidecar `failed` hiện chỉ thấy trong log. Làm cùng P2.3 (voice manager là màn đầu tiên thật sự cần sidecar sống) |
+| Supervisor chưa có backoff luỹ tiến | Thấp | Chờ cố định `SIDECAR_RESTART_DELAY_MS` (1s) giữa các lần thử. Với trần 3 lượt thì đủ; nếu sau này nới trần thì nên tăng dần để không dội liên tục |
 | Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

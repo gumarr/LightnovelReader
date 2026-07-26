@@ -60,6 +60,7 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.reader.getBookFile('book-1'),
     () => api.reader.getBookHtml('book-1'),
     () => api.reader.listSegments('ch-1'),
+    () => api.sidecar.getStatus(),
     () => api.window.minimize(),
     () => api.window.toggleMaximize(),
     () => api.window.close(),
@@ -99,6 +100,7 @@ describe('bề mặt window.api', () => {
       'library',
       'reader',
       'settings',
+      'sidecar',
       'window',
     ]);
   });
@@ -119,15 +121,21 @@ describe('bề mặt window.api', () => {
 });
 
 describe('đăng ký event', () => {
-  it('đăng ký đúng tên event trong whitelist', () => {
+  it('đăng ký đúng tên event trong whitelist, phủ hết event đã khai báo', () => {
     api.settings.onChanged(() => {});
     api.window.onStateChanged(() => {});
+    api.sidecar.onStatusChanged(() => {});
 
     const registered = ipcRenderer.on.mock.calls.map((c) => c[0]);
     for (const event of registered) {
       expect(IPC_EVENTS as readonly string[]).toContain(event);
     }
-    expect(registered).toHaveLength(2);
+    // Khai event trong contract mà quên nối ở preload thì renderer không bao
+    // giờ nhận được — kiểm cả hai chiều, không chỉ chiều whitelist.
+    for (const event of IPC_EVENTS) {
+      expect(registered).toContain(event);
+    }
+    expect(registered).toHaveLength(IPC_EVENTS.length);
   });
 
   it('trả về hàm huỷ đăng ký gỡ đúng listener', () => {

@@ -6,6 +6,7 @@ import type {
   BookLang,
   Chapter,
   Segment,
+  SidecarStatus,
   ThemeMode,
 } from './types.js';
 import type { ChapterDraft } from './chapter-draft.js';
@@ -188,6 +189,9 @@ export type IpcContract = {
   /** Segment của một chương — nguồn để highlight và seek */
   'reader:listSegments': { in: string; out: Result<Segment[]> };
 
+  /** Trạng thái sidecar TTS. Renderer chỉ đọc — không tự start/stop được */
+  'sidecar:getStatus': { in: void; out: Result<SidecarStatus> };
+
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
   'window:close': { in: void; out: Result<void> };
@@ -205,6 +209,11 @@ export type IpcOutput<C extends IpcChannel> = IpcContract[C]['out'];
 export type IpcEventContract = {
   'window:stateChanged': WindowState;
   'settings:changed': AppSettings;
+  /**
+   * Sidecar đổi trạng thái. Đẩy chủ động chứ không để renderer hỏi vòng: sidecar
+   * chết bất cứ lúc nào, mà UI cần biết ngay để chặn nút generate.
+   */
+  'sidecar:statusChanged': SidecarStatus;
 };
 
 export type IpcEventName = keyof IpcEventContract;
@@ -232,6 +241,7 @@ export const IPC_CHANNELS = [
   'reader:getBookFile',
   'reader:getBookHtml',
   'reader:listSegments',
+  'sidecar:getStatus',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',
@@ -241,6 +251,7 @@ export const IPC_CHANNELS = [
 export const IPC_EVENTS = [
   'window:stateChanged',
   'settings:changed',
+  'sidecar:statusChanged',
 ] as const satisfies readonly IpcEventName[];
 
 /**

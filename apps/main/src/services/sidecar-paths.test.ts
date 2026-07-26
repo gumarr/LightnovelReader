@@ -4,6 +4,7 @@ import {
   SIDECAR_EXE_NAME,
   VENV_PYTHON_RELATIVE,
   resolveSidecarCommand,
+  resolveVoiceCatalogPath,
   sidecarNotFoundMessage,
 } from './sidecar-paths.js';
 
@@ -96,6 +97,45 @@ describe('resolveSidecarCommand', () => {
     for (const args of [dev?.args ?? [], packaged?.args ?? []]) {
       expect(args.join(' ').toLowerCase()).not.toContain('token');
     }
+  });
+});
+
+describe('resolveVoiceCatalogPath', () => {
+  const packagedCatalog = join('C:/app/resources', 'voices', 'catalog.json');
+  const devCatalog = join('D:/repo', 'resources', 'voices', 'catalog.json');
+
+  it('bản đóng gói: catalog nằm thẳng trong resources/voices', () => {
+    // Khác chỗ của sidecar (`resources/sidecar/`) vì catalog đi qua
+    // `extraResources` của electron-builder chứ không phải thư mục sidecar.
+    const found = resolveVoiceCatalogPath({
+      resourcesPath: 'C:/app/resources',
+      exists: existsOnly(packagedCatalog),
+    });
+    expect(found).toBe(packagedCatalog);
+  });
+
+  it('lúc dev: lấy từ resources/ của gốc repo', () => {
+    const found = resolveVoiceCatalogPath({
+      repoRoot: 'D:/repo',
+      exists: existsOnly(devCatalog),
+    });
+    expect(found).toBe(devCatalog);
+  });
+
+  it('ưu tiên bản đóng gói khi có cả hai', () => {
+    const found = resolveVoiceCatalogPath({
+      resourcesPath: 'C:/app/resources',
+      repoRoot: 'D:/repo',
+      exists: existsOnly(packagedCatalog, devCatalog),
+    });
+    expect(found).toBe(packagedCatalog);
+  });
+
+  it('không tìm thấy thì trả undefined chứ không ném', () => {
+    // Thiếu catalog nghĩa là chưa tải được voice nào — đọc sách vẫn phải chạy.
+    expect(
+      resolveVoiceCatalogPath({ resourcesPath: 'C:/x', repoRoot: 'D:/y', exists: () => false }),
+    ).toBeUndefined();
   });
 });
 

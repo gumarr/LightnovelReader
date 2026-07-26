@@ -45,4 +45,20 @@ nsis:
 portable:
   artifactName: ${productName}-${version}-portable.${ext}
 
+# Sidecar Python và catalog voice đi kèm bản cài, KHÔNG nằm trong asar.
+#
+# - Sidecar phải là file thật trên đĩa: nó được `spawn` như tiến trình riêng,
+#   mà Windows không chạy được .exe nằm trong asar.
+# - Đích khớp `resolveSidecarCommand()` / `resolveVoiceCatalogPath()` ở
+#   `apps/main/src/services/sidecar-paths.ts`. Đổi một bên phải đổi bên kia,
+#   nếu không bản đóng gói không tìm thấy sidecar trong khi mọi unit test vẫn xanh.
+#
+# `sidecar/dist/ln-sidecar/` do `python sidecar/build.py` sinh ra — phải chạy
+# TRƯỚC `pnpm build:win`.
+extraResources:
+  - from: sidecar/dist/ln-sidecar
+    to: sidecar
+  - from: resources/voices
+    to: voices
+
 # Không bundle voice model / aligner — tải runtime từ Hugging Face

@@ -149,6 +149,51 @@ export const readingProgressSchema = z.object({
   segmentId: z.string().min(1).max(64),
 });
 
+/**
+ * Catalog voice. Validate vì đây là **file trên đĩa** ở bản đóng gói: user sửa
+ * được, mà catalog hỏng thì lỗi lộ ra tận lúc ghép URL tải hoặc lúc so sha256.
+ */
+export const voiceQualitySchema = z.enum(['x_low', 'low', 'medium', 'high']);
+
+export const voiceFileSchema = z.object({
+  kind: z.enum(['model', 'config']),
+  // Chặn `..` và đường dẫn tuyệt đối: `path` vừa ghép vào URL vừa quyết định
+  // tên file lưu xuống đĩa, để lọt là ghi được ra ngoài thư mục voice.
+  path: z
+    .string()
+    .min(1)
+    .max(500)
+    .refine((value) => !value.includes('..'), { message: 'path không được chứa ".."' })
+    .refine((value) => !value.startsWith('/') && !/^[A-Za-z]:/.test(value), {
+      message: 'path phải là đường dẫn tương đối',
+    }),
+  sizeBytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/, 'sha256 phải là 64 ký tự hex thường'),
+});
+
+export const voiceIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  // Trùng `isSafeId` bên main: voiceId thành tên thư mục trên đĩa.
+  .regex(/^[A-Za-z0-9_-]+$/, 'voiceId chỉ được chứa chữ, số, gạch ngang và gạch dưới');
+
+export const voiceCatalogEntrySchema = z.object({
+  id: voiceIdSchema,
+  lang: bookLangSchema,
+  name: z.string().min(1).max(200),
+  quality: voiceQualitySchema,
+  sampleRate: z.number().int().positive(),
+  license: z.string().max(200),
+  files: z.array(voiceFileSchema).min(1).max(10),
+});
+
+export const voiceCatalogSchema = z.object({
+  version: z.number().int().positive(),
+  baseUrl: z.string().url(),
+  voices: z.array(voiceCatalogEntrySchema).max(200),
+});
+
 // Kiểm tra AUDIO_BITRATES và schema không lệch nhau khi sửa constants
 const _bitrateGuard: ReadonlyArray<z.infer<typeof audioBitrateSchema>> = AUDIO_BITRATES;
 void _bitrateGuard;

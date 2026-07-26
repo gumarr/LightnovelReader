@@ -127,6 +127,12 @@ export type StartSidecarOptions = {
   cwd: string;
   /** Thư mục model, bắt buộc — sidecar thoát mã 2 nếu thiếu */
   modelsDir: string;
+  /**
+   * `resources/voices/catalog.json`. Rỗng/thiếu = sidecar coi như chưa có
+   * catalog và trả danh sách voice rỗng, **không** chết — đọc sách vẫn chạy
+   * được khi không có voice nào.
+   */
+  catalogPath?: string;
   token: string;
   spawn: SpawnSidecar;
   startupTimeoutMs: number;
@@ -152,6 +158,7 @@ export const startSidecar = async (options: StartSidecarOptions): Promise<Sideca
     args,
     cwd,
     modelsDir,
+    catalogPath,
     token,
     spawn,
     startupTimeoutMs,
@@ -171,6 +178,9 @@ export const startSidecar = async (options: StartSidecarOptions): Promise<Sideca
       // được command line của tiến trình khác (PROGRESS mục 4.26d).
       LN_SIDECAR_TOKEN: token,
       LN_SIDECAR_MODELS_DIR: modelsDir,
+      ...(catalogPath === undefined || catalogPath === ''
+        ? {}
+        : { LN_SIDECAR_CATALOG: catalogPath }),
       // Python đệm stdout theo khối khi nối vào pipe. Sidecar đã tự `flush()`
       // sau dòng bắt tay, nhưng đặt thêm ở đây để log về sau cũng ra ngay.
       PYTHONUNBUFFERED: '1',

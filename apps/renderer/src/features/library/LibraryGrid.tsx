@@ -8,10 +8,16 @@ import { BookCard } from './BookCard';
 
 export type LibraryGridProps = {
   onImport: () => void;
+  /** Mở màn quản lý giọng đọc (P2.3) */
+  onManageVoices: () => void;
   onOpen: (bookId: string) => void;
 };
 
-export const LibraryGrid = ({ onImport, onOpen }: LibraryGridProps): JSX.Element => {
+export const LibraryGrid = ({
+  onImport,
+  onManageVoices,
+  onOpen,
+}: LibraryGridProps): JSX.Element => {
   const entries = useLibraryStore((s) => s.entries);
   const loading = useLibraryStore((s) => s.loading);
   const error = useLibraryStore((s) => s.error);
@@ -53,6 +59,14 @@ export const LibraryGrid = ({ onImport, onOpen }: LibraryGridProps): JSX.Element
               Đọc tiếp: {resume.book.title}
             </button>
           ) : null}
+
+          <button
+            type="button"
+            onClick={onManageVoices}
+            className="rounded border border-border px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-subtle"
+          >
+            Giọng đọc
+          </button>
 
           <button
             type="button"

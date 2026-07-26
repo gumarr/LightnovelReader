@@ -25,7 +25,7 @@ const setup = async (
   const onOpen = vi.fn();
 
   await act(async () => {
-    render(<LibraryGrid onImport={onImport} onOpen={onOpen} />);
+    render(<LibraryGrid onImport={onImport} onManageVoices={vi.fn()} onOpen={onOpen} />);
   });
 
   return { onImport, onOpen };
@@ -88,7 +88,7 @@ describe('hiển thị', () => {
     fake.api.library.list.mockResolvedValueOnce(err('DB_ERROR', 'Không đọc được DB'));
 
     await act(async () => {
-      render(<LibraryGrid onImport={vi.fn()} onOpen={vi.fn()} />);
+      render(<LibraryGrid onImport={vi.fn()} onManageVoices={vi.fn()} onOpen={vi.fn()} />);
     });
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Không đọc được DB'));

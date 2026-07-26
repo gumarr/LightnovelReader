@@ -86,6 +86,33 @@ export const resolveSidecarCommand = (
 };
 
 /**
+ * Tìm `catalog.json` — danh sách voice có thể tải.
+ *
+ * Cùng kiểu hai đường đi như `resolveSidecarCommand`, nhưng **vị trí khác**:
+ * catalog đi theo `extraResources` của electron-builder nên nằm thẳng trong
+ * `resources/voices/`, còn lúc dev thì ở `resources/voices/` của gốc repo.
+ *
+ * Trả `undefined` khi không tìm thấy. Nơi gọi **không** được coi đó là lỗi
+ * chí mạng: thiếu catalog nghĩa là chưa tải được voice nào, nhưng đọc sách
+ * vẫn phải chạy bình thường.
+ */
+export const resolveVoiceCatalogPath = (
+  options: ResolveSidecarOptions,
+): string | undefined => {
+  const { resourcesPath, repoRoot, exists } = options;
+
+  const candidates: string[] = [];
+  if (resourcesPath !== undefined && resourcesPath !== '') {
+    candidates.push(join(resourcesPath, 'voices', 'catalog.json'));
+  }
+  if (repoRoot !== undefined && repoRoot !== '') {
+    candidates.push(join(repoRoot, 'resources', 'voices', 'catalog.json'));
+  }
+
+  return candidates.find((candidate) => exists(candidate));
+};
+
+/**
  * Thông báo khi không tìm thấy sidecar. Tách ra để cả supervisor lẫn test dùng
  * chung một câu chữ — user cần biết phải làm gì, không chỉ biết là hỏng.
  */

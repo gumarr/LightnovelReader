@@ -61,6 +61,11 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.reader.getBookHtml('book-1'),
     () => api.reader.listSegments('ch-1'),
     () => api.sidecar.getStatus(),
+    () => api.voices.listCatalog(),
+    () => api.voices.listInstalled(),
+    () => api.voices.download('vi_VN-vais1000-medium'),
+    () => api.voices.cancelDownload('vi_VN-vais1000-medium'),
+    () => api.voices.remove('vi_VN-vais1000-medium'),
     () => api.window.minimize(),
     () => api.window.toggleMaximize(),
     () => api.window.close(),
@@ -101,6 +106,7 @@ describe('bề mặt window.api', () => {
       'reader',
       'settings',
       'sidecar',
+      'voices',
       'window',
     ]);
   });
@@ -125,6 +131,7 @@ describe('đăng ký event', () => {
     api.settings.onChanged(() => {});
     api.window.onStateChanged(() => {});
     api.sidecar.onStatusChanged(() => {});
+    api.voices.onDownloadProgress(() => {});
 
     const registered = ipcRenderer.on.mock.calls.map((c) => c[0]);
     for (const event of registered) {

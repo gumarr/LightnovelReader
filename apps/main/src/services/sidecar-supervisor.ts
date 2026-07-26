@@ -14,7 +14,12 @@ import {
   type SpawnSidecar,
 } from './sidecar-process.js';
 import { createSidecarClient, type FetchLike, type SidecarClient } from './sidecar-client.js';
-import { resolveSidecarCommand, sidecarNotFoundMessage, type PathExists } from './sidecar-paths.js';
+import {
+  resolveSidecarCommand,
+  resolveVoiceCatalogPath,
+  sidecarNotFoundMessage,
+  type PathExists,
+} from './sidecar-paths.js';
 
 /**
  * Giám sát sidecar: khởi động, health check định kỳ, tự restart khi chết.
@@ -252,6 +257,18 @@ export const createSidecarSupervisor = (deps: SupervisorDeps): SidecarSupervisor
 
     if (status.state !== 'restarting') setStatus({ state: 'starting' });
 
+    // Thiếu catalog KHÔNG chặn khởi động: sidecar vẫn lên, chỉ là danh sách
+    // voice rỗng. Ghi log để lần đóng gói nào quên `extraResources` thì còn
+    // lần ra được — thiếu lặng lẽ thì màn voice manager trống trơn mà không ai
+    // biết vì sao.
+    const catalogPath = resolveVoiceCatalogPath({ resourcesPath, repoRoot, exists });
+    if (catalogPath === undefined) {
+      logger.warn(
+        'Không tìm thấy catalog voice',
+        'Màn quản lý giọng đọc sẽ trống. Kiểm tra resources/voices/catalog.json.',
+      );
+    }
+
     generation += 1;
     const currentGen = generation;
     const token = createSessionToken();
@@ -262,6 +279,7 @@ export const createSidecarSupervisor = (deps: SupervisorDeps): SidecarSupervisor
         args: command.args,
         cwd: command.cwd,
         modelsDir,
+        ...(catalogPath === undefined ? {} : { catalogPath }),
         token,
         spawn,
         startupTimeoutMs,

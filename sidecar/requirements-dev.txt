@@ -1,5 +1,10 @@
 -r requirements.txt
 
 pytest==8.3.4
-# TestClient của FastAPI cần httpx
-httpx==0.28.1
+# httpx đã chuyển lên requirements.txt ở P2.3 — tải voice là chức năng runtime,
+# không phải chỉ dùng cho TestClient. Không khai lại ở đây để tránh hai chỗ ghim
+# hai phiên bản khác nhau.
+
+# Đóng gói sidecar thành .exe (xem sidecar/build.py). Chỉ cần lúc build — máy
+# user không có Python nên không bao giờ chạy pip ở đó.
+pyinstaller==6.11.1

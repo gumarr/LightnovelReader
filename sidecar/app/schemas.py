@@ -36,3 +36,52 @@ class NormalizeResponse(BaseModel):
 class ErrorResponse(BaseModel):
     code: str
     message: str
+
+
+# --- Voice manager (P2.3) -------------------------------------------------
+#
+# Tên field giữ camelCase khớp `packages/shared/src/types.ts`: đây là dữ liệu
+# đi thẳng lên UI, dịch tên ở giữa chỉ thêm một chỗ sai mà không được gì.
+
+
+class VoiceFileInfo(BaseModel):
+    kind: Literal["model", "config"]
+    sizeBytes: int  # noqa: N815 — khớp TypeScript, xem ghi chú trên
+    sha256: str
+
+
+class CatalogVoice(BaseModel):
+    """Một voice có thể tải. `installed` cho biết đã có sẵn trên máy chưa."""
+
+    id: str
+    lang: str
+    name: str
+    quality: str
+    sampleRate: int  # noqa: N815
+    license: str
+    totalBytes: int  # noqa: N815
+    installed: bool
+    files: list[VoiceFileInfo]
+
+
+class CatalogResponse(BaseModel):
+    version: int
+    voices: list[CatalogVoice]
+
+
+class InstalledVoiceInfo(BaseModel):
+    id: str
+    lang: str
+    name: str
+    quality: str
+    sampleRate: int  # noqa: N815
+    sizeBytes: int  # noqa: N815
+
+
+class InstalledVoicesResponse(BaseModel):
+    voices: list[InstalledVoiceInfo]
+
+
+class DeleteVoiceResponse(BaseModel):
+    voiceId: str  # noqa: N815
+    removed: bool

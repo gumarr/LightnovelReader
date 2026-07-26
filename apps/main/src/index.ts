@@ -14,6 +14,7 @@ import {
 } from './services/sidecar-supervisor.js';
 import { nodeSpawnSidecar } from './services/sidecar-spawn.js';
 import { createSidecarHandlers } from './ipc/handlers/sidecar.js';
+import { createVoicesHandlers } from './ipc/handlers/voices.js';
 import { registerHandler, clearRegisteredChannels } from './ipc/registry.js';
 import { getAppInfo } from './ipc/handlers/app.js';
 import { createImportHandlers } from './ipc/handlers/import.js';
@@ -157,6 +158,17 @@ const start = (): void => {
   });
   sidecar = supervisor;
   const sidecarHandlers = createSidecarHandlers({ getStatus: () => supervisor.getStatus() });
+  const voicesHandlers = createVoicesHandlers({
+    // Lấy client mỗi lần gọi chứ không giữ lại: sidecar restart thì client cũ
+    // trỏ vào cổng đã chết, mà supervisor đã dựng client mới rồi.
+    getClient: () => supervisor.getClient(),
+    onProgress: (progress) => {
+      mainWindow?.webContents.send('voices:downloadProgress', progress);
+    },
+    logError: (message, detail) => {
+      logger.error(message, detail);
+    },
+  });
 
   registerHandler('app:getInfo', getAppInfo, logger);
   registerHandler('settings:getAll', settingsHandlers.getAll, logger);
@@ -176,6 +188,11 @@ const start = (): void => {
   registerHandler('reader:getBookHtml', readerHandlers.getBookHtml, logger);
   registerHandler('reader:listSegments', readerHandlers.listSegments, logger);
   registerHandler('sidecar:getStatus', sidecarHandlers.getStatus, logger);
+  registerHandler('voices:listCatalog', voicesHandlers.listCatalog, logger);
+  registerHandler('voices:listInstalled', voicesHandlers.listInstalled, logger);
+  registerHandler('voices:download', voicesHandlers.download, logger);
+  registerHandler('voices:cancelDownload', voicesHandlers.cancelDownload, logger);
+  registerHandler('voices:remove', voicesHandlers.remove, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);

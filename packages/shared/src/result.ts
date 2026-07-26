@@ -13,6 +13,8 @@ export type AppErrorCode =
   | 'UNSUPPORTED_FORMAT'
   | 'PDF_NO_TEXT_LAYER'
   | 'SIDECAR_UNAVAILABLE'
+  /** Việc đã đang chạy rồi — bấm lần hai không tạo thêm lượt song song */
+  | 'ALREADY_RUNNING'
   | 'CANCELLED';
 
 export type AppError = {

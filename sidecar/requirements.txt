@@ -1,8 +1,12 @@
 # Sidecar TTS — Python >= 3.11 (dev hiện chạy 3.12, xem PROGRESS.md mục 5.4)
 #
-# Chỉ những gì P2.1 thật sự cần. Piper/ONNX Runtime thêm ở P2.4 khi có engine
+# Chỉ những gì đã thật sự dùng tới. Piper/ONNX Runtime thêm ở P2.4 khi có engine
 # thật — không khai trước để `pip install` phiên này không kéo về 200 MB wheel
 # chưa dùng tới.
 fastapi==0.115.6
 uvicorn==0.34.0
 pydantic==2.10.4
+# P2.3: tải voice từ Hugging Face. Đây là dependency RUNTIME (không phải chỉ
+# test) — `requirements-dev.txt` từng khai httpx cho TestClient, nhưng bản đóng
+# gói cũng cần nó để tải model, nên phải nằm ở đây.
+httpx==0.28.1

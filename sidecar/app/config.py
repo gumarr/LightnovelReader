@@ -16,6 +16,7 @@ ENV_TOKEN = "LN_SIDECAR_TOKEN"
 ENV_HOST = "LN_SIDECAR_HOST"
 ENV_PORT = "LN_SIDECAR_PORT"
 ENV_MODELS_DIR = "LN_SIDECAR_MODELS_DIR"
+ENV_CATALOG_PATH = "LN_SIDECAR_CATALOG"
 
 # Chỉ nghe loopback. Không bao giờ đổi thành 0.0.0.0 — sidecar không có
 # xác thực nào ngoài token dùng chung, mở ra LAN là mở cho cả mạng.
@@ -38,6 +39,14 @@ class SidecarConfig:
     host: str
     port: int
     models_dir: str
+    # Đường dẫn `resources/voices/catalog.json`. Main biết chỗ này (lúc dev là
+    # gốc repo, lúc đóng gói là `process.resourcesPath`), sidecar thì không —
+    # nên nhận qua env chứ đừng tự dò ngược từ `__file__`: ở bản PyInstaller
+    # `__file__` nằm trong thư mục giải nén tạm, không phải chỗ có catalog.
+    #
+    # Rỗng = chưa có catalog. Không ném lỗi như `models_dir` vì app vẫn chạy
+    # được (đọc sách không cần voice), chỉ là màn voice manager không có gì.
+    catalog_path: str
 
 
 def _read_port(raw: str | None) -> int:
@@ -77,4 +86,5 @@ def load_config(env: dict[str, str] | None = None) -> SidecarConfig:
         host=source.get(ENV_HOST, "").strip() or DEFAULT_HOST,
         port=_read_port(source.get(ENV_PORT)),
         models_dir=models_dir,
+        catalog_path=source.get(ENV_CATALOG_PATH, "").strip(),
     )

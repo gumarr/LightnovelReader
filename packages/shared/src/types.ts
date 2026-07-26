@@ -143,6 +143,80 @@ export type SidecarStatus = {
   message?: string;
 };
 
+/**
+ * Một file thuộc voice. Piper cần **hai** file đi cùng nhau: `.onnx` (model) và
+ * `.onnx.json` (config phoneme + sample rate). Thiếu file config thì model nạp
+ * được nhưng không biết đọc thế nào — nên voice chỉ tính là "đã cài" khi đủ cả
+ * hai, không phải khi thư mục tồn tại.
+ */
+export type VoiceFileKind = 'model' | 'config';
+
+export type VoiceFile = {
+  kind: VoiceFileKind;
+  /** Đường dẫn tương đối so với `baseUrl` của catalog */
+  path: string;
+  sizeBytes: number;
+  /**
+   * SHA256 chữ thường. Bắt buộc có: tải 63 MB qua mạng có thể đứt giữa chừng
+   * hoặc bị proxy chèn nội dung, mà file ONNX hỏng thì lỗi chỉ lộ ra lúc nạp
+   * engine — xa chỗ gây lỗi tới mức không chẩn đoán được.
+   */
+  sha256: string;
+};
+
+export type VoiceQuality = 'x_low' | 'low' | 'medium' | 'high';
+
+/** Một voice trong catalog — thứ user *có thể* tải */
+export type VoiceCatalogEntry = {
+  id: string;
+  lang: BookLang;
+  name: string;
+  quality: VoiceQuality;
+  sampleRate: number;
+  license: string;
+  files: VoiceFile[];
+};
+
+export type VoiceCatalog = {
+  version: number;
+  /** Gốc URL Hugging Face, ghép với `VoiceFile.path` */
+  baseUrl: string;
+  voices: VoiceCatalogEntry[];
+};
+
+/**
+ * Voice đã cài trên máy — thứ user *đang có*.
+ *
+ * Tách khỏi `VoiceCatalogEntry` vì hai câu hỏi khác nhau: catalog trả lời "tải
+ * được gì", cái này trả lời "dùng được gì ngay". Gộp lại thì UI phải mang theo
+ * cờ `installed` cho mọi mục và dễ hiện nhầm voice chưa tải là đã sẵn sàng.
+ */
+export type InstalledVoice = {
+  id: string;
+  lang: BookLang;
+  name: string;
+  quality: VoiceQuality;
+  sampleRate: number;
+  /** Tổng dung lượng đã chiếm trên đĩa */
+  sizeBytes: number;
+};
+
+/**
+ * Tiến độ tải một voice, đẩy từ sidecar qua SSE.
+ *
+ * `totalBytes` lấy từ catalog chứ không từ header `Content-Length`: HF trả về
+ * qua CDN có lúc không kèm header đó, mà thanh tiến trình không có tổng thì vô
+ * dụng. Catalog đã có kích thước thật nên dùng luôn.
+ */
+export type VoiceDownloadProgress = {
+  voiceId: string;
+  state: 'downloading' | 'verifying' | 'done' | 'error';
+  receivedBytes: number;
+  totalBytes: number;
+  /** Lý do hỏng, chỉ có khi `state === 'error'` */
+  message?: string;
+};
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 /** Bitrate Opus cho phép, mặc định 24 kbps */

@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-26 · commit `1d9b430`
+> **Cập nhật lần cuối:** 2026-07-26 · commit `<P2.3>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -25,12 +25,15 @@ cd .. && pnpm test:sidecar
 
 # Chạy thật supervisor + sidecar Python (ngoài pnpm test — xem apps/main/probe/)
 npx vitest run -c apps/main/probe/vitest.config.ts
+
+# Đóng gói sidecar thành .exe (BẮT BUỘC chạy TRƯỚC pnpm build:win — mục 4.29)
+pnpm build:sidecar
 ```
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P2.3 — voice manager (xem mục 3).
-**Phase 1 xong. P2.1, P2.2 xong.**
+**Việc tiếp theo:** P2.4 — Piper engine + `/synthesize` (xem mục 3).
+**Phase 1 xong. P2.1, P2.2, P2.3 xong.**
 
 ---
 
@@ -319,16 +322,63 @@ thì tiến trình Python chết theo**, không còn `python.exe` nào và cổn
 
 Tìm ra **1 lỗi thật** mà 71 unit test không lộ — xem mục 4.27.
 
+### Phase 2 — P2.3 Voice manager + đóng gói sidecar ✅
+
+Hai việc trong một phần: voice manager (P2.3 theo kế hoạch) và **đóng gói
+sidecar** — nợ mức Cao đã chặn P2.4, làm luôn ở đây theo đúng ghi chú phiên trước.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `resources/voices/catalog.json` | Catalog tĩnh, **sha256 lấy thật** (xem 4.28) | 4 |
+| `sidecar/app/voices/catalog.py` | Đọc catalog, soi đĩa xem đã cài chưa (thuần) | 38 |
+| `sidecar/app/voices/download.py` | Tải + băm theo dòng chảy + dọn khi hỏng | 19 |
+| `sidecar/app/main.py` | `/voices`, `/voices/catalog`, `/voices/{id}/download` (SSE), `DELETE` | 32 |
+| `sidecar/entry.py` | Điểm vào cho PyInstaller (xem 4.29a) | 8 |
+| `sidecar/build.py` | PyInstaller onedir → `ln-sidecar.exe` | ↑ |
+| `main/services/sidecar-client.ts` | Thêm 4 hàm voice + **đọc SSE** | 20 |
+| `main/services/sidecar-paths.ts` | `resolveVoiceCatalogPath` — dev vs đóng gói | 14 |
+| `main/ipc/handlers/voices.ts` | 5 kênh `voices:*`, tải chạy nền, chặn tải trùng | 20 |
+| `renderer/stores/voice-store.ts` | Catalog + tiến độ theo `voiceId` | 18 |
+| `renderer/features/voices/VoiceManager.tsx` | Màn quản lý giọng đọc | 19 |
+| `renderer/features/voices/SidecarBadge.tsx` | **Trạng thái sidecar** — nợ P2.2 | ↑ |
+| `renderer/features/voices/format.ts` | Dung lượng, phần trăm, nhãn trạng thái | 18 |
+
+**Đã chạy thật với `.exe` do PyInstaller sinh** (không chỉ venv):
+
+| | Kết quả |
+|---|---|
+| Bắt tay stdout từ `.exe` | ✅ `LN_SIDECAR_READY {...,"port":50065,...}` |
+| `/voices/catalog` qua `.exe` | ✅ 2 voice, sha256 đúng như catalog |
+| Tải voice VI **63 MB thật** từ HF | ✅ `downloading → verifying → done` |
+| sha256 file tải về | ✅ khớp `ec7c89e2…` — đối chiếu bằng `sha256sum` |
+| **sha256 cố tình sai** | ✅ từ chối, **xoá sạch thư mục**, không để lại file nào |
+| `DELETE /voices/{id}` | ✅ `removed:true`, thư mục biến mất |
+| Token sai / thiếu | ✅ 401 |
+
+**Đã chạy thật trên BẢN ĐÓNG GÓI** (`.exe` app + `.exe` sidecar, qua CDP):
+
+| | Kết quả |
+|---|---|
+| Sidecar `.exe` trong `resources/sidecar/` | ✅ `state: ready`, cổng 60569 |
+| Catalog từ `resources/voices/` | ✅ đọc được 2 voice |
+| Tải voice trong app đóng gói | ✅ **66 mốc SSE** tới được UI, xong ở 100% |
+| Sau khi tải | ✅ nhãn "Đã cài" hiện, nút đổi thành "Xoá", `listInstalled` có 1 |
+| Màu thanh tiến trình (dark) | ✅ `rgb(129, 140, 248)` — **không** trong suốt (bài học 4.23) |
+| Màu badge (light) | ✅ `rgb(79, 70, 229)`, nền `rgb(255,255,255)` |
+| Đóng app | ✅ `ln-sidecar.exe` chết theo, không mồ côi |
+
+Tìm ra **1 lỗi đóng gói** mà 245 test sidecar không lộ — xem mục 4.29.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1081 passed** (+73 ở P2.2) |
-| Unit test sidecar (pytest) | 165 passed (không đổi) |
+| Unit test TypeScript | **1180 passed** (+99 ở P2.3) |
+| Unit test sidecar (pytest) | **245 passed** (+80 ở P2.3) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | 5 kịch bản |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
-| Installer | 82 MB (chưa gồm sidecar) |
+| Installer | **94 MB** (đã gồm sidecar `.exe` 29 MB) |
 
 ---
 
@@ -346,32 +396,33 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 |---|---|---|
 | P2.1 | Sidecar skeleton: FastAPI, token, bắt tay, text normalize VI/EN | ✅ Xong |
 | P2.2 | Supervisor bên main: spawn/kill, health check 5s, restart 3 lần | ✅ Xong |
-| P2.3 | Voice manager: catalog, download + verify SHA256, progress UI | ⬅️ **Tiếp theo** |
-| P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | Chưa |
+| P2.3 | Voice manager: catalog, download + verify SHA256, progress UI | ✅ Xong |
+| — | *(kèm P2.3)* Đóng gói sidecar `.exe` + catalog vào installer | ✅ Xong |
+| P2.4 | Piper engine + `/synthesize` → ogg, bitrate configurable | ⬅️ **Tiếp theo** |
 | P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | Chưa |
 | P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | Chưa |
 | P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | Chưa |
 
 **DoD Phase 2:** Generate chương 1 → có audio, phát được, xem & xoá được dung lượng.
 
-### Ghi chú cho P2.3 (voice manager)
+### Ghi chú cho P2.4 (Piper engine + `/synthesize`)
 
-Những gì P2.2 để lại sẵn:
+Những gì P2.3 để lại sẵn:
 
-- **Gọi sidecar chỉ qua `supervisor.getClient()`**, trả `undefined` khi chưa
-  sẵn sàng — nơi gọi **phải** xử lý nhánh này chứ không được giả định luôn có.
-  Thêm route mới thì thêm hàm vào `services/sidecar-client.ts`, đừng tự dựng
-  URL ở chỗ khác.
-- `LN_SIDECAR_MODELS_DIR` đã truyền sẵn (từ `modelsDir()` ở `paths.ts`), nên
-  sidecar biết chỗ lưu voice model rồi. `voiceDir()` cũng đã có trong `paths.ts`.
-- **Trạng thái sidecar đã đẩy xuống renderer**: `sidecar:getStatus` +
-  event `sidecar:statusChanged`, dùng qua `window.api.sidecar.*`. UI voice
-  manager nên chặn nút tải khi `state !== 'ready'`.
-- `engineReady` vẫn `false` tới P2.4. **Đừng** dùng nó làm điều kiện cho voice
-  manager — tải model không cần engine đã nạp.
-- Tải file lớn từ Hugging Face nên làm ở **sidecar** (background task + SSE
-  progress như CLAUDE.md yêu cầu), không phải ở main: main tải thì mất luôn
-  tiến độ khi renderer reload, và phải tự viết lại phần verify SHA256.
+- **Voice đã cài tra ở đâu**: `sidecar/app/voices/catalog.py` có
+  `is_installed()` và `voice_dir()`. Engine nạp model thì lấy đường dẫn từ đó,
+  **đừng** tự ghép `models_dir / voices / id` lần nữa.
+- `is_installed()` chỉ kiểm **kích thước**, không băm lại (63 MB băm mỗi lần mở
+  màn hình là quá đắt). Engine nạp file hỏng vẫn có thể xảy ra nếu user sửa tay
+  — bắt lỗi lúc nạp và báo rõ, đừng giả định file luôn đúng.
+- **`engineReady` vẫn đang `false` cứng** trong `sidecar/app/main.py`. P2.4 phải
+  đổi nó thành trạng thái thật, vì supervisor và UI đều đã đọc sẵn field này.
+- `requirements.txt` giờ có `httpx`. Thêm `piper-tts` + `onnxruntime` vào **đó**
+  (không phải `requirements-dev.txt`), nếu không bản `.exe` thiếu — xem 4.29b.
+- **Thêm dependency Python xong phải build lại `.exe` và chạy thử**, không chỉ
+  chạy pytest: `pnpm build:sidecar` rồi chạy `ln-sidecar.exe` xem nó còn bắt tay
+  được không. ONNX Runtime có DLL native, đúng loại thứ PyInstaller hay bỏ sót.
+- Bitrate 16/24/32 đã có trong `AppSettings.bitrate`, chưa ai đọc.
 
 ### Ghi chú cho Phase 2 (TTS + player)
 
@@ -982,6 +1033,78 @@ giây, trong khi cái đầu đã tự phục hồi.
 trung gian và `kill()` chỉ giết cái vỏ — Python bên trong sống sót, giữ nguyên
 cổng. Ngoài ra đường dẫn Windows có khoảng trắng sẽ bị shell tách sai.
 
+### 4.28 Catalog voice — sha256 phải tự tính, HF chỉ công bố md5
+
+Hugging Face có `voices.json` liệt kê mọi voice Piper kèm `md5_digest` và
+`size_bytes`. Nhưng plan.md và CLAUDE.md đều yêu cầu verify **SHA256**, mà md5
+thì không dùng để chống sửa đổi có chủ ý được nữa.
+
+→ Tải thật cả 4 file (2 voice × model + config) rồi tự tính sha256. Đối chiếu
+md5 với con số HF công bố **trước** để chắc bytes đúng gốc, rồi mới lấy sha256
+tính từ chính bytes đó. Cả hai đều khớp, và `size_bytes` cũng khớp.
+
+**Quy tắc khi thêm voice mới:** phải tải file thật rồi tính sha256. Để rỗng hay
+đoán thì bước verify thành vô nghĩa — user nhận file hỏng mà không có gì báo,
+và lỗi chỉ lộ ra ở tận lúc nạp engine.
+
+Voice chọn: `vi_VN-vais1000-medium` (63.2 MB) và `en_US-lessac-medium`. Đều
+`medium` — `low` nghe rõ tệ hơn mà chỉ nhẹ hơn chút.
+
+**Voice tính là "đã cài" khi đủ MỌI file và kích thước khớp**, không phải khi
+thư mục tồn tại. Lần tải trước đứt giữa chừng để lại `.onnx` dở dang; chỉ kiểm
+thư mục thì engine sẽ nạp file hỏng ở tận P2.4 — xa chỗ gây lỗi tới mức không
+lần ra. Kiểm kích thước bắt đúng ca đó mà không phải băm lại 63 MB mỗi lần.
+
+### 4.29 Đóng gói sidecar — một lỗi mà 245 test không lộ
+
+Nợ "sidecar chưa đóng gói" ở mức Cao đã đóng. Và đúng như dự đoán, nhánh `.exe`
+hỏng ngay lần chạy đầu tiên trong khi mọi unit test vẫn xanh.
+
+**a) `ImportError: attempted relative import with no known parent package`.**
+
+PyInstaller chạy script đích như **module cấp cao nhất** (`__name__ ==
+"__main__"`, không có package cha). Mà `app/server.py` dùng import tương đối
+(`from .config import ...`) — thứ chỉ hợp lệ bên trong một package. `.exe` build
+thành công, kích thước hợp lý, rồi chết ngay khi khởi động.
+
+Vì sao không chỗ nào khác lộ ra:
+
+| Đường chạy | Vì sao vẫn đúng |
+|---|---|
+| `pnpm dev` | main spawn bằng `-m app.server` → Python nạp `app` thành package trước |
+| `pytest` | `pythonpath = .` cho phép `import app.server` |
+| `probe/` | Cũng đi qua venv, cùng đường với dev |
+
+→ Thêm `sidecar/entry.py` **ở ngoài** package, import tuyệt đối
+(`from app.server import main`), và trỏ PyInstaller vào đó. Test khoá ở
+`test_build.py`: có `entry.py`, entry không dùng import tương đối, và `build.py`
+không trỏ vào `app/server.py`.
+
+**b) `httpx` từng là dependency chỉ-dành-cho-test.** Nó nằm ở
+`requirements-dev.txt` từ P2.1 (cho `TestClient`). Nhưng P2.3 dùng nó để tải
+voice — tức là **runtime**. Để nguyên thì `.exe` thiếu httpx và lỗi chỉ lộ ra
+lúc user bấm nút tải. Đã chuyển lên `requirements.txt`; test khoá lại.
+
+**c) Hidden imports của uvicorn.** uvicorn nạp `uvicorn.loops.auto`,
+`uvicorn.protocols.http.auto`… **động** lúc chạy, PyInstaller dò import tĩnh nên
+không thấy. Đã khai tường minh trong `build.py`.
+
+**d) `onedir` chứ không `onefile`.** onefile giải nén cả bộ vào thư mục tạm mỗi
+lần khởi động — chậm thêm vài giây và bị antivirus soi kỹ hơn. Sidecar khởi
+động cùng app nên độ trễ đó user thấy ngay.
+
+**e) `--console` chứ không `--windowed`.** `--windowed` biến stdout/stderr
+thành thiết bị rỗng trên Windows, mà **bắt tay lại đi qua stdout** (mục 4.26a).
+Ẩn cửa sổ là việc của `windowsHide` bên main, không phải của PyInstaller.
+
+**f) `extraResources` chứ không `files`.** Sidecar phải là file thật trên đĩa vì
+nó được `spawn` như tiến trình riêng — Windows không chạy `.exe` nằm trong asar.
+Đích (`resources/sidecar/`, `resources/voices/`) phải khớp `sidecar-paths.ts`;
+đổi một bên mà quên bên kia thì bản đóng gói không tìm thấy gì trong khi unit
+test vẫn xanh. `test_build.py` khoá cả hai chiều.
+
+Installer: 82 → **94 MB** (sidecar onedir 29 MB). Vẫn xa mốc 200 MB của plan.
+
 ### 4.24 Highlight trên nền trắng: không dùng `mix-blend-multiply`
 
 Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu phủ với
@@ -1038,9 +1161,11 @@ py -3.12 -m venv .venv        # 3.14 CHƯA kiểm, đừng dùng
 
 - venv nằm ở `sidecar/.venv/` (đã gitignore), **không** dùng chung với Node
 - Code không dùng cú pháp riêng 3.12 → vẫn chạy được 3.11 nếu bản đóng gói cần
-- `requirements.txt` chỉ có `fastapi` + `uvicorn` + `pydantic`. Piper và ONNX
-  Runtime thêm ở **P2.4**, cố ý chưa khai để `pip install` không kéo về 200 MB
-  wheel chưa dùng tới
+- `requirements.txt` có `fastapi` + `uvicorn` + `pydantic` + `httpx` (httpx là
+  **runtime** từ P2.3 — tải voice, xem 4.29b). Piper và ONNX Runtime thêm ở
+  **P2.4**, cố ý chưa khai để `pip install` không kéo về 200 MB wheel chưa dùng
+- `pyinstaller` nằm ở `requirements-dev.txt` — chỉ cần lúc đóng gói, máy user
+  không có Python nên không bao giờ chạy `pip` ở đó
 - Chạy pytest từ gốc: `pnpm test:sidecar`. Chưa dựng venv thì script **bỏ qua
   và thoát 0**, không làm đỏ oan `pnpm test` của người chỉ đụng TypeScript
 - Trên Windows phải thêm `-X utf8` khi chạy python trực tiếp, nếu không tên
@@ -1112,6 +1237,7 @@ apps/main/src/
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
   ipc/handlers/            app / settings / window / import / library / sidecar
+                           / voices (tải chạy nền, chặn tải trùng)
   services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
   services/library.ts      Copy file + hash + dựng segment + lưu DB
   services/paths.ts        NGUỒN DUY NHẤT sinh path + chặn path traversal
@@ -1146,12 +1272,25 @@ apps/renderer/src/
   stores/settings-store.ts Zustand, có bắt rejection IPC
   stores/import-store.ts   Bản nháp chương + hoàn tác
   stores/library-store.ts  Danh sách sách + sách đang mở
+  stores/voice-store.ts    Catalog + tiến độ tải theo voiceId
+  features/voices/
+    VoiceManager.tsx       Màn quản lý giọng đọc
+    VoiceRow.tsx           Một voice: thông tin + tải/huỷ/xoá + thanh tiến trình
+    SidecarBadge.tsx       Trạng thái sidecar (chỗ ĐẦU TIÊN user thấy được)
+    format.ts              Dung lượng, phần trăm, nhãn trạng thái (thuần)
   styles/theme.css         CSS variables — mọi màu lấy từ đây
 
+resources/voices/catalog.json  Catalog voice — sha256 LẤY THẬT (mục 4.28).
+                           Đóng gói qua extraResources, KHÔNG vào asar
+
 sidecar/                   Dịch vụ TTS Python (venv riêng — mục 5.4)
+  entry.py                 Điểm vào PyInstaller — import TUYỆT ĐỐI (mục 4.29a)
+  build.py                 PyInstaller onedir → ln-sidecar.exe
+  app/voices/catalog.py    Đọc catalog + soi đĩa (thuần, không mạng)
+  app/voices/download.py   Tải + băm theo dòng chảy + dọn sạch khi hỏng
   app/config.py            Đọc env do main đặt lúc spawn; models dir BẮT BUỘC
   app/auth.py              Middleware X-Session-Token, so token thời gian hằng
-  app/main.py              FastAPI: /health (không token), /normalize
+  app/main.py              FastAPI: /health (không token), /normalize, /voices*
   app/server.py            Bind socket + bắt tay stdout (hợp đồng — mục 4.26)
   app/schemas.py           pydantic cho mọi biên vào-ra
   app/text/normalize_vi.py 8 luật, mỗi luật một hàm thuần (thứ tự bắt buộc)
@@ -1164,6 +1303,7 @@ sidecar/                   Dịch vụ TTS Python (venv riêng — mục 5.4)
 scripts/
   copy-pdf-worker.mjs      Chép pdf.worker.mjs vào dist (BẮT BUỘC — mục 4.19)
   sidecar-test.mjs         Chạy pytest từ gốc; thiếu venv thì bỏ qua, thoát 0
+  sidecar-build.mjs        Đóng gói sidecar; thiếu venv là LỖI (khác test.mjs)
 ```
 
 ---
@@ -1208,8 +1348,12 @@ scripts/
 | DOCX không có outline | Thấp | mammoth không đọc bookmark/TOC field của Word. Chương chỉ nhận được qua heading style hoặc regex — đã đủ với 2 file mẫu |
 | Sidecar chưa vào `pnpm test` chung | Thấp | pytest cần venv Python mà CI chưa dựng. `pnpm test:sidecar` chạy riêng, thiếu venv thì bỏ qua. Nối vào job `check` khi dựng venv trên CI (cùng lúc với `build.py`) |
 | Probe chạy thật sidecar chưa vào CI | TB | `apps/main/probe/` đã tìm ra lỗi 4.27 nhưng phải gọi tay. Cần venv nên chưa nối vào CI được — nối cùng lúc với hàng trên. Đây là lần thứ tư "unit test xanh mà đường nối thật hỏng" |
-| Sidecar chưa đóng gói / chưa vào CI | **Cao** | Mới chạy từ mã nguồn bằng venv — **đường đi này đã kiểm thật ở P2.2**, nhưng nhánh `.exe` của `resolveSidecarCommand` thì mới chỉ có unit test. `build.py` (PyInstaller onedir) chưa viết, `electron-builder.yml` chưa biết tới `sidecar/`. Rủi ro giống hệt mục 4.19 (pdfjs). Nâng lên Cao vì P2.4 trở đi sẽ không chạy nổi nếu bản đóng gói thiếu sidecar — **làm trước P2.4** |
-| Renderer chưa hiện trạng thái sidecar | TB | `sidecar:getStatus` + `sidecar:statusChanged` đã sẵn ở `window.api.sidecar.*` nhưng **chưa có UI nào đọc**. Sidecar `failed` hiện chỉ thấy trong log. Làm cùng P2.3 (voice manager là màn đầu tiên thật sự cần sidecar sống) |
+| ~~Sidecar chưa đóng gói~~ | ✅ Xong | `build.py` + `extraResources` đã có. **Đã kiểm thật ở bản đóng gói**: sidecar `.exe` lên `ready`, tải voice 63 MB xong trong app đã build. Lộ ra 1 lỗi thật (mục 4.29a). Phần **CI** vẫn còn nợ — xem hàng dưới |
+| ~~Renderer chưa hiện trạng thái sidecar~~ | ✅ Xong | `SidecarBadge` hiện ở màn Giọng đọc, có cả 5 trạng thái. Đã đo màu thật trong app đóng gói ở cả dark lẫn light |
+| Đóng gói sidecar chưa vào CI | **Cao** | `pnpm build:win` **không** tự gọi `pnpm build:sidecar` — quên chạy thì installer ra vẫn thành công nhưng thiếu sidecar, hỏng lặng lẽ. Cố ý chưa nối vào vì PyInstaller cần venv Python mà CI chưa dựng; nối cùng lúc với `pnpm test:sidecar`. Trong lúc chờ: **luôn chạy `pnpm build:sidecar` trước `pnpm build:win`** |
+| Chỉ có 2 voice trong catalog | Thấp | VI (`vais1000`) + EN (`lessac`), đều `medium`. Đủ cho P2.4, nhưng user muốn giọng khác thì phải sửa file — chưa có đường thêm voice từ UI |
+| Tải voice không resume được | TB | Đứt giữa chừng là mất cả 63 MB, tải lại từ đầu. HF có hỗ trợ `Range` nên làm được, nhưng phải giữ trạng thái băm dở — băm theo dòng chảy hiện tại không nối tiếp được. Để lại tới khi thấy người dùng thật kêu |
+| Nút "Giọng đọc" chỉ có ở màn thư viện | Thấp | Vào đọc sách rồi thì phải quay ra mới tải voice được. Hợp lý cho tới khi có nút generate trong reader (P2.6) |
 | Supervisor chưa có backoff luỹ tiến | Thấp | Chờ cố định `SIDECAR_RESTART_DELAY_MS` (1s) giữa các lần thử. Với trần 3 lượt thì đủ; nếu sau này nới trần thì nên tăng dần để không dội liên tục |
 | Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |

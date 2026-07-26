@@ -5,9 +5,12 @@ import type {
   BookFormat,
   BookLang,
   Chapter,
+  InstalledVoice,
   Segment,
   SidecarStatus,
   ThemeMode,
+  VoiceDownloadProgress,
+  VoiceQuality,
 } from './types.js';
 import type { ChapterDraft } from './chapter-draft.js';
 import type { Result } from './result.js';
@@ -154,6 +157,25 @@ export type BookHtml = {
   blockCount: number;
 };
 
+/**
+ * Một voice trong catalog như UI cần thấy: thông tin để chọn + cờ đã cài chưa.
+ *
+ * Không dùng thẳng `VoiceCatalogEntry` vì UI không cần `files[]` (đường dẫn HF
+ * và sha256 là chuyện nội bộ của sidecar), nhưng lại cần `installed` và
+ * `totalBytes` — hai thứ chỉ biết được sau khi soi đĩa.
+ */
+export type VoiceCatalogItem = {
+  id: string;
+  lang: BookLang;
+  name: string;
+  quality: VoiceQuality;
+  sampleRate: number;
+  license: string;
+  /** Tổng dung lượng phải tải, hiện cho user trước khi bấm */
+  totalBytes: number;
+  installed: boolean;
+};
+
 /** Kiểu invoke: renderer gọi → main trả Result */
 export type IpcContract = {
   'app:getInfo': { in: void; out: Result<AppInfo> };
@@ -192,6 +214,21 @@ export type IpcContract = {
   /** Trạng thái sidecar TTS. Renderer chỉ đọc — không tự start/stop được */
   'sidecar:getStatus': { in: void; out: Result<SidecarStatus> };
 
+  /** Voice có thể tải, kèm cờ đã cài chưa */
+  'voices:listCatalog': { in: void; out: Result<VoiceCatalogItem[]> };
+  /** Voice đã cài — thứ dùng được ngay */
+  'voices:listInstalled': { in: void; out: Result<InstalledVoice[]> };
+  /**
+   * Bắt đầu tải một voice. Trả về **ngay** khi đã nhận lệnh, không chờ tải
+   * xong: tải 63 MB mất vài phút, mà `ipcRenderer.invoke` treo lâu như vậy thì
+   * renderer reload một cái là mất luôn đường theo dõi. Tiến độ đi riêng qua
+   * event `voices:downloadProgress`.
+   */
+  'voices:download': { in: string; out: Result<void> };
+  /** Huỷ lượt tải đang chạy. Không có gì đang tải thì coi như thành công */
+  'voices:cancelDownload': { in: string; out: Result<void> };
+  'voices:remove': { in: string; out: Result<void> };
+
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
   'window:close': { in: void; out: Result<void> };
@@ -214,6 +251,11 @@ export type IpcEventContract = {
    * chết bất cứ lúc nào, mà UI cần biết ngay để chặn nút generate.
    */
   'sidecar:statusChanged': SidecarStatus;
+  /**
+   * Tiến độ tải voice. Đi bằng event chứ không phải giá trị trả về của
+   * `voices:download` vì một lượt tải sinh ra hàng trăm mốc tiến độ.
+   */
+  'voices:downloadProgress': VoiceDownloadProgress;
 };
 
 export type IpcEventName = keyof IpcEventContract;
@@ -242,6 +284,11 @@ export const IPC_CHANNELS = [
   'reader:getBookHtml',
   'reader:listSegments',
   'sidecar:getStatus',
+  'voices:listCatalog',
+  'voices:listInstalled',
+  'voices:download',
+  'voices:cancelDownload',
+  'voices:remove',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',
@@ -252,6 +299,7 @@ export const IPC_EVENTS = [
   'window:stateChanged',
   'settings:changed',
   'sidecar:statusChanged',
+  'voices:downloadProgress',
 ] as const satisfies readonly IpcEventName[];
 
 /**

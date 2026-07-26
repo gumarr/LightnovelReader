@@ -1,0 +1,62 @@
+{
+  "$comment": [
+    "Catalog voice Piper tải runtime từ Hugging Face (rhasspy/piper-voices).",
+    "KHÔNG bundle file .onnx vào installer — xem CLAUDE.md mục 'Không làm'.",
+    "",
+    "sha256 và sizeBytes lấy THẬT: đã tải từng file rồi tự tính, không chép từ",
+    "metadata của HF. HF chỉ công bố md5 trong voices.json; md5 đó đã được đối",
+    "chiếu khớp với bản tải về, nên sha256 ở đây tính từ đúng bytes gốc.",
+    "",
+    "Thêm voice mới = thêm một mục vào đây, không sửa code. Nhưng BẮT BUỘC phải",
+    "tải file thật rồi tính sha256 — đoán hoặc để rỗng thì bước verify thành vô",
+    "nghĩa và user nhận file hỏng mà không biết."
+  ],
+  "version": 1,
+  "baseUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/",
+  "voices": [
+    {
+      "id": "vi_VN-vais1000-medium",
+      "lang": "vi",
+      "name": "VAIS 1000",
+      "quality": "medium",
+      "sampleRate": 22050,
+      "license": "CC BY-NC-SA 4.0",
+      "files": [
+        {
+          "kind": "model",
+          "path": "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx",
+          "sizeBytes": 63201294,
+          "sha256": "ec7c89e2c85f4d1edc24b6120c18aaf1bda614f06b511567eb9c7c0de15e2dab"
+        },
+        {
+          "kind": "config",
+          "path": "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx.json",
+          "sizeBytes": 4860,
+          "sha256": "fafb9da1354ed4b77c31af228ed41fb41cd825c14cffa105454b25e6ae751ee0"
+        }
+      ]
+    },
+    {
+      "id": "en_US-lessac-medium",
+      "lang": "en",
+      "name": "Lessac",
+      "quality": "medium",
+      "sampleRate": 22050,
+      "license": "BSD-3-Clause",
+      "files": [
+        {
+          "kind": "model",
+          "path": "en/en_US/lessac/medium/en_US-lessac-medium.onnx",
+          "sizeBytes": 63201294,
+          "sha256": "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f"
+        },
+        {
+          "kind": "config",
+          "path": "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
+          "sizeBytes": 4885,
+          "sha256": "efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0"
+        }
+      ]
+    }
+  ]
+}

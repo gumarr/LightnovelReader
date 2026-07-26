@@ -11,6 +11,7 @@ import {
   type ChapterPreview,
   type ChapterPreviewRequest,
   type ImportPreview,
+  type InstalledVoice,
   type IpcChannel,
   type LibraryEntry,
   type ReadingProgress,
@@ -24,6 +25,8 @@ import {
   type IpcOutput,
   type Result,
   type ThemeMode,
+  type VoiceCatalogItem,
+  type VoiceDownloadProgress,
   type WindowState,
 } from '@ln/shared';
 
@@ -112,6 +115,21 @@ export const api = {
     getStatus: (): Promise<Result<SidecarStatus>> => invoke('sidecar:getStatus', undefined),
     onStatusChanged: (listener: (status: SidecarStatus) => void): (() => void) =>
       subscribe('sidecar:statusChanged', listener),
+  },
+
+  voices: {
+    listCatalog: (): Promise<Result<VoiceCatalogItem[]>> =>
+      invoke('voices:listCatalog', undefined),
+    listInstalled: (): Promise<Result<InstalledVoice[]>> =>
+      invoke('voices:listInstalled', undefined),
+    /** Trả về ngay khi main nhận lệnh — theo dõi tiếp bằng `onDownloadProgress` */
+    download: (voiceId: string): Promise<Result<void>> => invoke('voices:download', voiceId),
+    cancelDownload: (voiceId: string): Promise<Result<void>> =>
+      invoke('voices:cancelDownload', voiceId),
+    remove: (voiceId: string): Promise<Result<void>> => invoke('voices:remove', voiceId),
+    onDownloadProgress: (
+      listener: (progress: VoiceDownloadProgress) => void,
+    ): (() => void) => subscribe('voices:downloadProgress', listener),
   },
 
   window: {

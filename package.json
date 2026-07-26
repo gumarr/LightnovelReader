@@ -19,6 +19,7 @@
     "test": "pnpm abi:node && vitest run",
     "test:watch": "pnpm abi:node && vitest",
     "test:sidecar": "node scripts/sidecar-test.mjs",
+    "build:sidecar": "node scripts/sidecar-build.mjs",
     "build": "pnpm -r --stream build",
     "build:win": "pnpm build && pnpm abi:electron && electron-builder --win --config electron-builder.yml",
     "abi:node": "node scripts/sqlite-abi.mjs node",

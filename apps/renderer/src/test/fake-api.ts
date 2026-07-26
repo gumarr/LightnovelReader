@@ -14,8 +14,12 @@ import {
   type LibraryEntry,
   type ReadingProgress,
   type Result,
+  type InstalledVoice,
   type SaveBookRequest,
   type Segment,
+  type SidecarStatus,
+  type VoiceCatalogItem,
+  type VoiceDownloadProgress,
   type WindowState,
 } from '@ln/shared';
 
@@ -37,7 +41,24 @@ export type FakeApiOptions = {
   segments?: Segment[];
   /** HTML trả về cho `reader.getBookHtml` */
   bookHtml?: string;
+  /** Trạng thái sidecar. Mặc định `ready` — hầu hết test không quan tâm */
+  sidecarStatus?: SidecarStatus;
+  /** Voice trong catalog. Mặc định một VI chưa cài + một EN đã cài */
+  voices?: VoiceCatalogItem[];
 };
+
+/** Voice mẫu cho test voice manager */
+export const fakeVoice = (overrides: Partial<VoiceCatalogItem> = {}): VoiceCatalogItem => ({
+  id: 'vi_VN-vais1000-medium',
+  lang: 'vi',
+  name: 'VAIS 1000',
+  quality: 'medium',
+  sampleRate: 22050,
+  license: 'CC BY-NC-SA 4.0',
+  totalBytes: 63_206_154,
+  installed: false,
+  ...overrides,
+});
 
 /** HTML DOCX mẫu — đã đánh số khối như main làm */
 const DEFAULT_BOOK_HTML =
@@ -121,6 +142,26 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
 
   const settingsListeners = new Set<(s: AppSettings) => void>();
   const windowListeners = new Set<(s: WindowState) => void>();
+  const sidecarListeners = new Set<(s: SidecarStatus) => void>();
+  const voiceProgressListeners = new Set<(p: VoiceDownloadProgress) => void>();
+
+  let sidecarStatus: SidecarStatus = options.sidecarStatus ?? {
+    state: 'ready',
+    restarts: 0,
+    port: 54757,
+    engineReady: false,
+  };
+
+  const catalogVoices: VoiceCatalogItem[] = options.voices ?? [
+    fakeVoice(),
+    fakeVoice({
+      id: 'en_US-lessac-medium',
+      lang: 'en',
+      name: 'Lessac',
+      license: 'BSD-3-Clause',
+      installed: true,
+    }),
+  ];
 
   const api = {
     app: {
@@ -201,6 +242,40 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       ),
     },
 
+    sidecar: {
+      getStatus: vi.fn(async (): Promise<Result<SidecarStatus>> => ok(sidecarStatus)),
+      onStatusChanged: vi.fn((listener: (s: SidecarStatus) => void) => {
+        sidecarListeners.add(listener);
+        return () => sidecarListeners.delete(listener);
+      }),
+    },
+
+    voices: {
+      listCatalog: vi.fn(async (): Promise<Result<VoiceCatalogItem[]>> => ok(catalogVoices)),
+      listInstalled: vi.fn(
+        async (): Promise<Result<InstalledVoice[]>> =>
+          ok(
+            catalogVoices
+              .filter((v) => v.installed)
+              .map((v) => ({
+                id: v.id,
+                lang: v.lang,
+                name: v.name,
+                quality: v.quality,
+                sampleRate: v.sampleRate,
+                sizeBytes: v.totalBytes,
+              })),
+          ),
+      ),
+      download: vi.fn(async (_voiceId: string) => ok(undefined)),
+      cancelDownload: vi.fn(async (_voiceId: string) => ok(undefined)),
+      remove: vi.fn(async (_voiceId: string) => ok(undefined)),
+      onDownloadProgress: vi.fn((listener: (p: VoiceDownloadProgress) => void) => {
+        voiceProgressListeners.add(listener);
+        return () => voiceProgressListeners.delete(listener);
+      }),
+    },
+
     window: {
       minimize: vi.fn(async () => ok(undefined)),
       toggleMaximize: vi.fn(async () => {
@@ -227,6 +302,23 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
     getSettings: () => settings,
     settingsListenerCount: () => settingsListeners.size,
     windowListenerCount: () => windowListeners.size,
+
+    /** Mô phỏng main đẩy event sidecar:statusChanged */
+    emitSidecarStatus: (next: SidecarStatus) => {
+      sidecarStatus = next;
+      for (const l of sidecarListeners) l(next);
+    },
+    /** Mô phỏng main đẩy một mốc tiến độ tải voice */
+    emitVoiceProgress: (progress: VoiceDownloadProgress) => {
+      for (const l of voiceProgressListeners) l(progress);
+    },
+    sidecarListenerCount: () => sidecarListeners.size,
+    voiceProgressListenerCount: () => voiceProgressListeners.size,
+    /** Đổi cờ `installed` để mô phỏng tải xong rồi nạp lại catalog */
+    setVoiceInstalled: (voiceId: string, installed: boolean) => {
+      const voice = catalogVoices.find((v) => v.id === voiceId);
+      if (voice !== undefined) voice.installed = installed;
+    },
   };
 };
 

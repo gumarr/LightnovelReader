@@ -124,4 +124,41 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 3,
+    name: 'pronunciation_overrides',
+    /**
+     * Bảng phiên âm do user tự sửa, theo từng sách (P3.5, plan.md mục 8.1).
+     *
+     * Đây là **tầng 3** — van an toàn, không phải nghĩa vụ. Tầng 1 (từ điển
+     * ship sẵn) và tầng 2 (luật romaji) đã lo phần lớn; bảng này chỉ để user
+     * sửa chỗ nào nghe chướng tai mà không phải chờ bản cập nhật app.
+     *
+     * `book_id NULL` = áp cho **mọi** sách. Cho phép vì tên nhân vật của một
+     * bộ LN thường trải dài nhiều tập, mà mỗi tập là một `book` riêng — bắt
+     * user nhập lại từng tập là đúng thứ họ không muốn bận tâm.
+     *
+     * `term` lưu **chữ thường** để tra cứu khỏi phải `LOWER()` mỗi lần; ràng
+     * buộc `CHECK` chặn ngay lúc ghi thay vì tin nơi gọi nhớ hạ chữ.
+     */
+    up: `
+      CREATE TABLE pronunciation_overrides (
+        id          TEXT PRIMARY KEY,
+        book_id     TEXT REFERENCES books(id) ON DELETE CASCADE,
+        term        TEXT NOT NULL CHECK (term = LOWER(term) AND LENGTH(term) > 0),
+        replacement TEXT NOT NULL CHECK (LENGTH(replacement) > 0),
+        created_at  INTEGER NOT NULL
+      );
+
+      -- Một term chỉ có một cách đọc trong phạm vi một sách.
+      CREATE UNIQUE INDEX idx_pron_book_term
+        ON pronunciation_overrides(book_id, term)
+        WHERE book_id IS NOT NULL;
+
+      -- Và một cách đọc toàn cục.
+      CREATE UNIQUE INDEX idx_pron_global_term
+        ON pronunciation_overrides(term)
+        WHERE book_id IS NULL;
+    `,
+  },
 ];

@@ -108,6 +108,13 @@ class SynthesizeRequest(BaseModel):
     bitrate: Literal[16, 24, 32] = 24
     # Ngôn ngữ để chuẩn hoá text trước khi đọc (số, viết tắt, ngày tháng).
     lang: str = Field(default="vi", min_length=2, max_length=8)
+    # Bảng phiên âm do user tự sửa cho cuốn sách này (P3.5, tầng 3 — plan.md
+    # mục 8.1). Khoá viết thường. Rỗng là chuyện thường: hai tầng kia đã lo
+    # phần lớn, đây chỉ là van an toàn.
+    #
+    # Giới hạn 500 mục: bảng này đi kèm MỌI request synthesize, để user dán
+    # vào hàng chục nghìn dòng thì mỗi segment gánh thêm cả trăm KB.
+    pronunciations: dict[str, str] = Field(default_factory=dict, max_length=500)
 
 
 class WordTimingModel(BaseModel):

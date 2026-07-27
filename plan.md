@@ -320,8 +320,71 @@ Splitter kéo được, lưu tỉ lệ. Nút toggle full-width subtitle (ẩn vi
 | Xuống dòng giữa câu | de-hyphenate + merge dòng |
 | Câu quá dài | split theo `,` `;` khi > 300 chars |
 | Tiếng Anh lẫn text VI | detect token → tách segment hoặc giữ voice VI (config) |
+| **Tên riêng Nhật** | phiên âm sang âm tiết Việt — xem mục 8.1 |
 
 Segmenter: `pysbd` cho EN, rule-based + regex cho VI.
+
+---
+
+## 8.1. Tên riêng Nhật trong LN (Phase 3.5)
+
+### Vấn đề
+
+Piper VI chạy trên phoneme tiếng Việt (espeak-ng `vi`). Gặp `Shinkansen` nó ánh
+xạ chữ cái theo chính tả VI → chuỗi âm vị hợp lệ nhưng vô nghĩa. Tệ hơn: tiếng
+Việt có thanh điệu, từ ngoại lai không mang thanh nên bị gán thanh ngang mặc
+định, nghe cụt và bẹt. LN dịch thì trang nào cũng có tên Nhật → hỏng liên tục.
+
+**Cần chèn cách đọc, không phải sửa chữ viết.** Và cách đọc phải là chuỗi **âm
+tiết tiếng Việt có dấu**, vì đó là thứ duy nhất Piper VI phát âm chuẩn.
+
+### Ba tầng, không tầng nào bắt user cấu hình
+
+| Tầng | Nguồn | Phủ | User phải làm gì |
+|---|---|---|---|
+| 1. Từ điển | ship sẵn trong app | tên phổ biến | **không gì** |
+| 2. Luật romaji | suy ra tự động | tên nhân vật lạ | **không gì** |
+| 3. Override | user nhập, theo sách | ca cá biệt | chỉ khi *muốn* |
+
+Mặc định bật hết. Không có bước cấu hình nào chặn đường user — tầng 3 là van an
+toàn, không phải nghĩa vụ.
+
+**Tầng 1 — từ điển ship sẵn** (~400–600 mục): địa danh (Tokyo → `Tô-ki-ô`),
+hậu tố xưng hô (senpai → `xem-pai`), thuật ngữ LN (Shinkansen → `Shin-can-xen`).
+
+Dùng **gạch nối** chứ không phải dấu cách: `Tô-ki-ô` giữ nhịp một-từ, còn
+`Tô ki ô` khiến Piper chèn khoảng nghỉ giữa các âm tiết, nghe rời rạc.
+
+**Tầng 2 — luật romaji.** Từ điển không bao giờ phủ hết tên nhân vật. Nhưng
+romaji là hệ rất đều (~100 mora), nên chuyển được bằng luật: `shi`→`si`,
+`tsu`→`xư`, `fu`→`phư`, `ryu`→`ri-u`… cộng luật trường âm (`ou`/`oo`→`ô`,
+`ei`→`ê`) và phụ âm kép (`kk`, `tt` → nghỉ ngắn).
+
+Khó nhất là **biết khi nào được áp dụng** — áp bừa lên mọi từ lạ sẽ phá tiếng
+Anh (`computer` không phải romaji). Bộ nhận diện: token viết hoa + không có
+trong từ điển VI + khớp cấu trúc mora (phụ âm-nguyên âm xen kẽ, kết thúc bằng
+nguyên âm hoặc `n`). Thà bỏ sót còn hơn nhận nhầm: bỏ sót thì nghe như hiện
+tại, nhận nhầm thì phá từ đang đọc đúng.
+
+### Hệ quả bắt buộc: `charStart` phải trỏ vào text hiển thị
+
+Hiện `main.py` tính timing trên `spoken` (bản đã normalize), không phải
+`request.text`. Với số thì lệch nhẹ và hiếm. Nhưng khi tầng 1–2 đổi tên riêng ở
+**mọi trang**, highlight sẽ lệch liên tục — không né được nữa.
+
+Nên normalizer phải trả `NormalizedText { spoken, spans }` thay vì `str`, với
+`spans` là mảng ánh xạ `(spokenStart, spokenEnd) → (sourceStart, sourceEnd)`.
+Aligner chạy trên `spoken`, rồi quy `charStart`/`charEnd` **ngược về text gốc**.
+Một từ hiển thị ứng với nhiều mora → timing của nó là `[start mora đầu, end
+mora cuối]`.
+
+Kiểu `WordTiming` **không đổi** — `charStart`/`charEnd` đã sẵn ngữ nghĩa "trỏ
+vào `Segment.text`". P3.5 chỉ làm cho nó *đúng như đã hứa*.
+
+### Vì sao P3.5 chạy trước P3.4
+
+P3.4 là phần **đọc** `charStart` để tô chữ. Làm P3.4 trước rồi P3.5 mới đổi
+ngữ nghĩa của nó thì phải sửa lại subtitle pane vừa viết xong.
 
 ---
 
@@ -365,11 +428,16 @@ Segmenter: `pysbd` cho EN, rule-based + regex cho VI.
 - Player: play/pause/prev/next segment, speed 0.5–2.0x
   - Speed dùng `playbackRate` + `preservesPitch` → **không regenerate**
 - Timing ước lượng theo tỉ lệ độ dài từ (dùng ngay)
+- **P3.5 — phiên âm tên riêng Nhật (làm TRƯỚC P3.4, xem mục 8.1)**
+  - `NormalizedText { spoken, spans }` — trả bảng ánh xạ offset, không chỉ str
+  - `charStart`/`charEnd` quy ngược về `Segment.text` gốc
+  - Từ điển ship sẵn + luật romaji tự động + override theo sách
 - Subtitle pane 3 dòng, highlight từng chữ, click-to-seek
 - Sync viewer: scroll + highlight vùng đang đọc
 - Priority queue: segment sắp phát nhảy đầu hàng
 
-**DoD:** Nghe liên tục hết chương, chữ sáng đúng nhịp.
+**DoD:** Nghe liên tục hết chương, chữ sáng đúng nhịp. Tên Nhật đọc ra nghe
+hiểu được, và highlight vẫn bám đúng chữ trên màn hình ở những câu đó.
 
 ### Phase 4 — Forced Alignment (1 tuần)
 - CTC aligner ONNX, background worker

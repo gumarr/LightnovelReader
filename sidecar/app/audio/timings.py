@@ -21,7 +21,9 @@ mới được nâng lên `'aligned'` — đường (1) chính xác hơn (2) nhi
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from app.text.mapping import NormalizedText
 
 # Một "từ" để highlight. Bắt cả chữ có dấu tiếng Việt và số.
 #
@@ -201,3 +203,33 @@ def word_timings_from_phonemes(
         )
 
     return timings
+
+
+def remap_to_source(
+    timings: list[WordTiming], normalized: NormalizedText
+) -> list[WordTiming]:
+    """Quy `char_start`/`char_end` từ text **đã chuẩn hoá** về text **gốc**.
+
+    Timing sinh ra trên bản đọc (`"Tô-ki-ô"`), nhưng UI tô chữ trên bản gốc
+    (`"Tokyo"`) — thứ user đang nhìn. Không quy ngược thì highlight lệch ngay ở
+    câu đầu tiên có tên riêng hoặc chữ số.
+
+    Giữ nguyên `w` là **từ đã đọc**, không đổi thành từ gốc: `w` dùng để kiểm
+    tra và ghi log, còn cái UI cần là cặp offset. Đổi `w` sẽ che mất thông tin
+    "Piper thực sự đọc gì" — đúng thứ cần khi truy lỗi phát âm.
+
+    Nhiều từ đọc có thể trỏ về **cùng một** từ gốc (`"Tô"`, `"ki"`, `"ô"` đều
+    về `"Tokyo"`). Đó là đúng chủ ý: cả từ gốc sáng lên trong suốt thời gian
+    đọc mọi mảnh của nó, thay vì tô nham nhở từng phần.
+    """
+    if not normalized.spans:
+        return timings
+
+    remapped: list[WordTiming] = []
+    for timing in timings:
+        char_start, char_end = normalized.to_source_range(
+            timing.char_start, timing.char_end
+        )
+        remapped.append(replace(timing, char_start=char_start, char_end=char_end))
+
+    return remapped

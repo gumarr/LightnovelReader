@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from .lexicon_jp import transcribe_japanese
+from .mapping import NormalizedText, compose, diff_to_normalized, identity
 from .numbers_vi import (
     decimal_to_words,
     digits_to_words,
@@ -264,18 +266,54 @@ def normalize_vi(text: str) -> str:
 
     1. `normalize_quotes` / `normalize_dashes` / `strip_decorative_chars` —
        dọn ký tự lạ trước để các luật sau khớp được regex.
-    2. `expand_abbreviations` trước `expand_numbers`: `v.v.` chứa dấu chấm,
+    2. `transcribe_japanese` sớm, ngay sau khi dọn ký tự: tên riêng phải được
+       thay khi còn nguyên mặt chữ Latin. Chạy sau `expand_numbers` thì
+       `Class 2-5` đã thành chữ và không còn nhận ra token nào nữa.
+    3. `expand_abbreviations` trước `expand_numbers`: `v.v.` chứa dấu chấm,
        để số chạy trước thì dấu chấm đã bị coi là dấu thập phân.
-    3. `expand_dates` / `expand_times` trước `expand_numbers`: cả hai đều ăn
+    4. `expand_dates` / `expand_times` trước `expand_numbers`: cả hai đều ăn
        chữ số, chạy sau thì không còn số nguyên vẹn để nhận dạng.
-    4. `collapse_whitespace` cuối cùng — các luật trên đều chèn dấu cách.
+    5. `collapse_whitespace` cuối cùng — các luật trên đều chèn dấu cách.
+
+    Trả `str` để giữ nguyên hợp đồng cũ. Nơi nào cần ánh xạ offset về text gốc
+    (để highlight bám đúng chữ) thì gọi `normalize_vi_mapped`.
     """
-    text = normalize_quotes(text)
-    text = normalize_dashes(text)
-    text = strip_decorative_chars(text)
-    text = expand_symbols(text)
-    text = expand_abbreviations(text)
-    text = expand_dates(text)
-    text = expand_times(text)
-    text = expand_numbers(text)
-    return collapse_whitespace(text)
+    return normalize_vi_mapped(text).spoken
+
+
+def normalize_vi_mapped(
+    text: str, overrides: dict[str, str] | None = None
+) -> NormalizedText:
+    """Như `normalize_vi` nhưng trả kèm **đường quy ngược về text gốc**.
+
+    Vì sao cần: TTS đọc bản đã chuẩn hoá, nên mốc thời gian bám theo bản đó.
+    Nhưng UI tô chữ trên bản gốc — thứ user đang nhìn. Xem `mapping.py` và
+    plan.md mục 8.1.
+
+    Cách lấy mapping: các hàm luật đều là `str -> str` viết bằng regex, không
+    tự khai báo được mình đã đổi khoảng nào. Thay vì viết lại cả tám hàm, ta
+    **suy ngược** bằng cách so chuỗi vào với chuỗi ra (`diff_to_normalized`).
+    Nhờ vậy luật thêm về sau tự động có mapping đúng mà không phải sửa gì.
+
+    Riêng `transcribe_japanese` tự sinh mapping chính xác nên dùng thẳng, không
+    phải suy ngược — đây cũng là bước gây sai lệch nhiều nhất.
+    """
+    stage = identity(text)
+
+    for rule in (normalize_quotes, normalize_dashes, strip_decorative_chars):
+        stage = compose(stage, diff_to_normalized(stage.spoken, rule(stage.spoken)))
+
+    # Tên riêng Nhật: bước duy nhất có mapping chính xác thay vì suy ngược.
+    stage = compose(stage, transcribe_japanese(stage.spoken, overrides))
+
+    for rule in (
+        expand_symbols,
+        expand_abbreviations,
+        expand_dates,
+        expand_times,
+        expand_numbers,
+        collapse_whitespace,
+    ):
+        stage = compose(stage, diff_to_normalized(stage.spoken, rule(stage.spoken)))
+
+    return stage

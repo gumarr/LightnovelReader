@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-27 · commit `342d6a7`
+> **Cập nhật lần cuối:** 2026-07-27 · commit `(P3.5 — điền sau khi commit)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -42,8 +42,13 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
 **Việc tiếp theo:** P3.4 — Subtitle pane + highlight từng từ (xem mục 3).
 **Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy
 lẫn bản đóng gói.** P2.8 đã trả **hết 4 nợ mức Cao** trong mục 8.
-**Phase 3 đang làm: P3.1 + P3.2 + P3.3 xong** (tầng dữ liệu, máy trạng thái phát,
-và player UI đầy đủ). Còn P3.4 là hết Phase 3.
+**Phase 3 đang làm: P3.1 + P3.2 + P3.3 + P3.5 xong** (tầng dữ liệu, máy trạng
+thái phát, player UI đầy đủ, và phiên âm tên riêng Nhật). Còn P3.4 là hết Phase 3.
+
+⚠️ **P3.5 đổi ngữ nghĩa `WordTiming.charStart`** — nay trỏ vào `Segment.text`
+**gốc** (đúng như docstring vẫn hứa), không phải text đã chuẩn hoá. P3.4 phải
+biết: nhiều `WordTiming` liên tiếp có thể trỏ về *cùng* một khoảng gốc. Xem mục
+4.59.
 
 ---
 
@@ -706,6 +711,60 @@ Tìm ra **1 lỗi thật** mà 1793 unit test suýt không lộ — xem mục 4.
 bắt bởi một test tích hợp ở `ReaderScreen`, không phải test đơn vị của store: nó
 chỉ tồn tại ở **chỗ nối** giữa `reader-store` và `player-store`.
 
+### Phase 3 — P3.5 Phiên âm tên riêng Nhật ✅ (trừ UI tầng 3)
+
+**Vấn đề user nêu:** LN dịch trang nào cũng có tên Nhật (Tokyo, Shinkansen,
+Asuka…). Piper VI chạy trên phoneme tiếng Việt nên ánh xạ chữ cái theo chính tả
+VI → chuỗi âm vô nghĩa. User yêu cầu rõ: **app phải tự xử lý, không bắt user
+soạn từ điển.**
+
+| File | Vai trò | Test |
+|---|---|---|
+| `sidecar/app/text/mapping.py` | `Span`/`NormalizedText`, `apply_replacements`, `compose`, `diff_to_normalized` | 34 |
+| `sidecar/app/text/romaji_vi.py` | Bảng ~100 mora + `looks_like_romaji` + ghép âm tiết | 117 |
+| `sidecar/app/text/data/lexicon_jp.json` | Từ điển ship sẵn, 193 mục | (qua lexicon) |
+| `sidecar/app/text/lexicon_jp.py` | Nạp từ điển + ghép 3 tầng + `transcribe_japanese` | 88 |
+| `sidecar/app/text/normalize_vi.py` | `+normalize_vi_mapped` — pipeline trả kèm mapping | (hiện có) |
+| `sidecar/app/text/__init__.py` | `+normalize_mapped` theo ngôn ngữ | — |
+| `sidecar/app/audio/timings.py` | `+remap_to_source` — quy offset về text gốc | 13 |
+| `sidecar/app/main.py` | `/synthesize` dùng `normalize_mapped` + remap trước khi trả | (qua API) |
+| `sidecar/app/schemas.py` | `+pronunciations` trong `SynthesizeRequest` (≤500 mục) | — |
+| `db/migrations.ts` | v3 `pronunciation_overrides` + 2 unique index một phần | +1 |
+| `db/repositories/pronunciations.ts` | CRUD + `lookupTable` gộp toàn cục/theo sách | 22 |
+| `services/queue.ts` + `index.ts` | `getPronunciations` đọc lúc chạy, nối vào synthesize | (hiện có) |
+| `shared/src/types.ts` | `+PronunciationOverride`, làm rõ ngữ nghĩa `WordTiming` | — |
+
+**Ba tầng, không tầng nào bắt user cấu hình** (đúng yêu cầu user):
+
+1. **Từ điển ship sẵn** (193 mục) — địa danh, xưng hô, thuật ngữ LN.
+2. **Luật romaji tự suy** — phủ tên nhân vật từ điển không có. Đo thật:
+   **65/65** tên Nhật nhận đúng, **51/51** từ tiếng Anh từ chối đúng.
+3. **Override theo sách** — DB + repository + đường truyền tới sidecar đã xong,
+   **chưa có UI** (xem mục 8).
+
+**Bốn quyết định đáng nhớ** (chi tiết ở mục 4.59–4.62):
+
+- **Trả nợ `charStart` có sẵn từ P2.4.** Timing vốn bám text *đã chuẩn hoá*,
+  còn UI tô chữ trên text *gốc*. Với số thì lệch hiếm nên trước đây bỏ qua được;
+  tên riêng xuất hiện mọi trang nên không né được nữa. Nay `normalize_mapped`
+  trả bảng ánh xạ, `remap_to_source` quy offset ngược. **Kiểu `WordTiming`
+  không đổi** — chỉ làm nó đúng như docstring đã hứa.
+- **Suy mapping bằng `difflib` thay vì viết lại 8 hàm regex.** Các luật chuẩn
+  hoá đều là `str -> str`, không tự khai báo được mình đổi khoảng nào.
+  `diff_to_normalized` so chuỗi vào/ra → luật thêm sau tự động có mapping đúng.
+- **Lớp chặn tiếng Việt quan trọng hơn lớp chặn tiếng Anh.** Text LN *là* tiếng
+  Việt, nên nuốt nhầm từ Việt xảy ra thường xuyên hơn. Đo lúc đang làm: luật
+  romaji nuốt **20/97** từ Việt không dấu (`mua` → "mư-a"). Chặn bằng hai lớp:
+  luật tầng 3 chỉ áp cho token **viết hoa**, cộng danh sách âm tiết Việt thông
+  dụng (bắt cả từ Việt đứng đầu câu). Sau đó: **0/51** bị nuốt.
+- **Từ điển dùng gạch nối, không dùng dấu cách.** `Tô-ki-ô` giữ nhịp một-từ;
+  `Tô ki ô` khiến Piper chèn khoảng nghỉ giữa các âm tiết, nghe rời rạc.
+
+**Chỉ có unit test — chưa nghe thật.** Toàn bộ P3.5 xanh ở mức unit test và đã
+soi tay kết quả phiên âm trên câu LN thật, nhưng **chưa chạy Piper thật để
+nghe**. Chất lượng phát âm cuối cùng phải *nghe* mới biết — để lại cho lượt
+nghe thử ở P3.4 (cùng lúc kiểm hụt audio, xem mục 8).
+
 ### Phase 3 — P3.3 Player UI đầy đủ ✅
 
 Phần còn lại của player theo plan.md, cộng hai thứ **user yêu cầu trực tiếp**:
@@ -772,11 +831,11 @@ là **lỗi có sẵn từ trước P3.3**, không phải do phần này — xem
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1863 passed** (+62 ở P3.3) |
-| Unit test sidecar (pytest) | **345 passed** (không đổi — P3.1 không đụng sidecar) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (+1 ở P3.1) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **47 phép kiểm** (+14 ở P3.3), 45/47 đạt — 2 đỏ là lỗi có sẵn (mục 8) |
-| Schema DB | **v2** (v2 thêm `chapters.error_count` — mục 4.42) |
+| Unit test TypeScript | **1885 passed** (+22 ở P3.5 — repository phiên âm) |
+| Unit test sidecar (pytest) | **611 passed** (+266 ở P3.5 — mapping, romaji, từ điển, remap) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (không đổi ở P3.5) |
+| **Kiểm UI thật (`pnpm ui-check`)** | **47 phép kiểm** (không đổi ở P3.5 — chưa có UI mới), 45/47 đạt — 2 đỏ là lỗi có sẵn (mục 8) |
+| Schema DB | **v3** (v3 thêm `pronunciation_overrides` — mục 4.59) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
@@ -786,7 +845,7 @@ là **lỗi có sẵn từ trước P3.3**, không phải do phần này — xem
 
 ## 3. Việc tiếp theo — Phase 3
 
-Phase 3 chia **bốn phần** (thống nhất với user — mỗi phần một commit, không dồn).
+Phase 3 chia **năm phần** (thống nhất với user — mỗi phần một commit, không dồn).
 Giữ nguyên quy ước **logic thuần trước, UI sau**:
 
 | Mã | Nội dung | Trạng thái |
@@ -794,11 +853,29 @@ Giữ nguyên quy ước **logic thuần trước, UI sau**:
 | P3.1 | Tầng dữ liệu: `reader:getSegmentAudio`, ước lượng timing, tra từ theo mốc | ✅ Xong |
 | P3.2 | Playback engine: máy trạng thái play/pause/next/prev, nối segment liên tục, `playbackRate` + `preservesPitch`, segment sắp phát nhảy đầu hàng đợi | ✅ Xong |
 | P3.3 | Player UI đầy đủ: thanh tiến độ trong đoạn, phím tắt, đường tắt tới màn Giọng đọc, icon SVG, mốc 2.5×/3× | ✅ Xong |
+| P3.5 | Phiên âm tên riêng Nhật + `charStart` quy về text gốc (xem plan.md mục 8.1) | ✅ Xong (trừ UI tầng 3) |
 | P3.4 | Subtitle pane 3 dòng + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ⬅️ **Đang tới** |
 
 P3.2 đã kèm sẵn một `PlayerBar` chạy được (nút phát/trước/sau + 6 mốc tốc độ) vì
 không có nút thì không kiểm được máy trạng thái trên app thật. P3.3 đã làm phần
 còn lại của plan.md.
+
+### Vì sao P3.5 chen lên trước P3.4
+
+Đánh số 3.5 nhưng **làm trước** 3.4 — giữ số cũ để khỏi phải sửa mọi tham chiếu
+"P3.4" đã rải khắp file này.
+
+Lý do đảo thứ tự: P3.4 là phần **đọc** `charStart` để tô chữ, còn P3.5 **đổi
+ngữ nghĩa** của `charStart` (từ "trỏ vào text đã normalize" thành "trỏ vào
+`Segment.text` gốc"). Làm P3.4 trước thì phải quay lại sửa subtitle pane vừa
+viết xong.
+
+Vấn đề gốc user nêu: LN dịch trang nào cũng có tên Nhật (Tokyo, Shinkansen,
+Asuka…), Piper VI đọc ra âm vô nghĩa vì ánh xạ chữ cái theo chính tả VI. Ba
+tầng xử lý (từ điển ship sẵn → luật romaji → override theo sách), **không tầng
+nào bắt user cấu hình** — yêu cầu rõ ràng của user là app phải tự giải quyết.
+
+Chi tiết thiết kế ở [plan.md](plan.md) mục 8.1.
 
 ### Những gì P3.3 để lại sẵn cho P3.4
 
@@ -2319,6 +2396,82 @@ Thêm hai chốt nữa:
 lưu: mọi giá trị cũ vẫn hợp lệ nên không cần migration. Hạ trần thì ngược lại —
 sẽ làm settings đang lưu 2.5× không parse được. Có test khoá điều này.
 
+### 4.59 `charStart` trước P3.5 trỏ vào text đã chuẩn hoá, không phải text gốc
+
+Nợ có sẵn từ P2.4, `main.py` ghi rõ trong comment và chấp nhận: timing tính trên
+`normalize(request.text)` chứ không phải `request.text`. Với chữ số thì lệch
+hiếm nên đánh đổi được.
+
+P3.5 làm nó thành không né được: `Shinkansen` → `Sin-can-xên` đổi độ dài chuỗi ở
+**mọi trang** LN, nên highlight sẽ trôi liên tục chứ không phải thi thoảng.
+
+Cách trả nợ **không đổi kiểu `WordTiming`** — `charStart`/`charEnd` vốn đã được
+docstring hứa là "trỏ vào `Segment.text`", chỉ là chưa đúng. Nay:
+`normalize_mapped` trả `NormalizedText { source, spoken, spans }`, engine vẫn
+sinh timing trên `spoken` như cũ, rồi `remap_to_source` quy offset ngược ngay
+trước khi trả response.
+
+**Hệ quả cần nhớ cho P3.4:** nhiều `WordTiming` liên tiếp có thể trỏ về *cùng
+một* khoảng gốc (`"Tô"`, `"ki"`, `"ô"` đều về `"Tokyo"`). Đó là chủ ý — cả từ
+gốc sáng lên suốt thời gian đọc mọi mảnh của nó, thay vì tô nham nhở từng phần.
+Subtitle pane phải chịu được việc này, đừng giả định một từ = một timing.
+
+### 4.60 Suy mapping bằng `difflib` thay vì viết lại tám hàm regex
+
+Tám hàm chuẩn hoá (`expand_numbers`, `expand_dates`…) đều là `str -> str` viết
+bằng regex. Muốn có mapping offset thì hoặc sửa cả tám để chúng trả span, hoặc
+suy ngược bằng cách so chuỗi vào với chuỗi ra.
+
+Chọn cách thứ hai (`diff_to_normalized`, dùng `difflib.SequenceMatcher` trong
+stdlib — không thêm dependency). Lý do: sửa tám hàm là việc lớn, dễ sai, và
+**luật thêm về sau lại phải nhớ làm tiếp**. Suy ngược thì đúng tự động cho mọi
+luật, kể cả luật chưa viết. Segment ≤ 300 ký tự nên chi phí `diff` không đáng kể.
+
+Riêng `transcribe_japanese` tự sinh mapping chính xác (nó biết chính xác mình
+thay khoảng nào) nên dùng thẳng, không qua diff — đây cũng là bước gây sai lệch
+nhiều nhất nên đáng để chính xác.
+
+`compose` nối các chặng thành **một** bảng đi thẳng từ text gốc tới text đọc
+cuối. Chỗ này có một bẫy đã sập lúc làm: chỉ giữ ranh giới span của chặng sau
+thì khi chặng sau không đổi gì, nó chỉ có một span phủ cả chuỗi, span đó chạm
+vùng chặng trước đã thay nên bị đánh `replaced` → **mọi** mốc bung ra toàn
+chuỗi, mất sạch độ chính xác. Phải cắt theo ranh giới của **cả hai** chặng.
+Test `test_doan_da_thay_o_luot_dau_van_giu_co` khoá ca này.
+
+### 4.61 Lớp chặn tiếng Việt quan trọng hơn lớp chặn tiếng Anh
+
+Luật romaji ban đầu chỉ lo không nuốt nhầm tiếng Anh. Đo lúc đang làm mới lộ ra
+vấn đề lớn hơn: nó nuốt **20/97** từ tiếng Việt không dấu thông dụng — `mua` →
+"mư-a", `nhin`, `hieu`, `ngoi`… Text LN *là* tiếng Việt nên ca này gặp thường
+xuyên hơn tiếng Anh nhiều, mà hậu quả thì nặng hơn hẳn.
+
+Chặn bằng **hai** lớp, vì một lớp không đủ:
+
+1. Luật tầng 3 chỉ áp cho token **viết hoa** (`lexicon_jp.lookup`). Tên riêng
+   Nhật trong LN luôn viết hoa; từ Việt giữa câu thì không. Từ điển tầng 1–2
+   không vướng ràng buộc này vì đã chốt cứng mặt chữ (`senpai`, `bentou`).
+2. Danh sách âm tiết Việt thông dụng (`_VIETNAMESE_SYLLABLES`). Cần vì lớp 1
+   không cứu được từ Việt **đứng đầu câu** — `Mua sách…`.
+
+Sau hai lớp: **0/51** từ Việt bị nuốt, cả thường lẫn hoa.
+
+Cùng lý do, đã phải **bỏ mục `hai`** khỏi từ điển (tiếng Nhật là "vâng"): trong
+LN dịch nó gần như luôn là số 2. Đã ghi cảnh báo ngay trong `lexicon_jp.json`
+để người sau không thêm lại — cùng nhóm rủi ro: `ba`, `ma`, `ta`, `nam`, `con`.
+
+### 4.62 Phiên âm dùng gạch nối, không dùng dấu cách
+
+`Tô-ki-ô` chứ không phải `Tô ki ô`. Dấu cách khiến Piper coi mỗi âm tiết là một
+từ riêng và chèn khoảng nghỉ giữa chúng → nghe như đánh vần. Gạch nối giữ được
+nhịp một-từ.
+
+Ba luật ghép âm tiết đi kèm, đều để tránh đọc rời (`_join_mora`):
+`n` mũi dính vào âm trước (`Côn-ni-chi-goa`, không phải `Cô-n-ni…`); nguyên âm
+đôi gộp (`xên-pai`, không phải `xên-pa-i`); sokuon nhân đôi phụ âm
+(`Hôc-cai-đô`, giữ nhịp ngắt đặc trưng của `Hokkaido`).
+
+Có test khoá cả ba — đổi bảng mora mà làm hỏng nhịp sẽ đỏ ngay.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -2614,7 +2767,11 @@ scripts/
 | ~~Renderer chưa hiện trạng thái sidecar~~ | ✅ Xong | `SidecarBadge` hiện ở màn Giọng đọc, có cả 5 trạng thái. Đã đo màu thật trong app đóng gói ở cả dark lẫn light |
 | ~~Đóng gói sidecar chưa vào CI~~ | ✅ Xong | `pnpm build:win` giờ tự gọi `build:sidecar` rồi `scripts/sidecar-preflight.mjs` — không còn phải nhớ. Preflight chặn cả 3 cách hỏng (thiếu `.exe`, thiếu `_internal/`, `.exe` cũ hơn `.py`), đã kiểm chứng bằng `touch` một file `.py`. CI dựng venv 3.12 ở **cả hai** job + kiểm phía đích `resources/sidecar/` sau khi đóng gói. Xem mục 4.44 |
 | ~~Chưa dựng lại installer sau P2.4/P2.5~~ | ✅ Xong | P2.8 chạy lại `pnpm build:win`: NSIS **143.0 MB**, portable **142.8 MB** (trước khi có sidecar là 80.8 MB). electron-builder **có** chép trọn onedir — đo được `resources/sidecar/` **147 MB** đủ cả `_internal/`, và `resources/voices/catalog.json` cũng có. Vượt mốc 200 MB của plan.md thì chưa, nhưng đã dùng hết 71% |
-| Chỉ có 2 voice trong catalog | Thấp | VI (`vais1000`) + EN (`lessac`), đều `medium`. Đủ cho P2.4, nhưng user muốn giọng khác thì phải sửa file — chưa có đường thêm voice từ UI |
+| Chỉ có 2 voice trong catalog | **TB** | VI (`vais1000`) + EN (`lessac`), đều `medium`. **User đã hỏi trực tiếp về việc chọn model/giọng khác** — màn `VoiceManager` đã có đủ (tải/xoá/chọn, tách `voiceVi`/`voiceEn`), thiếu là **dữ liệu**: Piper còn vài giọng VI (`vivos`, `25hours`) chưa liệt kê. Thêm = thêm mục vào `resources/voices/catalog.json`, **không sửa code**, nhưng bắt buộc tải file thật để tính `sha256` (xem `$comment` trong file đó) |
+| UI tầng 3 phiên âm chưa có | **TB** | P3.5 làm xong DB (`pronunciation_overrides` v3), repository (22 test) và đường truyền tới sidecar (`getPronunciations` → `/synthesize`), nhưng **chưa có IPC channel lẫn màn hình**. Nghĩa là user chưa sửa được cách đọc dù backend đã sẵn sàng. Thống nhất với user: để làm cùng P3.4, khi có subtitle pane thì gắn nút "sửa cách đọc" ngay tại từ đang sáng — đúng chỗ user nhận ra chỗ sai, thay vì bắt vào Settings gõ lại từ |
+| Phiên âm Nhật chưa nghe thật lần nào | **TB** | Toàn bộ P3.5 mới ở mức unit test (252 test) + soi tay kết quả trên câu LN thật. **Chưa chạy Piper thật để nghe** — mà chất lượng phát âm thì phải nghe mới biết: `Sin-can-xên` đúng về mặt chữ nhưng có thể vẫn chướng tai. Nghe thử ở P3.4 cùng lượt kiểm hụt audio |
+| Từ điển Nhật mới 193 mục | Thấp | Phủ địa danh, xưng hô, thuật ngữ LN phổ biến. Tên nhân vật lạ do luật romaji lo (đo được 65/65 nhận đúng), nên thiếu mục không làm hỏng gì — chỉ là cách đọc kém tự nhiên hơn ở vài tên. Thêm mục = sửa `sidecar/app/text/data/lexicon_jp.json`, có cảnh báo sẵn về việc tránh âm tiết trùng tiếng Việt |
+| Danh sách chặn tiếng Việt/Anh là thủ công | Thấp | `_VIETNAMESE_SYLLABLES` (~80 mục) và `_ENGLISH_WORDS` (~60 mục) trong `romaji_vi.py` liệt kê tay vì `mua`/`game` trùng hình thái romaji hoàn toàn, không luật nào tách được. Đo hiện tại: 0/51 từ Việt và 0/51 từ Anh bị nuốt. Từ ngoài danh sách mà trùng hình thái vẫn lọt — cố ý giữ danh sách ngắn, vì dài quá lại tăng rủi ro chặn nhầm tên nhân vật |
 | Tải voice không resume được | TB | Đứt giữa chừng là mất cả 63 MB, tải lại từ đầu. HF có hỗ trợ `Range` nên làm được, nhưng phải giữ trạng thái băm dở — băm theo dòng chảy hiện tại không nối tiếp được. Để lại tới khi thấy người dùng thật kêu |
 | Nút "Giọng đọc" chỉ có ở màn thư viện | Thấp | Vào đọc sách rồi thì phải quay ra mới tải voice được. Hợp lý cho tới khi có nút generate trong reader (P2.6) |
 | Supervisor chưa có backoff luỹ tiến | Thấp | Chờ cố định `SIDECAR_RESTART_DELAY_MS` (1s) giữa các lần thử. Với trần 3 lượt thì đủ; nếu sau này nới trần thì nên tăng dần để không dội liên tục |

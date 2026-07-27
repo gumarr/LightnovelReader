@@ -96,7 +96,16 @@ export type Segment = {
 
 /**
  * Timing của một từ trong segment. Lưu ở `{audioDir}/{bookId}/{segmentId}.json`.
- * `charStart`/`charEnd` trỏ vào `Segment.text` để map highlight ↔ text gốc.
+ *
+ * `charStart`/`charEnd` trỏ vào **`Segment.text` gốc** (nửa mở: `[start, end)`)
+ * để map highlight ↔ text user đang nhìn.
+ *
+ * Lưu ý `w` là từ **đã đọc**, không phải chuỗi con của `Segment.text`. Sidecar
+ * chuẩn hoá trước khi tổng hợp (`"2024"` → `"hai nghìn…"`, `"Tokyo"` →
+ * `"Tô-ki-ô"`), nên `w` bám bản đọc còn offset đã được quy ngược về bản gốc.
+ * Hệ quả: **nhiều** `WordTiming` liên tiếp có thể trỏ về cùng một khoảng gốc —
+ * đó là chủ ý, cả từ gốc sáng lên suốt thời gian đọc mọi mảnh của nó.
+ * Xem `sidecar/app/text/mapping.py` và plan.md mục 8.1.
  */
 export type WordTiming = {
   w: string;
@@ -104,6 +113,26 @@ export type WordTiming = {
   endMs: number;
   charStart: number;
   charEnd: number;
+};
+
+/**
+ * Một mục phiên âm do user tự sửa (P3.5, tầng 3 — plan.md mục 8.1).
+ *
+ * Van an toàn, không phải nghĩa vụ: từ điển ship sẵn và luật romaji đã lo phần
+ * lớn tên riêng Nhật. User chỉ thêm khi nghe thấy chỗ nào chướng tai.
+ *
+ * `bookId` bỏ trống = áp cho **mọi** sách — tên nhân vật một bộ LN trải dài
+ * nhiều tập, mà mỗi tập là một `Book` riêng.
+ */
+export type PronunciationOverride = {
+  id: string;
+  /** Bỏ trống = áp cho mọi sách */
+  bookId?: string;
+  /** Từ cần sửa cách đọc, luôn **chữ thường** */
+  term: string;
+  /** Cách đọc thay thế, dùng gạch nối giữa các âm tiết: `Tô-ki-ô` */
+  replacement: string;
+  createdAt: number;
 };
 
 export type JobType = 'synthesize' | 'align';

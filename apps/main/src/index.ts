@@ -26,6 +26,7 @@ import { createLibraryService } from './services/library.js';
 import { createBookRepository } from './db/repositories/books.js';
 import { createChapterRepository } from './db/repositories/chapters.js';
 import { createSegmentRepository } from './db/repositories/segments.js';
+import { createPronunciationRepository } from './db/repositories/pronunciations.js';
 import { createJobRepository } from './db/repositories/jobs.js';
 import { createGenerateQueue } from './services/queue.js';
 import { createTimingsStore } from './services/timings-store.js';
@@ -123,6 +124,7 @@ const start = (): void => {
   const chapterRepo = createChapterRepository(db);
   const segmentRepo = createSegmentRepository(db);
   const jobRepo = createJobRepository(db);
+  const pronunciationRepo = createPronunciationRepository(db);
 
   // Một instance dùng chung cho cả hàng đợi (ghi) lẫn trình đọc (đọc): store
   // không giữ trạng thái nào, nhưng dựng hai bản thì lần sau sửa cách ghi mà
@@ -212,6 +214,7 @@ const start = (): void => {
       return voiceId === '' ? undefined : voiceId;
     },
     getBookLang: (bookId) => bookRepo.findById(bookId)?.lang ?? 'vi',
+    getPronunciations: (bookId) => pronunciationRepo.lookupTable(bookId),
     onStatusChanged: (status) => {
       mainWindow?.webContents.send('queue:statusChanged', toQueueStatusInfo(status));
     },

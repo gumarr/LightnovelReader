@@ -241,9 +241,12 @@ describe('migration v2 — chapter_error_count', () => {
     expect(book.last_segment_id).toBe('seg-42');
   });
 
-  it('chạy migrate hai lần không ném — v2 đã áp dụng thì bỏ qua', () => {
+  it('chạy migrate hai lần không ném — migration đã áp dụng thì bỏ qua', () => {
     migrate(db);
     expect(() => migrate(db)).not.toThrow();
-    expect(getSchemaVersion(db)).toBe(2);
+    // Suy từ `MIGRATIONS` chứ không chốt cứng số: đây là test tính idempotent,
+    // không phải test phiên bản schema. Chốt cứng thì mỗi migration mới lại
+    // làm đỏ một test chẳng liên quan.
+    expect(getSchemaVersion(db)).toBe(MIGRATIONS.at(-1)?.version ?? 0);
   });
 });

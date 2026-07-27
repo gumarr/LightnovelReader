@@ -89,6 +89,11 @@ export type SidecarClient = {
     outPath: string;
     bitrate: AudioBitrate;
     lang: BookLang;
+    /**
+     * Bảng phiên âm của user cho cuốn sách này (P3.5, tầng 3). Khoá chữ thường.
+     * Bỏ trống thì sidecar chỉ dùng từ điển ship sẵn + luật romaji.
+     */
+    pronunciations?: Record<string, string>;
     signal?: AbortSignal;
   }) => Promise<SynthesisResult>;
   baseUrl: string;
@@ -413,11 +418,23 @@ export const createSidecarClient = (options: {
     },
 
     synthesize: async (input): Promise<SynthesisResult> => {
-      const { text, voiceId, outPath, bitrate, lang, signal } = input;
+      const { text, voiceId, outPath, bitrate, lang, pronunciations, signal } = input;
 
       const raw = await request('/synthesize', {
         method: 'POST',
-        body: { text, voiceId, outPath, bitrate, lang },
+        // Bỏ hẳn `pronunciations` khi rỗng thay vì gửi `{}`: sidecar đã có
+        // `default_factory=dict`, mà mỗi segment gửi thêm một field thừa thì
+        // nhân lên hàng nghìn lượt generate.
+        body: {
+          text,
+          voiceId,
+          outPath,
+          bitrate,
+          lang,
+          ...(pronunciations === undefined || Object.keys(pronunciations).length === 0
+            ? {}
+            : { pronunciations }),
+        },
         timeoutMs: SYNTHESIZE_TIMEOUT_MS,
         ...(signal === undefined ? {} : { signal }),
       });

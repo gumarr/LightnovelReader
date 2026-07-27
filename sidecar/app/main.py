@@ -35,7 +35,8 @@ from .schemas import (
     VoiceFileInfo,
     WordTimingModel,
 )
-from .text import normalize
+from .audio.timings import remap_to_source
+from .text import normalize_mapped
 from .voices import (
     Catalog,
     CatalogError,
@@ -110,7 +111,10 @@ def create_app(config: SidecarConfig) -> FastAPI:
 
     @app.post("/normalize", response_model=NormalizeResponse)
     async def normalize_text(request: NormalizeRequest) -> NormalizeResponse:
-        return NormalizeResponse(text=normalize(request.text, request.lang), lang=request.lang)
+        # Endpoint này chỉ xem trước text sẽ đọc, không sinh timing — lấy
+        # `.spoken` là đủ, mapping để dành cho `/synthesize`.
+        normalized = normalize_mapped(request.text, request.lang)
+        return NormalizeResponse(text=normalized.spoken, lang=request.lang)
 
     @app.get("/voices/catalog", response_model=CatalogResponse)
     async def voices_catalog() -> CatalogResponse:
@@ -254,10 +258,15 @@ def create_app(config: SidecarConfig) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # Chuẩn hoá text TRƯỚC khi đọc: "11-5" thành "mười một năm", "TP." thành
-        # "thành phố"… Đây cũng chính là text mà timing bám theo, nên phải dùng
-        # bản đã chuẩn hoá cho cả hai — dùng text gốc để tính timing thì
-        # `charStart`/`charEnd` trỏ sai chỗ ngay khi có một chữ số.
-        spoken = normalize(request.text, request.lang)
+        # "thành phố", "Tokyo" thành "Tô-ki-ô"…
+        #
+        # Timing do engine sinh ra bám theo bản ĐÃ chuẩn hoá, còn UI tô chữ trên
+        # bản GỐC — thứ user đang nhìn. Nên `normalized` mang theo bảng ánh xạ
+        # để `remap_to_source` quy `charStart`/`charEnd` ngược lại sau khi tổng
+        # hợp xong. Thiếu bước đó thì highlight lệch ngay ở câu đầu có tên riêng
+        # hoặc chữ số (xem plan.md mục 8.1).
+        normalized = normalize_mapped(request.text, request.lang, request.pronunciations)
+        spoken = normalized.spoken
 
         def run() -> SynthesisResult:
             result = engine.synthesize(spoken, entry, request.bitrate)
@@ -280,6 +289,9 @@ def create_app(config: SidecarConfig) -> FastAPI:
                 status_code=500, detail=f"Không ghi được file audio: {exc}"
             ) from exc
 
+        # Quy offset về text GỐC trước khi trả — xem chú thích ở `normalize_mapped`.
+        timings = remap_to_source(result.timings, normalized)
+
         return SynthesizeResponse(
             audioPath=str(target),
             durationMs=result.audio.duration_ms,
@@ -295,7 +307,7 @@ def create_app(config: SidecarConfig) -> FastAPI:
                     charStart=t.char_start,
                     charEnd=t.char_end,
                 )
-                for t in result.timings
+                for t in timings
             ],
         )
 

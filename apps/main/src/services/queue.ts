@@ -82,6 +82,15 @@ export type QueueDeps = {
   getVoiceId: (lang: BookLang) => string | undefined;
   /** Ngôn ngữ của sách chứa segment — quyết định voice và cách normalize */
   getBookLang: (bookId: string) => BookLang;
+  /**
+   * Bảng phiên âm user tự sửa cho sách này (P3.5, tầng 3 — plan.md mục 8.1).
+   *
+   * Đọc lúc chạy như `getAudioDir`: user sửa cách đọc giữa chừng thì những
+   * segment còn trong hàng đợi phải dùng bảng mới, không phải bảng lúc enqueue.
+   * Bỏ trống thì sidecar chỉ dùng từ điển ship sẵn + luật romaji — cũng là
+   * đường mặc định, vì tầng 3 không bắt buộc.
+   */
+  getPronunciations?: (bookId: string) => Record<string, string>;
   onStatusChanged?: (status: QueueStatus) => void;
   /**
    * Một segment vừa đổi trạng thái (xong, hỏng, hoặc bắt đầu chạy).
@@ -109,6 +118,7 @@ export const createGenerateQueue = (deps: QueueDeps): GenerateQueue => {
     getBitrate,
     getVoiceId,
     getBookLang,
+    getPronunciations,
     onStatusChanged,
     onSegmentChanged,
     logger,
@@ -201,12 +211,15 @@ export const createGenerateQueue = (deps: QueueDeps): GenerateQueue => {
       // trúc thư viện.
       await mkdir(bookAudioDir(audioDir, bookId), { recursive: true });
 
+      const pronunciations = getPronunciations?.(bookId);
+
       const result = await client.synthesize({
         text: segment.text,
         voiceId,
         outPath,
         bitrate: getBitrate(),
         lang,
+        ...(pronunciations === undefined ? {} : { pronunciations }),
         signal: abort.signal,
       });
 

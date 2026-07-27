@@ -60,13 +60,50 @@ const download = () => {
   }
 };
 
+/**
+ * Chép đè `.node`, và **dịch `EBUSY` sang câu người đọc hiểu được**.
+ *
+ * `EBUSY` ở đây luôn có đúng một nguyên nhân: còn tiến trình đang nạp file này.
+ * Thường là `electron.exe` mồ côi sau khi `pnpm dev` hoặc `pnpm ui-check` bị
+ * ngắt giữa chừng (Ctrl-C không chạy được khối dọn dẹp).
+ *
+ * Lỗi gốc của Node chỉ nói "copyfile ... EBUSY" kèm hai đường dẫn dài — không
+ * gợi ý gì về tiến trình còn sống, và đã tốn một lượt để lần ra. Script này
+ * chạy ở đầu `pnpm dev`, `pnpm test` và `pnpm ui-check` nên đây là chỗ đáng
+ * chỉ tận nơi nhất.
+ */
+const copyWithDiagnostics = (from, to) => {
+  try {
+    copyFileSync(from, to);
+  } catch (error) {
+    if (error?.code !== 'EBUSY' && error?.code !== 'EPERM') throw error;
+
+    const list = spawnSync('tasklist', ['/FI', 'IMAGENAME eq electron.exe', '/NH'], {
+      encoding: 'utf8',
+    });
+    const holders = (list.stdout ?? '')
+      .split('\n')
+      .filter((line) => /electron\.exe/i.test(line))
+      .length;
+
+    throw new Error(
+      `Không ghi đè được ${to}\n` +
+        `  Lý do: file đang bị một tiến trình giữ (${error.code}).\n` +
+        (holders > 0
+          ? `  Thấy ${holders} electron.exe đang chạy — nhiều khả năng là thủ phạm.\n`
+          : '  Không thấy electron.exe; kiểm cả app đã đóng gói đang mở.\n') +
+        '  Cách sửa: taskkill /F /IM electron.exe /T  rồi chạy lại lệnh vừa rồi.',
+    );
+  }
+};
+
 mkdirSync(cacheDir, { recursive: true });
 
 if (existsSync(cached)) {
-  copyFileSync(cached, binary);
+  copyWithDiagnostics(cached, binary);
   console.log(`[sqlite-abi] Dùng bản ${target} từ cache`);
 } else {
   download();
-  copyFileSync(binary, cached);
+  copyWithDiagnostics(binary, cached);
   console.log(`[sqlite-abi] Đã tải và lưu cache bản ${target}`);
 }

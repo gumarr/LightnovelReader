@@ -2645,6 +2645,34 @@ pnpm dev
 
 Hoặc chạy từ PowerShell/Terminal ngoài VS Code.
 
+### 5.5 `EBUSY` khi tráo ABI — có Electron mồ côi đang giữ file
+
+Triệu chứng: `pnpm dev` / `pnpm ui-check` / `pnpm test` chết ngay bước đầu với
+
+```
+Error: EBUSY: resource busy or locked, copyfile
+  '.abi-cache\better_sqlite3-electron.node' -> '...\better_sqlite3.node'
+```
+
+**Nguyên nhân luôn là một:** còn `electron.exe` từ lượt chạy trước đang **nạp**
+file `.node` đó. Windows khoá DLL đang dùng, không cho ghi đè. Xảy ra khi
+`pnpm dev` hoặc `pnpm ui-check` bị ngắt giữa chừng — khối dọn dẹp không chạy tới
+nơi nên để lại 4–5 tiến trình con mồ côi.
+
+Thông báo gốc của Node chỉ nói về `copyfile` kèm hai đường dẫn dài, **không hề
+gợi ý** rằng thủ phạm là tiến trình còn sống — đã tốn một lượt để lần ra. Nay
+`scripts/sqlite-abi.mjs` bắt `EBUSY`/`EPERM` và in thẳng số `electron.exe` đang
+chạy cùng lệnh sửa; `ui-check` còn **tự dọn** trước khi tráo ABI.
+
+Sửa tay:
+
+```powershell
+taskkill /F /IM electron.exe /T
+```
+
+Chỉ giết `electron.exe`. **Đừng** giết `node.exe` hàng loạt — trong đó có thể có
+dev server, editor, hoặc chính terminal đang chạy.
+
 ### 5.4 Sidecar dùng Python 3.12, KHÔNG phải 3.11 như plan.md ghi
 
 Máy dev có 3.12 và 3.14, **không có 3.11**. Đã thống nhất với user dùng 3.12

@@ -120,14 +120,44 @@ const packagedExe = () => {
  *
  * Bản đóng gói không cần bước này: nó mang `.node` riêng đã build cho Electron.
  */
+/**
+ * Giết Electron còn sót từ lượt chạy trước.
+ *
+ * Ngắt script giữa chừng (Ctrl-C, hoặc công cụ gọi nó bị huỷ) thì khối `finally`
+ * không chạy tới nơi, để lại vài `electron.exe` mồ côi. Chúng vẫn **giữ**
+ * `better_sqlite3.node` đang nạp, nên lượt sau `copyFileSync` ném `EBUSY` —
+ * thông báo lỗi nói về copy file, không hề gợi ý rằng nguyên nhân là tiến trình
+ * còn sống. Đã mất một lượt để lần ra.
+ *
+ * Chỉ giết `electron.exe`: `node.exe` có thể là chính script này, là dev server,
+ * hoặc là tiến trình khác của user.
+ */
+const killOrphanElectron = () => {
+  const list = spawnSync('tasklist', ['/FI', 'IMAGENAME eq electron.exe', '/NH'], {
+    encoding: 'utf8',
+  });
+  if (!/electron\.exe/i.test(list.stdout ?? '')) return;
+
+  log('Thấy electron.exe còn sót từ lượt trước — dọn trước khi tráo ABI');
+  spawnSync('taskkill', ['/F', '/IM', 'electron.exe', '/T'], { stdio: 'ignore' });
+  // Windows nhả handle không tức thì sau khi tiến trình chết
+  spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], { stdio: 'ignore' });
+};
+
 const ensureElectronAbi = () => {
+  killOrphanElectron();
+
   log('Tráo better-sqlite3 sang ABI của Electron');
   const result = spawnSync(process.execPath, [join(root, 'scripts', 'sqlite-abi.mjs'), 'electron'], {
     cwd: root,
     stdio: 'inherit',
   });
   if (result.status !== 0) {
-    throw new Error(`Không tráo được ABI cho Electron (mã ${result.status})`);
+    throw new Error(
+      `Không tráo được ABI cho Electron (mã ${result.status}).\n` +
+        '  Nếu lỗi là EBUSY: còn tiến trình đang giữ better_sqlite3.node.\n' +
+        '  Kiểm bằng `tasklist | findstr electron` rồi `taskkill /F /IM electron.exe /T`.',
+    );
   }
 };
 

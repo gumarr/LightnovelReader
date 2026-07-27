@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AppSettings, BookDetail, Chapter } from '@ln/shared';
-import { JOB_PRIORITY_PREFETCH } from '@ln/shared';
+import type { AppSettings, BookDetail, Chapter, Segment } from '@ln/shared';
+import { JOB_PRIORITY_PREFETCH, JOB_PRIORITY_URGENT } from '@ln/shared';
 import { installFakeApi, fakeBook, fakeSegments, type FakeApi } from '@/test/fake-api';
 import { useReaderStore } from '@/stores/reader-store';
 import { useQueueStore } from '@/stores/queue-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { usePlayerStore } from '@/stores/player-store';
+import { countOpenObjectUrls } from '@/test/setup';
 import { ReaderScreen } from './ReaderScreen';
 
 /**
@@ -81,6 +83,15 @@ beforeEach(async () => {
     error: null,
   });
   useQueueStore.setState({ status: null, error: null, prefetched: [] });
+  usePlayerStore.setState({
+    state: 'idle',
+    segmentId: null,
+    timings: [],
+    durationMs: 0,
+    playbackRate: 1,
+    skipped: [],
+    error: null,
+  });
   await loadSettings();
 });
 
@@ -391,5 +402,150 @@ describe('bố cục khung đoạn (P2.7b)', () => {
 
     const scroll = await screen.findByTestId('segment-scroll');
     expect(scroll.parentElement?.className).toContain('min-h-0');
+  });
+});
+
+describe('player nối vào trình đọc', () => {
+  it('có thanh điều khiển player', async () => {
+    await setup();
+    expect(await screen.findByTestId('player-bar')).toBeInTheDocument();
+  });
+
+  it('bấm phát thì lấy audio qua IPC và cuộn viewer tới đoạn đang phát', async () => {
+    fake = installFakeApi({
+      settings: { voiceVi: 'vi_VN-vais1000-medium' },
+      segments: fakeSegments('ch-1').map((s) => ({ ...s, status: 'ready' as const })),
+    });
+    useSettingsStore.setState({ settings: null, error: null, loading: false });
+    await useSettingsStore.getState().load();
+
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    await act(async () => {
+      await usePlayerStore.getState().toggle();
+    });
+
+    await waitFor(() => {
+      expect(fake.api.reader.getSegmentAudio).toHaveBeenCalledWith('ch-1-s1');
+    });
+    // `setActiveSegment` là đường P1.6c đã dựng sẵn: viewer cuộn + tô
+    expect(useReaderStore.getState().activeSegmentId).toBe('ch-1-s1');
+  });
+
+  it('xếp segment sắp phát lên ĐẦU hàng đợi', async () => {
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    await act(async () => {
+      await usePlayerStore.getState().toggle();
+    });
+
+    await waitFor(() => {
+      expect(fake.api.queue.enqueueSegments).toHaveBeenCalledWith(
+        expect.objectContaining({ priority: JOB_PRIORITY_URGENT }),
+      );
+    });
+  });
+
+  it('hàng đợi báo segment xong thì player đang chờ phát ngay', async () => {
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    await act(async () => {
+      await usePlayerStore.getState().toggle();
+    });
+    // Mọi segment mặc định `pending` → player đứng chờ
+    await waitFor(() => expect(usePlayerStore.getState().state).toBe('waiting'));
+
+    const segment = useReaderStore.getState().segments[0] as Segment;
+    await act(async () => {
+      fake.emitSegmentUpdated({ ...segment, status: 'ready', durationMs: 1000 });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(usePlayerStore.getState().state).toBe('playing'));
+  });
+
+  it('file audio bị xoá dưới chân player thì BỎ QUA, không dừng nhạc', async () => {
+    // Storage Manager vừa xoá: DB nói `ready` nhưng getSegmentAudio trả NOT_FOUND
+    await loadSettings();
+    fake = installFakeApi({
+      settings: { voiceVi: 'vi_VN-vais1000-medium' },
+      segments: fakeSegments('ch-1').map((s) => ({ ...s, status: 'ready' as const })),
+      missingAudio: ['ch-1-s1'],
+    });
+    useSettingsStore.setState({ settings: null, error: null, loading: false });
+    await useSettingsStore.getState().load();
+
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    await act(async () => {
+      await usePlayerStore.getState().toggle();
+    });
+
+    await waitFor(() => {
+      const state = usePlayerStore.getState();
+      // Nhảy sang đoạn kế và VẪN đang phát — không dừng, không hộp lỗi
+      expect(state.segmentId).toBe('ch-1-s2');
+      expect(state.state).toBe('playing');
+    });
+    expect(usePlayerStore.getState().error).toBeNull();
+    expect(screen.getByTestId('player-skipped')).toHaveTextContent('Đã bỏ qua 1 đoạn');
+  });
+
+  it('rời trình đọc thì nhả HẾT Blob URL — không rò 30 KB mỗi câu', async () => {
+    fake = installFakeApi({
+      settings: { voiceVi: 'vi_VN-vais1000-medium' },
+      segments: fakeSegments('ch-1').map((s) => ({ ...s, status: 'ready' as const })),
+    });
+    useSettingsStore.setState({ settings: null, error: null, loading: false });
+    await useSettingsStore.getState().load();
+
+    const { unmount } = render(<ReaderScreen detail={detail()} onBack={vi.fn()} />);
+    await screen.findByTestId('player-bar');
+    await screen.findByTestId('segment-scroll');
+
+    await act(async () => {
+      await usePlayerStore.getState().toggle();
+    });
+    await waitFor(() => expect(usePlayerStore.getState().state).toBe('playing'));
+    // Có ít nhất một url đang mở thì phép kiểm dưới mới có nghĩa
+    expect(countOpenObjectUrls()).toBeGreaterThan(0);
+
+    await act(async () => {
+      unmount();
+    });
+
+    // `reset()` gọi `sink.dispose()` TRƯỚC khi bỏ deps — sau đó không còn sink
+    expect(countOpenObjectUrls()).toBe(0);
+    expect(usePlayerStore.getState().state).toBe('idle');
+  });
+
+  it('phát nhiều đoạn liên tiếp không tích tụ Blob URL', async () => {
+    fake = installFakeApi({
+      settings: { voiceVi: 'vi_VN-vais1000-medium' },
+      segments: fakeSegments('ch-1').map((s) => ({ ...s, status: 'ready' as const })),
+    });
+    useSettingsStore.setState({ settings: null, error: null, loading: false });
+    await useSettingsStore.getState().load();
+
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    await act(async () => {
+      await usePlayerStore.getState().toggle();
+    });
+    await waitFor(() => expect(usePlayerStore.getState().state).toBe('playing'));
+
+    for (let i = 0; i < 2; i += 1) {
+      await act(async () => {
+        await usePlayerStore.getState().handleEnded();
+      });
+    }
+
+    // Mỗi lượt phát nhả url của lượt trước → luôn chỉ còn đúng một cái đang mở
+    expect(countOpenObjectUrls()).toBe(1);
   });
 });

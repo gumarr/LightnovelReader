@@ -49,6 +49,9 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
 | Ẩn/hiện panel cho **cùng** số dòng | thứ tự khởi tạo còn quyết định kết quả |
 | Canvas PDF có pixel khác trắng | pdfjs hỏng ở bản đóng gói (4.19) |
 | Thanh dung lượng có chiều cao thật | Storage Manager hỏng bố cục |
+| Thanh player hiện ra, đủ mốc tốc độ, màu không trong suốt | `PlayerBar` hỏng bố cục hoặc mất màu |
+| **Chromium giữ `preservesPitch`** | nền tảng của "đổi tốc độ ≠ regenerate" (CLAUDE.md) — jsdom không có media element nên đây là chỗ **duy nhất** kiểm được |
+| Bấm mốc tốc độ thì mốc đó sáng lên | đứt ở một mắt trong chuỗi store → sink → thẻ `<audio>` |
 
 Đổi theme bằng cách **bấm nút thật** (`[data-theme-resolved]`), không sửa
 `classList` — cần biết cả đường đi nút → IPC → settings → biến CSS có đúng không.
@@ -59,6 +62,9 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
   qua (script nói rõ, không âm thầm báo đạt).
 - Phần canvas chỉ chạy khi sách đang mở là PDF; sách DOCX thì đổi sang kiểm số
   khối và chiều cao nội dung.
+- **Không nghe được tiếng.** CDP không đọc được đầu ra âm thanh, nên script chỉ
+  chứng minh được thẻ `<audio>` tồn tại, `preservesPitch` được giữ và nút bấm
+  thông suốt. "Nghe liên tục hết chương" (DoD Phase 3) vẫn phải do người kiểm.
 - **Chưa vào CI.** Bản dev cần venv Python cho sidecar, và cả hai bản cần một
   sách thật — chưa dựng được trên runner sạch. Xem PROGRESS mục 8.
 

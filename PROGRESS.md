@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-27 · commit `1df90c2`
+> **Cập nhật lần cuối:** 2026-07-27 · commit `<P3.2>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,10 +39,10 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P3.2 — Playback engine (xem mục 3).
+**Việc tiếp theo:** P3.3 — Player UI hoàn chỉnh (xem mục 3).
 **Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy
 lẫn bản đóng gói.** P2.8 đã trả **hết 4 nợ mức Cao** trong mục 8.
-**Phase 3 đang làm: P3.1 xong** (tầng dữ liệu audio + timing).
+**Phase 3 đang làm: P3.1 + P3.2 xong** (tầng dữ liệu, và máy trạng thái phát).
 
 ---
 
@@ -644,14 +644,75 @@ Tìm ra **1 lỗi thật** mà 1667 unit test không lộ — xem mục 4.50. Đ
 bảy ghi nhận "test xanh mà đường nối thật hỏng", và lần này nạn nhân là chính
 lớp probe dựng ra để bắt loại lỗi đó.
 
+### Phase 3 — P3.2 Playback engine ✅
+
+Lần đầu app phát được audio liên tục. Ràng buộc **user đặt ra** dẫn dắt toàn bộ
+thiết kế: *đoạn nào lỗi thì bỏ qua luôn, không làm gián đoạn audio của người dùng.*
+
+| File | Vai trò | Test |
+|---|---|---|
+| `player/playback-plan.ts` | `decideSegment`, `findNextPlayable`, `tailSkips`, `findPreloadTarget`, `segmentsToPrioritise` — **hàm thuần** | 34 |
+| `player/audio-element.ts` | Bọc `<audio>` + Blob URL + preloader — chỗ **duy nhất** chạm DOM audio | 19 |
+| `stores/player-store.ts` | Máy trạng thái: `idle`/`playing`/`paused`/`waiting` | 44 |
+| `player/usePlayer.ts` | Dựng thẻ audio, nối IPC, nhả Blob URL khi rời | — |
+| `player/PlayerBar.tsx` | Nút phát/trước/sau + 6 mốc tốc độ | 15 |
+| `player/format.ts` | Nhãn, mốc tốc độ, phần trăm (thuần) | 18 |
+| `reader/ReaderScreen.tsx` | Nối player, chuyển `queue:segmentUpdated` sang player | +7 |
+| `shared/constants.ts` | `PLAYBACK_LOOKAHEAD_SEGMENTS = 5` | — |
+| `test/setup.ts` | Giả `HTMLMediaElement.play/pause/load` + `URL.createObjectURL` | — |
+
+**Bốn đường "bỏ qua", tất cả dồn về một chỗ** (`playAt`) nên quy tắc chỉ cần đúng
+một lần:
+
+| Ca | Xử lý |
+|---|---|
+| `status === 'error'` | Bỏ qua ngay, **không thử lại** — hàng đợi đã cháy hết lượt retry mới đặt `error` |
+| Đoạn không có chữ (`...`, `「」`) | Bỏ qua, không xếp hàng đợi. 5/195 đoạn trên sách thật rơi vào ca này |
+| `.ogg` cụt, Chromium không giải mã được | Bỏ qua — DB nói `ready`, IPC trả bytes, chỉ trình duyệt mới biết |
+| File bị Storage Manager xoá dưới chân player | `NOT_FOUND` → bỏ qua, đi tiếp |
+
+Mười đoạn hỏng liên tiếp vẫn chỉ là **một** lần gọi `findNextPlayable`, không
+phải mười vòng sự kiện. Đoạn đã bỏ hiện thành **một dòng chữ nhỏ** ("Đã bỏ qua N
+đoạn"), không phải hộp cảnh báo — user đang nghe, không cần bấm gì.
+
+Chi tiết quyết định ở mục 4.51–4.54. Ba điểm đáng nhớ nhất:
+
+- **`waiting` là trạng thái duy nhất user phải chờ**, và chỉ khi audio *chưa sinh
+  xong*. Mọi ca khác đều đi tiếp.
+- **Store không giữ vị trí phát theo ms** — thứ đó đổi 60 lần/giây. P3.4 đọc thẳng
+  `sink.positionMs()` trong `rAF`.
+- **Kho nạp trước giữ cả `SegmentAudio`**, không riêng bytes: giữ mỗi bytes thì lúc
+  phát vẫn phải gọi IPC lần nữa để lấy timing — đúng quãng trễ nó sinh ra để xoá.
+
+**Đã chạy thật trên app đang chạy** (`pnpm ui-check` qua CDP — jsdom không phát
+audio nên đây là chỗ duy nhất chứng minh được):
+
+| Phép kiểm | Số đo thật |
+|---|---|
+| Thanh player có chiều cao thật | ✅ **46 px** |
+| Đủ 6 mốc tốc độ | ✅ 6 |
+| Trạng thái ban đầu | ✅ `idle` |
+| Nền thanh player | ✅ `rgb(23, 23, 26)` — không trong suốt |
+| Nút phát | ✅ `rgb(129, 140, 248)` — không trong suốt |
+| **Chromium giữ `preservesPitch`** | ✅ `true` — nền tảng của "đổi tốc độ ≠ regenerate" |
+| `playbackRate` đặt được | ✅ `1.5` |
+| Bấm mốc 1.5× thì mốc sáng lên | ✅ đi qua đúng chuỗi store → sink → thẻ audio |
+| Màu mốc đang chọn | ✅ `rgb(129, 140, 248)` |
+
+`pnpm ui-check` nay có **33 phép kiểm** (24 → 33), **33/33 đạt** ở bản dev.
+
+Tìm ra **1 lỗi thật** mà 1793 unit test suýt không lộ — xem mục 4.53. Lỗi này bị
+bắt bởi một test tích hợp ở `ReaderScreen`, không phải test đơn vị của store: nó
+chỉ tồn tại ở **chỗ nối** giữa `reader-store` và `player-store`.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1667 passed** (+40 ở P3.1: 28 timing, 11 handler, 1 preload) |
+| Unit test TypeScript | **1801 passed** (+134 ở P3.2) |
 | Unit test sidecar (pytest) | **345 passed** (không đổi — P3.1 không đụng sidecar) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (+1 ở P3.1) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **24 phép kiểm** × 2 bản (dev + đóng gói) |
+| **Kiểm UI thật (`pnpm ui-check`)** | **33 phép kiểm** (+9 player ở P3.2), 33/33 đạt ở bản dev |
 | Schema DB | **v2** (v2 thêm `chapters.error_count` — mục 4.42) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
@@ -668,11 +729,36 @@ Giữ nguyên quy ước **logic thuần trước, UI sau**:
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
 | P3.1 | Tầng dữ liệu: `reader:getSegmentAudio`, ước lượng timing, tra từ theo mốc | ✅ Xong |
-| P3.2 | Playback engine: máy trạng thái play/pause/next/prev, nối segment liên tục, `playbackRate` + `preservesPitch`, segment sắp phát nhảy đầu hàng đợi | ⬅️ **Đang tới** |
-| P3.3 | Player UI: thanh điều khiển, tốc độ 0.5–2.0×, nối vào `ReaderScreen` | ⬜ Chưa |
+| P3.2 | Playback engine: máy trạng thái play/pause/next/prev, nối segment liên tục, `playbackRate` + `preservesPitch`, segment sắp phát nhảy đầu hàng đợi | ✅ Xong |
+| P3.3 | Player UI đầy đủ: thanh tiến độ trong đoạn, phím tắt, đường tắt tới màn Giọng đọc | ⬅️ **Đang tới** |
 | P3.4 | Subtitle pane 3 dòng + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ⬜ Chưa |
 
+P3.2 đã kèm sẵn một `PlayerBar` chạy được (nút phát/trước/sau + 6 mốc tốc độ) vì
+không có nút thì không kiểm được máy trạng thái trên app thật. P3.3 làm phần còn
+lại của plan.md.
+
 **DoD Phase 3** (`plan.md`): nghe liên tục hết chương, chữ sáng đúng nhịp.
+
+### Những gì P3.2 để lại sẵn cho P3.3 / P3.4
+
+- **Timing của đoạn đang phát nằm sẵn trong `player-store`**: `timings` +
+  `durationMs`, cập nhật mỗi lần đổi segment. P3.4 chỉ cần đọc, không phải gọi IPC.
+- **Vị trí phát KHÔNG có trong store** — cố ý. Đọc `sink.positionMs()` trong
+  `requestAnimationFrame` rồi ghi thẳng vào DOM qua `ref`. Đưa vào state là
+  re-render 60 lần/giây, đúng thứ CLAUDE.md cấm.
+- **`wordIndexAt` (P3.1) + `positionMs()` (P3.2) là đủ để highlight**: mỗi khung
+  hình gọi `wordIndexAt(timings, sink.positionMs())`, so với chỉ số lần trước, chỉ
+  đụng DOM khi khác. Nhưng `sink` hiện **không expose ra ngoài store** — P3.4 phải
+  thêm một cách đọc vị trí (getter trên store, hoặc trả `sink` từ `usePlayer`).
+- **`seek(positionMs)` đã có** cho click-to-seek; ghép với `seekMsForChar` của P3.1
+  là xong đường "bấm vào chữ để nghe lại từ đó".
+- **`skipped` đã đủ dữ liệu để hiện chi tiết**: mỗi mục có `segmentId`, `index`,
+  `reason`. Hiện đang gộp thành một dòng; muốn danh sách bấm được thì không cần
+  đổi store.
+- **`PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa được đo trên sách thật.** Con số suy ra
+  từ RTF 0.24: sinh ~2s, phát ~10s. Nếu P3.3 thấy player vẫn hụt thì tăng.
+- **Phím tắt chưa có** (plan.md Phase 5 nhắc Space, ←/→). Store đã có `toggle`,
+  `next`, `previous` nên chỉ là chuyện gắn listener.
 
 ### Những gì P3.1 để lại sẵn cho P3.2
 
@@ -1958,6 +2044,94 @@ cả đường đi nút → IPC → settings → biến CSS có ra đúng màu k
 `StorageManager` được thêm `data-testid="storage-back"` — dò nút bằng chữ
 ("Thư viện") đã đỏ giả một lượt vì nhãn thật là "← Quay lại".
 
+### 4.51 "Bỏ qua đoạn hỏng" là một quyết định về TRẠNG THÁI, nên nó là hàm thuần
+
+User đặt ra ràng buộc: *đoạn nào lỗi thì bỏ qua luôn, không làm gián đoạn audio.*
+
+Cách dễ là rải `if (segment.status === 'error') continue` vào từng chỗ gọi. Không
+làm vậy vì có **năm** đường tới cùng câu hỏi đó — bấm phát, hết đoạn, nút sau, nút
+trước, hàng đợi báo xong — và một chỗ quên là một chỗ nhạc đứng lại.
+
+Thay vào đó `decideSegment()` trả một trong bốn việc: `play` / `skip` / `wait` /
+`request`. Mọi đường phát dồn về `playAt()`, và `playAt` là chỗ **duy nhất** đọc
+quyết định đó. Thêm một ca bỏ qua mới về sau chỉ sửa một hàm.
+
+Được thêm một thứ quan trọng: quy tắc này kiểm được **không cần `<audio>`**. jsdom
+không phát audio, nên nếu logic nằm lẫn trong component thì mỗi ca lại phải dựng
+một thẻ media giả. Tách ra thì 34 test chạy trong 8ms.
+
+`findNextPlayable` trả luôn **mảng `skipped`** thay vì dừng ở từng đoạn hỏng: mười
+đoạn hỏng liên tiếp là một lần gọi, không phải mười vòng sự kiện. Đây chính là chỗ
+lời hứa "không gián đoạn" được giữ — dừng lại từng cái một thì mỗi lần là một
+quãng lặng.
+
+### 4.52 Bốn kiểu hỏng khác nhau, cùng một cách xử lý
+
+Audio "không phát được" đến từ bốn nguồn, và ban đầu tôi định xử lý riêng từng cái:
+
+| Nguồn | Lộ ra ở đâu |
+|---|---|
+| `status === 'error'` | DB — hàng đợi đã cháy hết lượt retry |
+| Đoạn không có chữ (`...`, `「」`) | Chính text — Piper không sinh nổi audio |
+| File `.ogg` bị xoá dưới chân player | IPC trả `NOT_FOUND` |
+| File `.ogg` cụt vì mất điện lúc ghi | **Chromium** — DB nói `ready`, IPC trả bytes, chỉ lúc giải mã mới biết |
+
+Cả bốn đều quy về một việc: **đi tiếp**. Gộp lại thì `handleAudioError` chỉ là
+`noteSkipped` rồi `playAt(index + 1)` — cùng hai dòng với ca `status === 'error'`.
+
+Điểm đáng nói là ca thứ tư: nó **không thể** phát hiện trước lúc phát. Không có nó
+thì một file cụt làm player đứng im mà mọi chỉ báo đều nói "đang phát".
+
+Ngược lại, `error` **không** được thử lại tự động. Hàng đợi đã thử tới hết
+`JOB_MAX_ATTEMPTS` mới đặt trạng thái đó; xếp lại là bắt user chờ đúng chuỗi thất
+bại ấy lần nữa, ngay giữa lúc đang nghe.
+
+### 4.53 Player đứng chờ mãi vì danh sách segment chưa kịp cập nhật
+
+Lỗi thật, và là loại chỉ tồn tại ở **chỗ nối** giữa hai store.
+
+Đường đi: player đứng ở `waiting` chờ segment `s1`. Main đẩy
+`queue:segmentUpdated` báo `s1` đã `ready`. `ReaderScreen` gọi hai thứ trong cùng
+một lượt — `applySegmentUpdate` (cho `reader-store`) và
+`player.handleSegmentUpdate`. Nhưng `player-store` đọc segment qua
+`getSegments()`, mà hàm đó trỏ vào một `ref` chỉ được cập nhật khi **React render
+lại**. Trong cùng lượt đó nó vẫn trả danh sách cũ, nơi `s1` còn là `pending`.
+
+Kết quả: `findNextPlayable` lại quyết định `wait`, player đứng nguyên. Audio đã
+sẵn sàng trên đĩa mà UI báo "đang tạo audio…" vĩnh viễn.
+
+Sửa: `playAt(from, fresher?)` nhận chính segment vừa nhận từ event và **vá nó vào**
+danh sách trước khi quyết định. Không đi đường "chờ một tick rồi thử lại" — nó biến
+một lỗi tất định thành một lỗi theo thời điểm, loại khó chẩn đoán nhất.
+
+Điều đáng ghi nhất không phải bản sửa mà là **cái gì bắt được lỗi**: 44 test đơn
+vị của `player-store` đều xanh, vì chúng tự sửa danh sách giả rồi mới gọi
+`handleSegmentUpdate` — tức là chúng giả định đúng cái điều kiện đang sai. Chỉ test
+tích hợp ở `ReaderScreen`, đi qua `fake-api` và React thật, mới lộ ra. Nay có thêm
+một test đơn vị **cố ý không sửa danh sách** để khoá lại.
+
+### 4.54 Bốn thứ jsdom không có, và vì sao giả ở `setup.ts` chứ không bọc `?.`
+
+Player là phần đầu tiên của app chạm tới media API, và jsdom thiếu cả bốn:
+`HTMLMediaElement.play` (không tồn tại), `pause`/`load` (ném "Not implemented"),
+`URL.createObjectURL`/`revokeObjectURL` (không tồn tại).
+
+Giả ở `src/test/setup.ts` cùng chỗ với `matchMedia`, `DOMMatrix`, `ResizeObserver`
+— cùng bản chất: **jsdom thiếu, Chromium thật luôn có.** Bọc `?.` quanh chúng
+trong `audio-element.ts` thì code sản phẩm mang theo nhánh không bao giờ chạy trên
+Electron, và tệ hơn là che mất lỗi thật nếu sau này gọi nhầm lúc thẻ đã bị gỡ.
+
+Bản giả `createObjectURL` **đếm số url chưa thu hồi** và xuất
+`countOpenObjectUrls()`. Nhờ đó rò rỉ Blob URL trở thành thứ test bắt được: phát
+ba đoạn liên tiếp phải còn đúng **một** url mở, và rời trình đọc phải về **không**.
+Không có bộ đếm thì "nhớ gọi `revokeObjectURL`" chỉ là một dòng comment — mà mỗi
+segment là ~30 KB, một chương 1353 segment là ~40 MB.
+
+Còn một thứ **không** giả được: có nghe thấy tiếng hay không. CDP cũng không đọc
+được đầu ra âm thanh. Thứ gần nhất `ui-check` kiểm được là Chromium có thật sự giữ
+`preservesPitch` — nền tảng của lời hứa "đổi tốc độ không regenerate audio" trong
+CLAUDE.md. Việc nghe thử vẫn phải do người làm.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -2043,6 +2217,7 @@ packages/shared/src/
   schemas.ts      zod, validate ở biên IPC
   estimate.ts     Ước lượng thời lượng/dung lượng trước khi generate
   timings.ts      Ước lượng mốc từng từ + tra từ theo mốc (hàm thuần, mục 4.48–4.49)
+                  PLAYBACK_LOOKAHEAD_SEGMENTS ở constants.ts (P3.2)
   constants.ts    SEGMENT_MAX_CHARS, bitrate, ngưỡng job…
 
 packages/parsers/src/
@@ -2137,6 +2312,16 @@ apps/renderer/src/
   stores/voice-store.ts    Catalog + tiến độ tải theo voiceId
   stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng
   stores/storage-store.ts  Dung lượng + xoá; giữ lỗi qua lượt nạp lại
+  stores/player-store.ts   Máy trạng thái phát: idle/playing/paused/waiting.
+                           KHÔNG giữ vị trí ms (đổi 60 lần/giây — P3.4 đọc rAF)
+  features/player/
+    playback-plan.ts       "Đoạn này làm gì với nó": play/skip/wait/request.
+                           Chỗ DUY NHẤT quyết định bỏ qua đoạn hỏng (4.51)
+    audio-element.ts       Bọc <audio> + Blob URL + kho nạp trước.
+                           Chỗ DUY NHẤT chạm DOM audio; tự thu hồi url (4.54)
+    usePlayer.ts           Dựng thẻ audio, nối window.api, dọn khi rời
+    PlayerBar.tsx          Nút phát/trước/sau + 6 mốc tốc độ
+    format.ts              Nhãn trạng thái, mốc tốc độ, phần trăm (thuần)
   features/generate/
     GenerateControls.tsx   Nút tạo audio chương/cả sách (chỗ DUY NHẤT gọi queue:*)
     GenerateEstimateDialog.tsx  Hộp ước lượng BẮT BUỘC trước khi generate (4.38)
@@ -2266,6 +2451,10 @@ scripts/
 | Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
 | **`apps/main/probe/` nằm ngoài typecheck** | **TB** | `apps/main/tsconfig.json` chỉ `include` `src/**/*.ts`. Đã kiểm chứng: đổi `errorCount` thành `XXerrorCount` mà `tsc --noEmit` vẫn xanh. Cộng với việc probe không ở `pnpm test` lẫn CI thì nó **không có lưới nào** — chính vì thế lỗi 4.50 nằm im qua hai commit. Sửa: nới `include` (kèm `rootDir`) hoặc thêm `tsconfig.probe.json` nối vào `pnpm typecheck` |
-| Renderer phải tự `revokeObjectURL` cho audio | TB | `reader:getSegmentAudio` trả `ArrayBuffer`; renderer bọc Blob URL nên **phải** thu hồi khi đổi segment. Chưa có gì ép — quên là mỗi câu rò ~30 KB, cả chương 1353 segment là ~40 MB. P3.2 phải làm trong cùng chỗ tạo URL, và nên có test đếm số lần gọi |
+| ~~Renderer phải tự `revokeObjectURL` cho audio~~ | ✅ Xong | P3.2: việc tạo và thu hồi gom vào `audio-element.ts`, không có đường nào tạo url mà không đi qua chỗ thu hồi. `setup.ts` **đếm** url chưa nhả và xuất `countOpenObjectUrls()` — test khoá lại: phát 3 đoạn liên tiếp còn đúng 1 url mở, rời trình đọc về 0 (mục 4.54) |
+| `PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa đo trên sách thật | TB | Suy ra từ RTF 0.24 (sinh ~2s, phát ~10s) chứ chưa nghe hết một chương thật để xem player có hụt không. Quá nhỏ thì đứt tiếng giữa các câu; quá lớn thì generate audio user không nghe tới. Đo khi P3.3 nghe liên tục một chương |
+| Chưa nghe thử bằng tai | **TB** | `ui-check` chứng minh được thẻ audio tồn tại, `preservesPitch` được giữ, nút bấm thông suốt — nhưng **CDP không đọc được đầu ra âm thanh**. "Nghe liên tục hết chương, chữ sáng đúng nhịp" (DoD Phase 3) vẫn phải do người kiểm. Làm ở P3.3/P3.4 khi có đủ nút |
+| Player chưa có phím tắt | Thấp | plan.md Phase 5 nhắc Space, ←/→, J/K. Store đã có `toggle`/`next`/`previous` nên chỉ là gắn listener — để ở P3.3 |
+| Bấm đoạn lúc player `idle` không tự phát | Thấp | Cố ý: bấm đoạn để xem nó ở trang nào là thao tác thường gặp, tự phát tiếng lúc đó là bất ngờ khó chịu. Đang phát rồi thì bấm đoạn khác mới nhảy tới. Đổi được nếu user thấy ngược |
 | `getSegmentAudio` chưa kiểm trên sách EN | Thấp | Probe chạy trên giọng VI. Cách gộp phoneme → từ của espeak với tiếng Anh chưa đo (đã là nợ sẵn ở hàng "Timing chưa kiểm trên giọng EN"); đường ước lượng thì độc lập ngôn ngữ vì chỉ đếm ký tự |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

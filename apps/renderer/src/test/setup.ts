@@ -72,6 +72,44 @@ if (!('DOMMatrix' in globalThis)) {
 Element.prototype.scrollIntoView = vi.fn();
 Element.prototype.scrollTo = vi.fn();
 
+/**
+ * jsdom **không phát được audio**: `play` không tồn tại, `pause` và `load` ném
+ * "Not implemented". Player dựng một thẻ `<audio>` thật (xem `usePlayer`), nên
+ * thiếu ba hàm này là mọi test render trình đọc đều ngập lỗi — mà không lỗi nào
+ * là lỗi của app.
+ *
+ * Giả ở đây chứ không bọc `?.` trong `audio-element.ts`: trên Electron thật cả
+ * ba luôn có, và bọc điều kiện quanh chúng sẽ che mất lỗi thật nếu sau này gọi
+ * nhầm lúc thẻ đã bị gỡ. Việc phát audio thật chỉ kiểm được ở app đang chạy.
+ */
+HTMLMediaElement.prototype.play = vi.fn(async () => undefined);
+HTMLMediaElement.prototype.pause = vi.fn();
+HTMLMediaElement.prototype.load = vi.fn();
+
+/**
+ * jsdom cũng thiếu `URL.createObjectURL`/`revokeObjectURL` — player bọc bytes
+ * `.ogg` thành Blob URL cho thẻ audio.
+ *
+ * Đếm số url đang mở để test kiểm được **rò rỉ**: mỗi segment ~30 KB, một chương
+ * 1353 segment là ~40 MB nếu quên thu hồi. `audio-element.test.ts` tự thay hai
+ * hàm này bằng bản riêng để đếm chi tiết hơn.
+ */
+const openObjectUrls = new Set<string>();
+
+/** Số Blob URL chưa được thu hồi — dùng để bắt rò rỉ trong test */
+export const countOpenObjectUrls = (): number => openObjectUrls.size;
+
+let objectUrlSeq = 0;
+URL.createObjectURL = vi.fn(() => {
+  objectUrlSeq += 1;
+  const url = `blob:jsdom/${String(objectUrlSeq)}`;
+  openObjectUrls.add(url);
+  return url;
+});
+URL.revokeObjectURL = vi.fn((url: string) => {
+  openObjectUrls.delete(url);
+});
+
 /** Ảo hoá danh sách dài cần `ResizeObserver` để biết chiều cao khung */
 vi.stubGlobal(
   'ResizeObserver',
@@ -85,6 +123,7 @@ vi.stubGlobal(
 afterEach(() => {
   cleanup();
   listeners.clear();
+  openObjectUrls.clear();
   prefersDark = false;
   document.documentElement.className = '';
   document.documentElement.style.colorScheme = '';

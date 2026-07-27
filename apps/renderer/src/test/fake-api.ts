@@ -24,6 +24,7 @@ import {
   type InstalledVoice,
   type SaveBookRequest,
   type Segment,
+  type SegmentAudio,
   type SidecarStatus,
   type StorageUsageInfo,
   type VoiceCatalogItem,
@@ -49,6 +50,13 @@ export type FakeApiOptions = {
   segments?: Segment[];
   /** HTML trả về cho `reader.getBookHtml` */
   bookHtml?: string;
+  /**
+   * Segment mà `reader.getSegmentAudio` trả `NOT_FOUND`.
+   *
+   * Dựng ca "DB nói `ready` mà file không còn" — Storage Manager vừa xoá dưới
+   * chân player. Player phải bỏ qua và đi tiếp chứ không dừng.
+   */
+  missingAudio?: string[];
   /** Trạng thái sidecar. Mặc định `ready` — hầu hết test không quan tâm */
   sidecarStatus?: SidecarStatus;
   /** Voice trong catalog. Mặc định một VI chưa cài + một EN đã cài */
@@ -313,6 +321,22 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
         async (chapterId: string): Promise<Result<Segment[]>> =>
           ok(options.segments ?? fakeSegments(chapterId)),
       ),
+      /**
+       * Audio giả cho player. `missingAudio` để dựng ca "DB nói ready mà file
+       * không còn" — chính là ca Storage Manager xoá dưới chân player.
+       */
+      getSegmentAudio: vi.fn(async (segmentId: string): Promise<Result<SegmentAudio>> => {
+        if (options.missingAudio?.includes(segmentId) === true) {
+          return err('NOT_FOUND', 'File audio của đoạn này không còn trên đĩa.');
+        }
+        return ok({
+          segmentId,
+          bytes: new ArrayBuffer(8),
+          durationMs: 1000,
+          timings: [{ w: 'một', startMs: 0, endMs: 1000, charStart: 0, charEnd: 3 }],
+          timingSource: 'phoneme' as const,
+        });
+      }),
     },
 
     sidecar: {

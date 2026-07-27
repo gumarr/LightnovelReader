@@ -80,4 +80,18 @@ export const VIEWER_PANE_RATIO_MAX = 0.8;
 export const PLAYBACK_RATE_MIN = 0.5;
 export const PLAYBACK_RATE_MAX = 2;
 
+/**
+ * Số segment player xếp ưu tiên trước đầu phát.
+ *
+ * Sinh một segment mất ~1.5–2.5s (RTF thật 0.24 đo ở P2.6/P2.7) trong khi phát
+ * nó mất ~10s, nên hàng đợi thừa sức đi trước — nhưng chỉ khi được xếp trước vài
+ * cái. Xếp từng cái một thì player luôn chạy sát nút và hụt ngay khi gặp một
+ * segment dài hoặc một lượt nạp model.
+ *
+ * Không đặt cao hơn: mỗi segment xếp thêm là audio ghi ra đĩa mà user có thể
+ * không nghe tới, và CLAUDE.md bắt buộc hiện ước lượng trước khi generate hàng
+ * loạt — đây là đường đi vòng qua hộp đó nên phải giữ nhỏ.
+ */
+export const PLAYBACK_LOOKAHEAD_SEGMENTS = 5;
+
 export const SUPPORTED_FORMATS = ['pdf', 'docx'] as const;

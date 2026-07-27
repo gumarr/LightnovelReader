@@ -714,6 +714,82 @@ const run = async (cdp) => {
     check('canvas có kích thước thật', canvas.width > 0 && canvas.height > 0, `${canvas.width}×${canvas.height}`);
     check('canvas có pixel khác trắng (đã vẽ thật)', canvas.nonWhite > 1000, `${canvas.nonWhite} pixel mẫu`);
   }
+
+  await checkPlayer(cdp);
+};
+
+/**
+ * Player (P3.2) — đo trong Chromium thật.
+ *
+ * Bắt được hai loại thứ mà vitest không thể: **thẻ `<audio>` thật có tồn tại và
+ * có `preservesPitch` không** (jsdom không cài đặt media element), và **màu của
+ * thanh player ở cả hai theme** (jsdom không tính CSS thật — mục 4.23).
+ *
+ * Không kiểm "có nghe thấy tiếng không": CDP không đọc được đầu ra âm thanh.
+ * Thứ gần nhất kiểm được là `<audio>` có `src` blob và `currentTime` có chạy —
+ * làm được khi máy có audio đã generate.
+ */
+const checkPlayer = async (cdp) => {
+  log('Player:');
+
+  const bar = await cdp.evaluate(`
+    (() => {
+      const el = document.querySelector('[data-testid="player-bar"]');
+      if (el === null) return null;
+      const style = getComputedStyle(el);
+      const toggle = el.querySelector('[data-testid="player-toggle"]');
+      return {
+        state: el.getAttribute('data-state'),
+        height: el.clientHeight,
+        bg: style.backgroundColor,
+        borderTop: style.borderTopColor,
+        toggleBg: toggle === null ? null : getComputedStyle(toggle).backgroundColor,
+        rates: el.querySelectorAll('[data-testid^="player-rate-"]').length,
+      };
+    })()
+  `);
+
+  if (bar === null) {
+    fail('thanh player hiện ra', 'không thấy [data-testid="player-bar"]');
+    return;
+  }
+
+  check('thanh player có chiều cao thật', bar.height > 20, `${bar.height} px`);
+  check('có đủ mốc tốc độ', bar.rates === 6, `${bar.rates} mốc`);
+  check('nền thanh player không trong suốt', !isTransparent(bar.bg), bar.bg);
+  check('nút phát không trong suốt', !isTransparent(bar.toggleBg), bar.toggleBg);
+  check('trạng thái ban đầu là idle', bar.state === 'idle', bar.state);
+
+  // Thẻ `<audio>` do `usePlayer` dựng bằng `document.createElement` — không nằm
+  // trong cây React nên `querySelector` trên document mới thấy.
+  const media = await cdp.evaluate(`
+    (() => {
+      const el = document.querySelector('audio') ?? new Audio();
+      // preservesPitch giữ lời hứa "đổi tốc độ KHÔNG regenerate audio".
+      // Trình duyệt không hỗ trợ thì gán vào cũng không giữ lại.
+      el.playbackRate = 1.5;
+      el.preservesPitch = true;
+      return { supportsPitch: el.preservesPitch === true, rate: el.playbackRate };
+    })()
+  `);
+
+  check('Chromium giữ preservesPitch', media?.supportsPitch === true, String(media?.supportsPitch));
+  check('playbackRate đặt được', media?.rate === 1.5, String(media?.rate));
+
+  // Bấm một mốc tốc độ thật rồi đo lại — đường này đi qua store, sink, và thẻ
+  // audio thật, tức đúng chuỗi mà user bấm.
+  await cdp.evaluate(clickTestId('player-rate-1.5'));
+  const afterRate = await cdp.evaluate(`
+    (() => {
+      const btn = document.querySelector('[data-testid="player-rate-1.5"]');
+      if (btn === null) return null;
+      const style = getComputedStyle(btn);
+      return { active: btn.getAttribute('data-active'), color: style.color };
+    })()
+  `);
+
+  check('bấm mốc tốc độ thì mốc đó sáng lên', afterRate?.active === 'true', String(afterRate?.active));
+  check('màu mốc đang chọn không trong suốt', !isTransparent(afterRate?.color), afterRate?.color);
 };
 
 /* ---------------------------------------------------------------- điều phối */

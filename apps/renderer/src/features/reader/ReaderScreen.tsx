@@ -8,6 +8,9 @@ import { useQueueStore } from '@/stores/queue-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { GenerateControls } from '@/features/generate/GenerateControls';
 import { nextChapterToPrefetch } from '@/features/generate/format';
+import { PlayerBar } from '@/features/player/PlayerBar';
+import { usePlayer } from '@/features/player/usePlayer';
+import { usePlayerStore } from '@/stores/player-store';
 import { loadPdf } from './pdf-document';
 import { PdfViewer } from './PdfViewer';
 import { DocxViewer } from './DocxViewer';
@@ -88,12 +91,23 @@ export const ReaderScreen = ({
   useEffect(() => {
     void loadQueueStatus();
     const offStatus = window.api.queue.onStatusChanged(applyQueueStatus);
-    const offSegment = window.api.queue.onSegmentUpdated(applySegmentUpdate);
+    const offSegment = window.api.queue.onSegmentUpdated((segment) => {
+      // Hai nơi cùng cần tin này. Danh sách đoạn đổi dấu trạng thái, còn player
+      // có thể đang **đứng chờ** đúng segment vừa xong — bỏ qua nó là player
+      // treo ở "đang tạo audio" mãi dù file đã sẵn sàng.
+      applySegmentUpdate(segment);
+      void usePlayerStore.getState().handleSegmentUpdate(segment);
+    });
     return () => {
       offStatus();
       offSegment();
     };
   }, [loadQueueStatus, applyQueueStatus, applySegmentUpdate]);
+
+  // Player: dựng thẻ audio, nối IPC, nhả Blob URL khi rời trình đọc.
+  // `setActiveSegment` để viewer cuộn tới và tô đúng đoạn đang phát — chính là
+  // đường P1.6c đã dựng sẵn cho Phase 3.
+  usePlayer({ segments, canGenerate: voiceReady, onSegmentChanged: setActiveSegment });
 
   // Prefetch chương kế khi đọc tới 80% chương hiện tại. Tiến độ đo bằng segment
   // đang đọc chứ không bằng cuộn — xem `nextChapterToPrefetch`.
@@ -158,6 +172,22 @@ export const ReaderScreen = ({
     () => chapters.find((c) => c.id === chapterId),
     [chapters, chapterId],
   );
+
+  /**
+   * Bấm một đoạn: đang nghe thì **nhảy tới đó**, chưa nghe thì chỉ chọn.
+   *
+   * Không tự bắt đầu phát khi player đang `idle`: bấm vào đoạn để xem nó nằm ở
+   * trang nào là thao tác thường gặp, mà tự phát tiếng lúc đó là bất ngờ khó
+   * chịu. Đang phát rồi thì bấm đoạn khác rõ ràng là ý muốn nhảy tới.
+   */
+  const handleSelectSegment = (segmentId: string): void => {
+    setActiveSegment(segmentId);
+
+    const player = usePlayerStore.getState();
+    if (player.state === 'playing' || player.state === 'waiting') {
+      void player.playFrom(segmentId);
+    }
+  };
 
   const message = pdfError ?? error;
 
@@ -248,12 +278,14 @@ export const ReaderScreen = ({
               <SegmentList
                 segments={segments}
                 activeSegmentId={activeSegmentId}
-                onSelect={setActiveSegment}
+                onSelect={handleSelectSegment}
               />
             </div>
           </aside>
         ) : null}
       </div>
+
+      <PlayerBar />
     </div>
   );
 };

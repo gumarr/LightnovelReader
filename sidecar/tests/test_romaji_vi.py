@@ -56,6 +56,19 @@ JAPANESE_NAMES = [
     "Takahashi", "Watanabe", "Kobayashi", "Akira", "Yuki", "Haruka",
     "Kaito", "Shinji", "Rikka", "Sasuke", "Naruto", "Hinata",
     "Suzuki", "Kaneki", "Todoroki", "Midoriya",
+    # Nguyên âm rời `ao`/`eo` — từng bị chặn nhầm, xem chú thích ở
+    # `_NON_ROMAJI_VOWEL_PAIRS`. Đo trên 291 tên LN thì chặn mất 6 tên thật.
+    "Aoi", "Naoki", "Kaori", "Naofumi", "Reo", "Kaoru", "Aoba", "Naomi",
+    "Aoyama",
+]
+
+# Âm tiết tiếng Việt không dấu, viết hoa như đứng đầu câu. Đây là lớp chặn
+# quan trọng nhất: text LN **là** tiếng Việt nên nuốt nhầm ở đây gặp thường
+# xuyên hơn nuốt nhầm tiếng Anh, và hỏng nặng hơn.
+VIETNAMESE_SENTENCE_STARTS = [
+    "Mua", "Ban", "Tai", "Cho", "Nhin", "Nguoi", "Truoc", "Trong",
+    # Nhóm `-ao`: cần từ khi bỏ chặn nguyên âm đôi `ao`.
+    "Nao", "Bao", "Gao", "Dao", "Cao", "Sao", "Vao", "Giao", "Chao",
 ]
 
 
@@ -71,6 +84,19 @@ class TestRomajiToVi:
     @pytest.mark.parametrize("word", ENGLISH_WORDS)
     def test_tu_choi_tu_tieng_anh(self, word: str) -> None:
         assert romaji_to_vi(word) is None
+
+    @pytest.mark.parametrize("word", VIETNAMESE_SENTENCE_STARTS)
+    def test_tu_choi_am_tiet_viet_dau_cau(self, word: str) -> None:
+        # Cổng chữ hoa ở `lexicon_jp.lookup` không cứu được từ Việt đứng đầu
+        # câu — chính nó cũng viết hoa. Phải chặn ngay ở luật.
+        assert romaji_to_vi(word) is None
+
+    def test_nguyen_am_roi_ao_eo_van_la_romaji(self) -> None:
+        # `ao`/`eo` trông rất "Tây" nhưng là hai nguyên âm rời hợp lệ. Chặn
+        # chúng thì mất `Aoi`, `Naoki`, `Kaori`, `Naofumi`, `Reo`, `Kaoru`.
+        assert romaji_to_vi("Aoi") == "A-ôi"
+        assert romaji_to_vi("Naoki") == "Na-ô-ki"
+        assert romaji_to_vi("Reo") == "Rê-ô"
 
     def test_giu_chu_hoa_dau(self) -> None:
         assert romaji_to_vi("Tokyo") == "Tô-kiô"

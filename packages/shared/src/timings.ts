@@ -161,6 +161,11 @@ export const wordIndexAt = (timings: readonly WordTiming[], positionMs: number):
  * hầu như luôn có ý nhắm từ vừa đọc xong chứ không phải từ kế, và nhảy tới
  * trước sẽ nghe hụt mất một từ.
  *
+ * Khi **nhiều timing cùng trỏ một khoảng gốc** (P3.5: `Tokyo` đọc thành ba mảnh
+ * `Tô`/`ki`/`ô`, cả ba mang cùng `charStart`), trả mốc của mảnh **đầu**. Lấy
+ * mảnh cuối thì bấm vào một cái tên sẽ nhảy vào giữa lúc đang đọc dở chính cái
+ * tên đó — nghe hụt mất phần đầu.
+ *
  * `undefined` khi mảng rỗng hoặc `charOffset` nằm trước từ đầu tiên.
  */
 export const seekMsForChar = (
@@ -171,6 +176,9 @@ export const seekMsForChar = (
 
   for (const timing of timings) {
     if (timing.charStart > charOffset) break;
+    // Đã có ứng viên **phủ** đúng `charOffset` thì dừng: mọi timing sau nó chỉ
+    // có thể là mảnh đọc tiếp theo của cùng một từ gốc.
+    if (candidate !== undefined && charOffset < candidate.charEnd) break;
     candidate = timing;
   }
 

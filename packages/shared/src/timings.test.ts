@@ -206,4 +206,19 @@ describe('seekMsForChar', () => {
     const offset: WordTiming[] = [{ w: 'a', startMs: 100, endMs: 500, charStart: 4, charEnd: 5 }];
     expect(seekMsForChar(offset, 0)).toBeUndefined();
   });
+
+  it('nhiều mảnh cùng một từ gốc trả mốc của mảnh ĐẦU', () => {
+    // Hệ quả P3.5: `Tokyo` = [11,17) đọc thành `Tô`/`ki`/`ô`, ba timing cùng
+    // khoảng gốc. Trả mảnh cuối thì bấm vào tên sẽ nhảy vào giữa lúc đang đọc
+    // dở chính cái tên đó.
+    const jp: WordTiming[] = [
+      { w: 'tới', startMs: 400, endMs: 700, charStart: 7, charEnd: 10 },
+      { w: 'Tô', startMs: 700, endMs: 900, charStart: 11, charEnd: 17 },
+      { w: 'ki', startMs: 900, endMs: 1100, charStart: 11, charEnd: 17 },
+      { w: 'ô', startMs: 1100, endMs: 1300, charStart: 11, charEnd: 17 },
+    ];
+    expect(seekMsForChar(jp, 11)).toBe(700);
+    // Bấm vào giữa tên cũng về đầu tên, không về mảnh đang phủ ký tự đó
+    expect(seekMsForChar(jp, 14)).toBe(700);
+  });
 });

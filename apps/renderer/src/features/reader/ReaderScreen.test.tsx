@@ -633,3 +633,94 @@ describe('vòng đời thẻ <audio>', () => {
     expect(document.querySelectorAll('[data-testid="player-audio"]')).toHaveLength(0);
   });
 });
+
+describe('phụ đề + splitter (P3.4)', () => {
+  it('phụ đề hiện text của đoạn ĐANG PHÁT, không phải đoạn đang chọn', async () => {
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    // Chọn đoạn 3 nhưng đang phát đoạn 1: phụ đề phải bám tiếng đang nghe,
+    // nếu không chữ và tiếng lệch nhau.
+    await act(async () => {
+      useReaderStore.setState({ activeSegmentId: 'ch-1-s3' });
+      usePlayerStore.setState({ state: 'playing', segmentId: 'ch-1-s1' });
+    });
+
+    const pane = screen.getByTestId('subtitle-pane');
+    expect(pane.textContent).toContain('Câu thứ 1');
+    expect(pane.textContent).not.toContain('Câu thứ 3');
+  });
+
+  it('bấm một từ trên phụ đề thì tua tới mốc của từ đó', async () => {
+    await setup();
+    await screen.findByTestId('segment-scroll');
+
+    await act(async () => {
+      usePlayerStore.setState({
+        state: 'playing',
+        segmentId: 'ch-1-s1',
+        durationMs: 2000,
+        timings: [
+          { w: 'Câu', startMs: 0, endMs: 300, charStart: 0, charEnd: 3 },
+          { w: 'thứ', startMs: 300, endMs: 600, charStart: 4, charEnd: 7 },
+          { w: '1', startMs: 600, endMs: 900, charStart: 8, charEnd: 9 },
+        ],
+      });
+    });
+
+    const seek = vi.fn();
+    usePlayerStore.setState({ seek });
+    await userEvent.click(screen.getByRole('button', { name: 'thứ' }));
+    expect(seek).toHaveBeenCalledWith(300);
+  });
+
+  it('ẩn phụ đề thì viewer lấy hết chỗ, hiện lại thì quay về tỉ lệ cũ', async () => {
+    await setup();
+    await screen.findByTestId('subtitle-pane');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ẩn phụ đề' }));
+    expect(screen.queryByTestId('subtitle-pane')).toBeNull();
+    expect(screen.queryByTestId('pane-splitter')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện phụ đề' }));
+    expect(await screen.findByTestId('subtitle-pane')).toBeTruthy();
+  });
+
+  it('kéo splitter bằng bàn phím thì ghi tỉ lệ xuống settings', async () => {
+    await setup();
+    const bar = await screen.findByTestId('pane-splitter');
+
+    await act(async () => {
+      bar.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(fake.api.settings.update).toHaveBeenCalledWith(
+        expect.objectContaining({ viewerPaneRatio: expect.any(Number) }),
+      );
+    });
+  });
+
+  it('tỉ lệ đã lưu từ phiên trước được áp khi mở trình đọc', async () => {
+    await loadSettings({ viewerPaneRatio: 0.4 });
+    await setup();
+
+    const bar = await screen.findByTestId('pane-splitter');
+    expect(bar.getAttribute('aria-valuenow')).toBe('40');
+  });
+
+  it('phụ đề và danh sách đoạn cùng bật được — hai thứ khác nhau', async () => {
+    await setup();
+
+    expect(await screen.findByTestId('subtitle-pane')).toBeTruthy();
+    expect(screen.getByTestId('segment-panel')).toBeTruthy();
+  });
+
+  it('chưa phát gì thì phụ đề mời bấm phát, không để trống trơn', async () => {
+    await setup();
+
+    const pane = await screen.findByTestId('subtitle-pane');
+    expect(pane.getAttribute('data-empty')).toBe('true');
+    expect(pane.textContent).toContain('Bấm phát');
+  });
+});

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { BookDetail } from '@ln/shared';
-import { errorMessage, PREFETCH_THRESHOLD } from '@ln/shared';
+import { DEFAULT_SETTINGS, errorMessage, PREFETCH_THRESHOLD } from '@ln/shared';
 import { useReaderStore, activeSegmentOf } from '@/stores/reader-store';
 import { useLibraryStore } from '@/stores/library-store';
 import { useQueueStore } from '@/stores/queue-store';
@@ -11,18 +11,19 @@ import { nextChapterToPrefetch } from '@/features/generate/format';
 import { PlayerBar } from '@/features/player/PlayerBar';
 import { usePlayer } from '@/features/player/usePlayer';
 import { usePlayerStore } from '@/stores/player-store';
+import { SubtitlePane } from '@/features/player/SubtitlePane';
 import { loadPdf } from './pdf-document';
 import { PdfViewer } from './PdfViewer';
 import { DocxViewer } from './DocxViewer';
 import { SegmentList } from './SegmentList';
 import { ChapterPicker } from './ChapterPicker';
+import { PaneSplitter } from './PaneSplitter';
 
 /**
- * Trình đọc: viewer chiếm toàn bộ màn, panel segment bật/tắt được.
+ * Trình đọc: viewer ở trên, phụ đề ở dưới, panel segment bật/tắt bên phải.
  *
- * Chưa dựng khung 2/3–1/3 với subtitle pane như mockup trong plan.md: pane đó
- * chỉ có nghĩa khi đã có timing từng từ (Phase 2). Dựng sẵn một khung rỗng ở
- * đây là đúng thứ CLAUDE.md cấm.
+ * Khung 2/3–1/3 như mockup plan.md, dựng ở P3.4 khi đã có timing từng từ. Tỉ lệ
+ * user kéo được và nhớ qua phiên (`viewerPaneRatio`).
  */
 
 export type ReaderScreenProps = {
@@ -75,11 +76,28 @@ export const ReaderScreen = ({
   const storedRate = useSettingsStore((s) => s.settings?.playbackRate);
   const updateSettings = useSettingsStore((s) => s.update);
 
+  // Tỉ lệ viewer / phụ đề. Nhớ qua phiên nên nguồn thật là settings, nhưng lúc
+  // **đang kéo** phải dùng state cục bộ: ghi SQLite mỗi khung hình là không
+  // chấp nhận được (xem `PaneSplitter`). `null` = chưa kéo, lấy theo settings.
+  const storedPaneRatio = useSettingsStore((s) => s.settings?.viewerPaneRatio);
+  const [draggingRatio, setDraggingRatio] = useState<number | null>(null);
+  const paneRatio = draggingRatio ?? storedPaneRatio ?? DEFAULT_SETTINGS.viewerPaneRatio;
+
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [showSegments, setShowSegments] = useState(true);
+  const [showSubtitle, setShowSubtitle] = useState(true);
 
   const activeSegment = useReaderStore(activeSegmentOf);
+
+  // Phụ đề bám segment **đang phát**, không phải segment đang chọn: bấm vào một
+  // đoạn khác để xem nó ở trang nào thì phụ đề vẫn phải chạy theo tiếng đang
+  // nghe, nếu không chữ và tiếng lệch nhau.
+  const playingSegmentId = usePlayerStore((s) => s.segmentId);
+  const subtitleText = useMemo(
+    () => segments.find((segment) => segment.id === playingSegmentId)?.text ?? '',
+    [segments, playingSegmentId],
+  );
 
   // Chương user chọn ở mục lục thắng; không có thì chỗ đọc dở, rồi mới chương đầu
   const initialChapterId = startChapterId ?? resumeChapterId ?? chapters[0]?.id;
@@ -238,6 +256,15 @@ export const ReaderScreen = ({
 
         <button
           type="button"
+          onClick={() => setShowSubtitle((v) => !v)}
+          aria-pressed={showSubtitle}
+          className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-bg-subtle hover:text-fg"
+        >
+          {showSubtitle ? 'Ẩn phụ đề' : 'Hiện phụ đề'}
+        </button>
+
+        <button
+          type="button"
           onClick={() => setShowSegments((v) => !v)}
           aria-pressed={showSegments}
           className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-bg-subtle hover:text-fg"
@@ -253,23 +280,56 @@ export const ReaderScreen = ({
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        <main className="min-w-0 flex-1">
-          {book.format === 'pdf' ? (
-            doc === null ? (
+        {/*
+          Cột trái chia dọc: trang sách trên, phụ đề dưới. `min-w-0` để cột không
+          bị nội dung PDF đẩy rộng ra ngoài khung.
+        */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <main
+            className="min-h-0 overflow-hidden"
+            // Chiều cao theo tỉ lệ chứ không theo `flex-1`: cả hai pane đều cần
+            // co giãn được, mà `flex-basis` phần trăm cho ra đúng tỉ lệ user kéo.
+            // Ẩn phụ đề thì viewer lấy hết chỗ.
+            style={showSubtitle ? { flex: `${String(paneRatio)} 1 0%` } : { flex: '1 1 0%' }}
+          >
+            {book.format === 'pdf' ? (
+              doc === null ? (
+                <p className="p-8 text-center text-fg-muted">
+                  {loading || message === null ? 'Đang mở sách…' : 'Không mở được sách.'}
+                </p>
+              ) : (
+                <PdfViewer doc={doc} activeSegment={activeSegment} />
+              )
+            ) : html === null ? (
               <p className="p-8 text-center text-fg-muted">
                 {loading || message === null ? 'Đang mở sách…' : 'Không mở được sách.'}
               </p>
             ) : (
-              <PdfViewer doc={doc} activeSegment={activeSegment} />
-            )
-          ) : html === null ? (
-            <p className="p-8 text-center text-fg-muted">
-              {loading || message === null ? 'Đang mở sách…' : 'Không mở được sách.'}
-            </p>
-          ) : (
-            <DocxViewer content={html} activeSegment={activeSegment} />
-          )}
-        </main>
+              <DocxViewer content={html} activeSegment={activeSegment} />
+            )}
+          </main>
+
+          {showSubtitle ? (
+            <>
+              <PaneSplitter
+                ratio={paneRatio}
+                onDrag={setDraggingRatio}
+                onCommit={(ratio) => {
+                  // Nhả chuột mới ghi xuống SQLite, rồi trả quyền cho settings.
+                  setDraggingRatio(null);
+                  void updateSettings({ viewerPaneRatio: ratio });
+                }}
+              />
+              <section
+                aria-label="Phụ đề"
+                className="min-h-0 bg-bg-elevated"
+                style={{ flex: `${String(1 - paneRatio)} 1 0%` }}
+              >
+                <SubtitlePane text={subtitleText} />
+              </section>
+            </>
+          ) : null}
+        </div>
 
         {showSegments ? (
           <aside

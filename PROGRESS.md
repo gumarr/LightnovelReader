@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-27 · commit `9a2e2f4`
+> **Cập nhật lần cuối:** 2026-07-27 · commit `<P3.4>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -762,8 +762,13 @@ soạn từ điển.**
 
 **Chỉ có unit test — chưa nghe thật.** Toàn bộ P3.5 xanh ở mức unit test và đã
 soi tay kết quả phiên âm trên câu LN thật, nhưng **chưa chạy Piper thật để
-nghe**. Chất lượng phát âm cuối cùng phải *nghe* mới biết — để lại cho lượt
-nghe thử ở P3.4 (cùng lúc kiểm hụt audio, xem mục 8).
+nghe**. Chất lượng phát âm cuối cùng phải *nghe* mới biết — vẫn còn nợ sau khi
+P3.4 xong, xem mục 8.
+
+**Bổ sung ở P3.4:** user đưa danh sách **291 tên LN thật** để đo lại. Lộ ra một
+lỗi chặn thừa (`ao`/`eo`) làm mất 6 tên, đã sửa — chi tiết ở mục 4.67. Sau sửa:
+222/291 nhận, 0/73 từ Anh và 0/83 từ Việt bị nuốt nhầm. 69 ca còn lại gần như
+toàn tên phương Tây (`Edward`, `Levi`, `Emilia`…) — giữ nguyên là **đúng**.
 
 ### Phase 3 — P3.3 Player UI đầy đủ ✅
 
@@ -827,14 +832,56 @@ là **lỗi có sẵn từ trước P3.3**, không phải do phần này — xem
 3. **Đường tắt Giọng đọc phải đóng sách**, không chỉ đổi `screen`: màn đó chỉ
    render khi `opened === null`. Chỉ đổi `screen` thì bấm xong không thấy gì đổi.
 
+### Phase 3 — P3.4 Subtitle pane + highlight từng chữ ✅
+
+Phần cuối của Phase 3. Phần lớn hạ tầng đã sẵn từ P3.1–P3.3 (`playerPositionMs`,
+`wordIndexAt`, `seekMsForChar`, khuôn `rAF` của `useSegmentProgress`), nên P3.4
+chủ yếu là **ghép** — trừ một chỗ phải sửa lại vì P3.5 đổi ngữ nghĩa `charStart`.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `player/subtitle.ts` | Cắt text gốc thành từ + map timing → từ trên màn | 11 |
+| `player/useWordHighlight.ts` | Vòng `rAF` bật/tắt `data-active`, chỉ đụng 2 phần tử | (qua SubtitlePane) |
+| `player/SubtitlePane.tsx` | Phụ đề, click-to-seek, nút "theo từ đang đọc" | 12 |
+| `reader/PaneSplitter.tsx` | Thanh kéo tỉ lệ, tách `onDrag` khỏi `onCommit` | 7 |
+| `reader/ReaderScreen.tsx` | Chia dọc viewer/phụ đề, nối `viewerPaneRatio` | +7 |
+| `shared/timings.ts` | **Sửa lỗi** `seekMsForChar` (xem 4.63) | +1 |
+| `styles/theme.css` | 3 biến phụ đề hex → kênh RGB rời | (ui-check) |
+| `tailwind.config.js` | Thêm 3 màu `subtitle-*` vào palette | — |
+| `scripts/ui-check.mjs` | +3 nhóm phép kiểm phụ đề/splitter | — |
+
+**Bốn quyết định đáng nhớ** (chi tiết ở mục 4.63–4.66):
+
+- **Không lấy `timings` làm danh sách từ để vẽ.** Sau P3.5 nhiều timing liên tiếp
+  trỏ **cùng** một khoảng gốc (`Tokyo` = `Tô`+`ki`+`ô`). Vẽ theo `timings` thì
+  màn hình hiện bản đọc chứ không phải chữ trong sách. Nên cắt từ `Segment.text`
+  rồi map ngược qua **giao khoảng** — xem `subtitle.ts`.
+- **Phụ đề bám segment ĐANG PHÁT, không phải đang chọn.** Bấm một đoạn để xem nó
+  ở trang nào là thao tác thường; phụ đề nhảy theo lúc đó thì chữ và tiếng lệch.
+- **Splitter tách `onDrag` khỏi `onCommit`.** Kéo chuột bắn hàng chục sự kiện mỗi
+  giây, mỗi `onCommit` là một lượt IPC + ghi SQLite. Chỉ ghi khi nhả chuột.
+- **3 biến `--subtitle-*` phải đổi sang kênh RGB rời.** Chúng lưu hex từ Phase 0,
+  đúng hình thái lỗi 4.23 — `bg-subtitle-current/15` sẽ ra trong suốt. Đây là lỗi
+  vitest không thể thấy, đã thêm phép kiểm vào `ui-check`.
+
+**Một lỗi thật tìm ra khi viết test** (mục 4.63): `seekMsForChar` trả mốc của
+**mảnh cuối** thay vì mảnh đầu khi nhiều timing cùng khoảng gốc — bấm vào `Tokyo`
+sẽ nhảy vào giữa lúc đang đọc dở chính cái tên đó. Hàm này viết ở P3.1 khi mỗi từ
+còn đúng một timing; P3.5 phá giả định đó mà không ai để ý vì **chưa có UI nào
+gọi tới**. P3.4 là lần đầu nó được dùng thật.
+
+⚠️ **Chưa chạy `pnpm ui-check`** cho phần này — phép kiểm đã viết nhưng chưa chạy
+được trong phiên. Chiều cao pane, tỉ lệ splitter và màu `data-active` **đều là
+loại lỗi vitest không thấy**. Xem mục 8.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1885 passed** (+22 ở P3.5 — repository phiên âm) |
-| Unit test sidecar (pytest) | **611 passed** (+266 ở P3.5 — mapping, romaji, từ điển, remap) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (không đổi ở P3.5) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **47 phép kiểm** (không đổi ở P3.5 — chưa có UI mới), 45/47 đạt — 2 đỏ là lỗi có sẵn (mục 8) |
+| Unit test TypeScript | **1923 passed** (+38 ở P3.4 — subtitle, splitter, ReaderScreen) |
+| Unit test sidecar (pytest) | **638 passed** (+27 ở P3.4 — luật `ao`/`eo`, chặn âm tiết Việt) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (không đổi ở P3.4) |
+| **Kiểm UI thật (`pnpm ui-check`)** | **58 phép kiểm** (47 → 58 ở P3.4), ⚠️ **11 phép kiểm mới CHƯA chạy lần nào** — xem mục 8 |
 | Schema DB | **v3** (v3 thêm `pronunciation_overrides` — mục 4.59) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
@@ -854,7 +901,10 @@ Giữ nguyên quy ước **logic thuần trước, UI sau**:
 | P3.2 | Playback engine: máy trạng thái play/pause/next/prev, nối segment liên tục, `playbackRate` + `preservesPitch`, segment sắp phát nhảy đầu hàng đợi | ✅ Xong |
 | P3.3 | Player UI đầy đủ: thanh tiến độ trong đoạn, phím tắt, đường tắt tới màn Giọng đọc, icon SVG, mốc 2.5×/3× | ✅ Xong |
 | P3.5 | Phiên âm tên riêng Nhật + `charStart` quy về text gốc (xem plan.md mục 8.1) | ✅ Xong (trừ UI tầng 3) |
-| P3.4 | Subtitle pane 3 dòng + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ⬅️ **Đang tới** |
+| P3.4 | Subtitle pane + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ✅ Xong |
+
+**Phase 3 đã đủ 5/5 phần.** Còn lại trước khi đóng phase: chạy `pnpm ui-check`
+và **nghe thật một chương** — xem mục 8, cả hai đều là nợ chưa trả.
 
 P3.2 đã kèm sẵn một `PlayerBar` chạy được (nút phát/trước/sau + 6 mốc tốc độ) vì
 không có nút thì không kiểm được máy trạng thái trên app thật. P3.3 đã làm phần
@@ -2472,6 +2522,92 @@ Ba luật ghép âm tiết đi kèm, đều để tránh đọc rời (`_join_mo
 
 Có test khoá cả ba — đổi bảng mora mà làm hỏng nhịp sẽ đỏ ngay.
 
+### 4.63 `seekMsForChar` hỏng âm thầm từ P3.5, lộ ra ở P3.4
+
+Hàm này viết ở P3.1 với giả định **mỗi từ đúng một timing**:
+
+```ts
+for (const timing of timings) {
+  if (timing.charStart > charOffset) break;
+  candidate = timing;          // ghi đè liên tục
+}
+```
+
+P3.5 phá giả định đó: `Tokyo` sinh ba timing cùng `charStart`, vòng lặp ghi đè
+hai lần rồi trả mốc của mảnh **cuối** (`ô`). Hệ quả: bấm vào một cái tên trên
+phụ đề thì nhảy vào **giữa lúc đang đọc dở chính cái tên đó** — nghe hụt phần đầu.
+
+Không ai phát hiện ở P3.5 vì **chưa có UI nào gọi tới hàm này**. Nó chỉ có test
+đơn vị, mà test đó viết theo giả định cũ nên vẫn xanh. Đây là ví dụ rõ: đổi ngữ
+nghĩa của một kiểu dữ liệu thì phải **rà hết nơi tiêu thụ**, kể cả nơi chưa dùng.
+
+Sửa: dừng vòng lặp khi ứng viên hiện tại đã **phủ** `charOffset`. Đã thêm test
+khoá ở `timings.test.ts` với đúng ba mảnh `Tô`/`ki`/`ô`.
+
+### 4.64 Không vẽ phụ đề theo `timings` — phải cắt lại từ text gốc
+
+Cách hiển nhiên là `timings.map(t => <span>{t.w}</span>)`. Sai sau P3.5: `w` là
+từ **đã đọc**, nên màn hình sẽ hiện `Tô ki ô` trong khi sách viết `Tokyo`.
+
+Nên phụ đề cắt từ `Segment.text` bằng `splitWords` (đúng hàm `estimateWordTimings`
+dùng, nên ở `alignStatus='estimated'` ranh giới trùng khít), rồi map timing → từ
+qua **giao khoảng** chứ không so `charStart` bằng nhau. Giao khoảng chịu được cả
+ba kiểu lệch: nhiều mảnh một từ (P3.5), CTC gộp nhiều từ thành một mốc, và
+`splitWords` cắt khác aligner.
+
+### 4.65 Ba biến `--subtitle-*` lưu hex — đúng hình thái lỗi 4.23
+
+Chúng đặt từ Phase 0 dạng `#4f46e5`, trong khi mọi màu khác lưu kênh RGB rời
+(`79 70 229`). Chưa ai dùng nên chưa lộ. Vừa dùng tới `bg-subtitle-current/15` là
+lỗi 4.23 tái diễn ngay: `rgb(#4f46e5 / 0.15)` không phải CSS hợp lệ → trong suốt.
+
+Đã đổi cả hai theme sang kênh rời + thêm vào `tailwind.config.js` + thêm phép
+kiểm màu vào `ui-check`. Bài học lặp lại lần thứ hai: **biến màu mới phải theo
+đúng quy ước kênh rời ngay từ lúc đặt**, kể cả khi chưa ai dùng.
+
+### 4.66 Highlight chỉ đụng hai phần tử mỗi lần đổi từ
+
+Cách dễ là tô màu "đã đọc / đang đọc / chưa đọc" cho mọi từ theo mốc hiện tại.
+Nhưng thế thì mỗi khung hình phải duyệt **toàn bộ** `<span>` đứng trước con trỏ —
+một segment ~60 từ, 60 lần/giây.
+
+`useWordHighlight` giữ chỉ số đã tô trong `ref`, mỗi lần đổi chỉ `removeAttribute`
+ở từ cũ và `setAttribute` ở từ mới. Màu "đã đọc" bỏ hẳn — nó cần duyệt cả mảng mà
+chỉ để trang trí.
+
+Bẫy đã xử: đổi segment thì React thay hết `<span>`, chỉ số cũ không còn trỏ đúng
+đâu cả. Phải xoá `painted` theo `segmentId`, nếu không hook tưởng đã tô rồi và
+đứng im. Có test riêng cho ca này.
+
+### 4.67 Đo phiên âm trên 291 tên LN thật — bỏ chặn `ao`/`eo`
+
+User đưa danh sách **291 tên nhân vật** gom từ LN/anime phổ biến để kiểm trước
+khi làm P3.4. Kết quả lượt đầu: 219 nhận (75%), 72 bỏ sót.
+
+Phân loại 72 ca bỏ sót cho thấy phần lớn là **đúng**: `Edward`, `Alphonse`,
+`Levi`, `Emilia`, `Beatrice`, `Frieren`, `Darkness`, `Stark`… là tên **phương
+Tây** trong tác phẩm Nhật, không phải romaji, và phải giữ nguyên. Tương tự `Rem`,
+`Ram`, `Ryuk`, `Mob` — kết thúc bằng phụ âm không phải `n`, bất khả trong tiếng
+Nhật.
+
+Nhưng lộ ra **một lỗi thật**: `_NON_ROMAJI_VOWEL_PAIRS` chặn `ao` và `eo` vì
+trông "rất Tây". Thực ra đó là hai nguyên âm **rời** hoàn toàn hợp lệ, và chặn
+chúng làm mất 6 tên thật: `Aoi`, `Naoki`, `Kaori`, `Naofumi`, `Reo`, `Kaoru`
+(cùng `Naomi`, `Aoyama`, `Aoba` không có trong danh sách). Phần lớn từ Tây có
+`ao`/`eo` (`chaos`, `people`, `video`, `theory`) đã chết ở ải 4 rồi.
+
+Bỏ chặn thì 16 từ lọt lưới, nhưng cổng chữ hoa (mục 4.61) đã chặn hầu hết —
+`radio` giữa câu không bị đụng. Đã thêm phần còn lại vào `_ENGLISH_WORDS`, và
+thêm 18 âm tiết `-ao` tiếng Việt (`nào`, `bao`, `gạo`, `dao`…) vào danh sách chặn
+vì chúng đứng đầu câu sẽ viết hoa.
+
+Kết quả sau sửa: **222/291 nhận**, tiếng Anh vẫn **0/73** nuốt nhầm, tiếng Việt
+**0/83** (cả viết thường lẫn viết hoa đầu câu).
+
+Một ca **cố tình bỏ**: `Nao` — trùng hoàn toàn với `nào` không dấu, mà `nào` là
+một trong những từ tiếng Việt hay gặp nhất. Đây là loại đánh đổi đã ghi ở 4.61:
+thà bỏ sót một tên còn hơn phá một từ của chính ngôn ngữ đang đọc.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -2768,8 +2904,11 @@ scripts/
 | ~~Đóng gói sidecar chưa vào CI~~ | ✅ Xong | `pnpm build:win` giờ tự gọi `build:sidecar` rồi `scripts/sidecar-preflight.mjs` — không còn phải nhớ. Preflight chặn cả 3 cách hỏng (thiếu `.exe`, thiếu `_internal/`, `.exe` cũ hơn `.py`), đã kiểm chứng bằng `touch` một file `.py`. CI dựng venv 3.12 ở **cả hai** job + kiểm phía đích `resources/sidecar/` sau khi đóng gói. Xem mục 4.44 |
 | ~~Chưa dựng lại installer sau P2.4/P2.5~~ | ✅ Xong | P2.8 chạy lại `pnpm build:win`: NSIS **143.0 MB**, portable **142.8 MB** (trước khi có sidecar là 80.8 MB). electron-builder **có** chép trọn onedir — đo được `resources/sidecar/` **147 MB** đủ cả `_internal/`, và `resources/voices/catalog.json` cũng có. Vượt mốc 200 MB của plan.md thì chưa, nhưng đã dùng hết 71% |
 | Chỉ có 2 voice trong catalog | **TB** | VI (`vais1000`) + EN (`lessac`), đều `medium`. **User đã hỏi trực tiếp về việc chọn model/giọng khác** — màn `VoiceManager` đã có đủ (tải/xoá/chọn, tách `voiceVi`/`voiceEn`), thiếu là **dữ liệu**: Piper còn vài giọng VI (`vivos`, `25hours`) chưa liệt kê. Thêm = thêm mục vào `resources/voices/catalog.json`, **không sửa code**, nhưng bắt buộc tải file thật để tính `sha256` (xem `$comment` trong file đó) |
-| UI tầng 3 phiên âm chưa có | **TB** | P3.5 làm xong DB (`pronunciation_overrides` v3), repository (22 test) và đường truyền tới sidecar (`getPronunciations` → `/synthesize`), nhưng **chưa có IPC channel lẫn màn hình**. Nghĩa là user chưa sửa được cách đọc dù backend đã sẵn sàng. Thống nhất với user: để làm cùng P3.4, khi có subtitle pane thì gắn nút "sửa cách đọc" ngay tại từ đang sáng — đúng chỗ user nhận ra chỗ sai, thay vì bắt vào Settings gõ lại từ |
-| Phiên âm Nhật chưa nghe thật lần nào | **TB** | Toàn bộ P3.5 mới ở mức unit test (252 test) + soi tay kết quả trên câu LN thật. **Chưa chạy Piper thật để nghe** — mà chất lượng phát âm thì phải nghe mới biết: `Sin-can-xên` đúng về mặt chữ nhưng có thể vẫn chướng tai. Nghe thử ở P3.4 cùng lượt kiểm hụt audio |
+| UI tầng 3 phiên âm chưa có | **TB** | P3.5 làm xong DB (`pronunciation_overrides` v3), repository (22 test) và đường truyền tới sidecar (`getPronunciations` → `/synthesize`), nhưng **chưa có IPC channel lẫn màn hình**. Nghĩa là user chưa sửa được cách đọc dù backend đã sẵn sàng. Dự định gắn vào P3.4 nhưng **P3.4 đã xong mà vẫn chưa làm** — P3.4 giữ đúng phạm vi plan.md (pane + highlight + click-to-seek + splitter). Chỗ gắn nay đã có sẵn: mỗi từ trên phụ đề là một `<button>` có `data-word-index`, thêm menu chuột phải "sửa cách đọc" là đủ. Cần 3 IPC channel + 1 dialog |
+| Phiên âm Nhật chưa nghe thật lần nào | **Cao** | Toàn bộ P3.5 mới ở mức unit test (279 test) + soi tay mặt chữ, gồm cả lượt đo trên **291 tên LN thật** user đưa ở P3.4 (xem 4.67). **Vẫn chưa chạy Piper thật để nghe.** Mức nâng từ TB lên Cao vì đây là thứ duy nhất còn chặn việc đóng Phase 3 — DoD ghi rõ "nghe liên tục hết chương, chữ sáng đúng nhịp", mà cả hai vế đều chưa xác nhận bằng tai |
+| **11 phép kiểm UI của P3.4 chưa chạy lần nào** | **Cao** | `ui-check` đã thêm 3 nhóm (chiều cao 2 pane, tỉ lệ splitter thật, ẩn/hiện, màu `data-active`) nhưng **chưa chạy được trong phiên làm P3.4**. Đây đúng là loại lỗi vitest không thấy: lỗi 4.43 (chiều cao 0) và 4.23 (màu trong suốt) đều thuộc nhóm này, và P3.4 đụng vào **cả hai** — chia flex theo tỉ lệ, và 3 biến màu vừa đổi từ hex sang kênh RGB. Chạy `pnpm ui-check` là việc đầu tiên của phiên sau |
+| Phụ đề chưa giới hạn 3 dòng như plan.md | Thấp | plan.md ghi "subtitle pane 3 dòng". Bản này cho pane cuộn tự do theo tỉ lệ splitter thay vì chốt cứng 3 dòng — user kéo được nên tự chọn được số dòng, và chốt cứng thì đoạn dài bị cắt mất chữ. Nếu thấy vướng thì thêm chế độ "gọn" sau |
+| Không tô màu "đã đọc" cho từ phía trước | Thấp | Chỉ từ **đang đọc** đổi màu. Tô cả phần đã đọc thì mỗi khung hình phải duyệt toàn bộ `<span>` đứng trước (mục 4.66). Làm được nếu cần: đặt một class ở container rồi dùng CSS sibling selector, nhưng chưa ai thấy thiếu |
 | Từ điển Nhật mới 193 mục | Thấp | Phủ địa danh, xưng hô, thuật ngữ LN phổ biến. Tên nhân vật lạ do luật romaji lo (đo được 65/65 nhận đúng), nên thiếu mục không làm hỏng gì — chỉ là cách đọc kém tự nhiên hơn ở vài tên. Thêm mục = sửa `sidecar/app/text/data/lexicon_jp.json`, có cảnh báo sẵn về việc tránh âm tiết trùng tiếng Việt |
 | Danh sách chặn tiếng Việt/Anh là thủ công | Thấp | `_VIETNAMESE_SYLLABLES` (~80 mục) và `_ENGLISH_WORDS` (~60 mục) trong `romaji_vi.py` liệt kê tay vì `mua`/`game` trùng hình thái romaji hoàn toàn, không luật nào tách được. Đo hiện tại: 0/51 từ Việt và 0/51 từ Anh bị nuốt. Từ ngoài danh sách mà trùng hình thái vẫn lọt — cố ý giữ danh sách ngắn, vì dài quá lại tăng rủi ro chặn nhầm tên nhân vật |
 | Tải voice không resume được | TB | Đứt giữa chừng là mất cả 63 MB, tải lại từ đầu. HF có hỗ trợ `Range` nên làm được, nhưng phải giữ trạng thái băm dở — băm theo dòng chảy hiện tại không nối tiếp được. Để lại tới khi thấy người dùng thật kêu |

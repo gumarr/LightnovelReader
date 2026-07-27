@@ -359,12 +359,23 @@ const measureColors = `
     //
     // bg-accent/10 là class thật, dùng ở SegmentList (dòng segment đang chọn) và ở
     // StorageBookRow. Đây chính là chỗ lỗi 4.23 làm mất màu.
+    const readColor = (className) => {
+      probe.className = className;
+      return getComputedStyle(probe).color;
+    };
+
     const result = {
       accent: read('bg-accent'),
       accentAlpha10: read('bg-accent/10'),
       accentAlpha5: read('bg-accent/5'),
       danger: read('bg-danger'),
       bgElevated: read('bg-bg-elevated'),
+      // P3.4: ba biến phụ đề từng lưu dạng hex — đúng hình thái lỗi 4.23. Đổi
+      // sang kênh RGB rời ở P3.4 thì nhánh alpha mới ra màu thật; đo lại ở đây
+      // để không ai lỡ tay đổi ngược.
+      subtitleCurrent: readColor('text-subtitle-current'),
+      subtitleCurrentAlpha15: read('bg-subtitle-current/15'),
+      subtitlePast: readColor('text-subtitle-past'),
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
     };
     probe.remove();
@@ -535,6 +546,178 @@ const checkSegmentToggle = async (cdp, first) => {
   );
 };
 
+/* ------------------------------------------------- phép kiểm phụ đề (P3.4) */
+
+/**
+ * Phụ đề + splitter — đo trong Chromium thật.
+ *
+ * Ba thứ vitest không thể kết luận, tất cả đều là chiều cao/tỉ lệ thật:
+ *
+ * - **Hai pane chia đúng tỉ lệ**: `flex-basis` phần trăm chỉ ra đúng số khi có
+ *   layout thật. jsdom trả 0 cho cả hai nên mọi tỉ lệ đều "đúng" vô nghĩa —
+ *   chính hình thái lỗi 4.43.
+ * - **Splitter bắt được chuột**: thanh cao 6 px, vùng `::after` nới lên 9 px.
+ *   Sai chỗ này thì UI trông vẫn đúng mà kéo không được.
+ * - **Từ đang đọc đổi màu thật**: `data-active` chỉ là thuộc tính; nó có ra màu
+ *   hay không phụ thuộc CSS thật (lỗi 4.23).
+ */
+const measureSubtitle = `
+  (() => {
+    const pane = document.querySelector('[data-testid="subtitle-pane"]');
+    const splitter = document.querySelector('[data-testid="pane-splitter"]');
+    if (pane === null || splitter === null) return null;
+
+    const column = splitter.parentElement;
+    const viewer = column?.querySelector('main');
+
+    return {
+      paneHeight: pane.clientHeight,
+      viewerHeight: viewer?.clientHeight ?? 0,
+      columnHeight: column?.clientHeight ?? 0,
+      splitterHeight: splitter.getBoundingClientRect().height,
+      empty: pane.getAttribute('data-empty') === 'true',
+      words: pane.querySelectorAll('[data-word-index]').length,
+      ratioNow: Number(splitter.getAttribute('aria-valuenow')),
+    };
+  })()
+`;
+
+const checkSubtitle = async (cdp) => {
+  const measured = await waitFor(
+    'phụ đề render',
+    async () => {
+      const value = await cdp.evaluate(measureSubtitle);
+      return value !== null ? value : undefined;
+    },
+    30_000,
+  );
+
+  log('Bố cục phụ đề:');
+
+  check('pane phụ đề có chiều cao thật', measured.paneHeight > 50, `${measured.paneHeight} px`);
+  check('viewer có chiều cao thật', measured.viewerHeight > 50, `${measured.viewerHeight} px`);
+  check(
+    'thanh kéo có chiều cao thật',
+    measured.splitterHeight >= 4,
+    `${measured.splitterHeight.toFixed(1)} px`,
+  );
+
+  // Tỉ lệ đo được phải khớp `aria-valuenow` trong sai số ±8 điểm: hai pane còn
+  // có viền và thanh kéo chen giữa nên không bao giờ khớp tuyệt đối.
+  const total = measured.viewerHeight + measured.paneHeight;
+  const actual = total > 0 ? (measured.viewerHeight / total) * 100 : 0;
+  check(
+    'hai pane chia đúng tỉ lệ đã đặt',
+    Math.abs(actual - measured.ratioNow) < 8,
+    `đo được ${actual.toFixed(0)}%, đặt ${measured.ratioNow}%`,
+  );
+
+  return measured;
+};
+
+/**
+ * Kéo splitter bằng bàn phím rồi đo lại: tỉ lệ thật phải đổi theo.
+ *
+ * Dùng bàn phím chứ không giả lập chuỗi pointer event: `setPointerCapture` trong
+ * CDP cần toạ độ thật và dễ đỏ giả. Bàn phím đi qua **đúng** đường `onDrag` +
+ * `onCommit`, tức vẫn kiểm được thứ cần kiểm.
+ */
+const checkSplitterDrag = async (cdp, before) => {
+  const moved = await cdp.evaluate(`
+    (() => {
+      const splitter = document.querySelector('[data-testid="pane-splitter"]');
+      if (splitter === null) return false;
+      splitter.focus();
+      for (let i = 0; i < 5; i += 1) {
+        splitter.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+        );
+      }
+      return true;
+    })()
+  `);
+
+  if (moved !== true) {
+    fail('kéo thanh splitter', 'không thấy thanh kéo');
+    return;
+  }
+
+  await sleep(400);
+  const after = await cdp.evaluate(measureSubtitle);
+
+  check(
+    'kéo thanh thì phụ đề CAO LÊN thật (không chỉ đổi thuộc tính)',
+    after !== null && after.paneHeight > before.paneHeight,
+    `${before.paneHeight} → ${after?.paneHeight} px`,
+  );
+
+  // Trả lại chỗ cũ để ảnh chụp và các phép kiểm sau nhìn như mặc định
+  await cdp.evaluate(`
+    (() => {
+      const splitter = document.querySelector('[data-testid="pane-splitter"]');
+      for (let i = 0; i < 5; i += 1) {
+        splitter?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      }
+      return true;
+    })()
+  `);
+  await sleep(300);
+};
+
+/**
+ * Ẩn/hiện phụ đề: viewer phải lấy lại đúng chỗ, rồi trả lại khi bật.
+ *
+ * Cùng hình thái lỗi 4.43 với panel đoạn — dựng lại sau khi layout xong cho kết
+ * quả khác lần đầu.
+ */
+const checkSubtitleToggle = async (cdp, first) => {
+  const clickToggle = `
+    (() => {
+      const button = [...document.querySelectorAll('button')].find((b) =>
+        /Ẩn phụ đề|Hiện phụ đề/.test(b.textContent ?? ''),
+      );
+      if (button === undefined) return false;
+      button.click();
+      return true;
+    })()
+  `;
+
+  if ((await cdp.evaluate(clickToggle)) !== true) {
+    fail('tìm nút ẩn/hiện phụ đề', 'không thấy nút nào có chữ "Ẩn phụ đề"');
+    return;
+  }
+
+  await sleep(400);
+  const hidden = await cdp.evaluate(`
+    (() => {
+      const column = document.querySelector('[data-testid="pane-splitter"]');
+      const viewer = document.querySelector('main');
+      return { splitterGone: column === null, viewerHeight: viewer?.clientHeight ?? 0 };
+    })()
+  `);
+
+  check('ẩn phụ đề thì thanh kéo biến mất theo', hidden?.splitterGone === true, String(hidden?.splitterGone));
+  check(
+    'ẩn phụ đề thì viewer lấy hết chỗ',
+    hidden !== null && hidden.viewerHeight > first.viewerHeight,
+    `${first.viewerHeight} → ${hidden?.viewerHeight} px`,
+  );
+
+  await cdp.evaluate(clickToggle);
+  await sleep(400);
+
+  const again = await waitFor('phụ đề hiện lại', async () => {
+    const value = await cdp.evaluate(measureSubtitle);
+    return value !== null ? value : undefined;
+  });
+
+  check(
+    'hiện lại cho đúng chiều cao như lần đầu',
+    Math.abs(again.paneHeight - first.paneHeight) <= 2,
+    `lần đầu ${first.paneHeight} px, sau khi hiện lại ${again.paneHeight} px`,
+  );
+};
+
 /* ------------------------------------------------------- phép kiểm viewer PDF */
 
 /**
@@ -692,6 +875,11 @@ const run = async (cdp) => {
 
   const layout = await checkSegmentLayout(cdp);
   await checkSegmentToggle(cdp, layout);
+
+  const subtitle = await checkSubtitle(cdp);
+  await checkSplitterDrag(cdp, subtitle);
+  await checkSubtitleToggle(cdp, subtitle);
+
   await cdp.screenshot(packaged ? 'packaged-reader-dark' : 'dev-reader-dark');
 
   const canvas = await cdp.evaluate(measurePdfCanvas);

@@ -120,6 +120,11 @@ _VIETNAMESE_SYLLABLES = frozenset(
         "buon", "canh", "chan", "danh", "duoc", "gia", "giai", "hanh",
         "hoan", "keo", "lai", "long", "mang", "minh", "muon", "ngon",
         "nguoi", "phai", "qua", "rieng", "song", "tao", "thai", "toan",
+        # Âm tiết `-ao`: cần từ khi bỏ chặn nguyên âm đôi `ao` để cứu `Aoi`,
+        # `Nao`, `Kaori`. Không có mấy mục này thì `Nào`/`Bao`/`Gạo` viết không
+        # dấu đứng đầu câu bị đọc thành `Na-ô`/`Ba-ô`/`Ga-ô`.
+        "dao", "mao", "nao", "bao", "gao", "cao", "lao", "rao", "sao", "vao",
+        "hao", "chao", "thao", "khao", "ngao", "nhao", "trao", "giao",
     }
 )
 
@@ -142,9 +147,15 @@ _NON_ROMAJI_CLUSTERS = (
 _ENGLISH_SUFFIXES = ("ing", "tion", "ment", "ness", "able", "ible", "ous", "ful")
 
 # Nguyên âm đôi không tồn tại trong romaji Hepburn: `ea` (`season`, `reason`),
-# `eo`, `oa`, `ue`. Lưu ý `ai`, `ui`, `oi`, `ei` KHÔNG có ở đây — chúng là
-# romaji hợp lệ (`Saitama`, `Sensei`, `Koi`), chặn thì mất tên Nhật thật.
-_NON_ROMAJI_VOWEL_PAIRS = ("ea", "eo", "oa", "ue", "ao", "iu", "uo")
+# `oa`, `ue`. Lưu ý `ai`, `ui`, `oi`, `ei` KHÔNG có ở đây — chúng là romaji
+# hợp lệ (`Saitama`, `Sensei`, `Koi`), chặn thì mất tên Nhật thật.
+#
+# `ao` và `eo` cũng KHÔNG có ở đây dù trông rất "Tây". Đó là hai nguyên âm rời
+# đứng cạnh nhau, hoàn toàn hợp lệ: `Aoi`, `Nao`, `Naoki`, `Kaori`, `Naofumi`,
+# `Reo`, `Kaoru`, `Aoba`. Đo trên danh sách 291 tên LN thì chặn `ao`/`eo` làm
+# mất 6 tên thật — nhiều hơn số từ Tây mà nó cứu được, vì phần lớn từ Tây có
+# `ao`/`eo` (`chaos`, `people`, `video`, `theory`) đã chết ở ải 4 rồi.
+_NON_ROMAJI_VOWEL_PAIRS = ("ea", "oa", "ue", "iu", "uo")
 
 # Từ tiếng Anh thông dụng mà hình thái trùng romaji hoàn toàn — không luật nào
 # tách được, đành liệt kê. `game` và `minute` có cấu trúc y hệt `kane`/`chitose`
@@ -163,6 +174,10 @@ _ENGLISH_WORDS = frozenset(
         "reason", "season", "person", "poison", "prison", "cotton",
         "before", "become", "became", "machine", "medicine", "magazine",
         "senate", "private", "delete", "compete", "concrete",
+        # Lọt lưới sau khi bỏ chặn `ao`/`eo` — đều tách mora trọn vẹn nên
+        # không luật nào bắt được, đành liệt kê. Chỉ những từ thật sự hay gặp.
+        "radio", "audio", "video", "piano", "neon", "rodeo", "romeo", "oreo",
+        "studio", "ratio", "stereo", "cameo", "scenario",
     }
 )
 

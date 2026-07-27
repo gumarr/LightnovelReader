@@ -114,10 +114,21 @@ describe('appSettingsSchema', () => {
     }
   });
 
-  it('kẹp playbackRate trong 0.5–2.0', () => {
+  it('kẹp playbackRate trong 0.5–3.0', () => {
     expect(appSettingsSchema.safeParse({ ...base, playbackRate: 0.4 }).success).toBe(false);
-    expect(appSettingsSchema.safeParse({ ...base, playbackRate: 2.5 }).success).toBe(false);
+    expect(appSettingsSchema.safeParse({ ...base, playbackRate: 3.5 }).success).toBe(false);
     expect(appSettingsSchema.safeParse({ ...base, playbackRate: 2 }).success).toBe(true);
+    // Hai mốc nhanh thêm ở P3.3
+    expect(appSettingsSchema.safeParse({ ...base, playbackRate: 2.5 }).success).toBe(true);
+    expect(appSettingsSchema.safeParse({ ...base, playbackRate: 3 }).success).toBe(true);
+  });
+
+  it('settings đã lưu ở bản cũ (≤ 2×) vẫn đọc được sau khi nới trần', () => {
+    // Nới trần là thay đổi an toàn một chiều: không cần migration. Hạ trần thì
+    // ngược lại — sẽ làm settings đang lưu 2.5× không parse được.
+    for (const playbackRate of [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]) {
+      expect(appSettingsSchema.safeParse({ ...base, playbackRate }).success).toBe(true);
+    }
   });
 
   it('từ chối audioDir rỗng — path audio phải luôn xác định', () => {

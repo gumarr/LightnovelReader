@@ -549,3 +549,87 @@ describe('player nối vào trình đọc', () => {
     expect(countOpenObjectUrls()).toBe(1);
   });
 });
+
+describe('đường tắt tới màn Giọng đọc (P3.3)', () => {
+  it('chưa chọn giọng thì thanh player nói rõ và cho đường đi thẳng tới chỗ sửa', async () => {
+    await loadSettings({ voiceVi: '' });
+    const onOpenVoices = vi.fn();
+    await act(async () => {
+      render(<ReaderScreen detail={detail()} onBack={vi.fn()} onOpenVoices={onOpenVoices} />);
+    });
+
+    await userEvent.click(screen.getByTestId('player-open-voices'));
+    expect(onOpenVoices).toHaveBeenCalledOnce();
+  });
+
+  it('đã chọn giọng thì không hiện cảnh báo ở thanh player', async () => {
+    await setup();
+    expect(screen.queryByTestId('player-no-voice')).not.toBeInTheDocument();
+  });
+});
+
+describe('nhớ tốc độ phát qua phiên (P3.3)', () => {
+  it('áp tốc độ đã lưu khi mở trình đọc', async () => {
+    await loadSettings({ voiceVi: 'vi_VN-vais1000-medium', playbackRate: 1.5 });
+    await setup();
+
+    await waitFor(() => expect(usePlayerStore.getState().playbackRate).toBe(1.5));
+  });
+
+  it('đổi tốc độ thì ghi xuống settings', async () => {
+    await setup();
+
+    await act(async () => {
+      await usePlayerStore.getState().setRate(2.5);
+    });
+
+    await waitFor(() =>
+      expect(fake.api.settings.update).toHaveBeenCalledWith({ playbackRate: 2.5 }),
+    );
+  });
+
+  it('KHÔNG ghi lại tốc độ vừa đọc từ settings — không tự ghi đè lên chính nó', async () => {
+    await loadSettings({ voiceVi: 'vi_VN-vais1000-medium', playbackRate: 2 });
+    await setup();
+
+    await waitFor(() => expect(usePlayerStore.getState().playbackRate).toBe(2));
+    expect(fake.api.settings.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('vòng đời thẻ <audio>', () => {
+  it('gắn đúng MỘT thẻ vào DOM để ui-check dò được', async () => {
+    await setup();
+
+    const tags = document.querySelectorAll('[data-testid="player-audio"]');
+    expect(tags).toHaveLength(1);
+  });
+
+  it('gỡ thẻ khỏi DOM khi rời trình đọc — không bỏ lại thẻ giữ bộ đệm giải mã', async () => {
+    let unmount!: () => void;
+    await act(async () => {
+      ({ unmount } = render(<ReaderScreen detail={detail()} onBack={vi.fn()} />));
+    });
+    expect(document.querySelectorAll('[data-testid="player-audio"]')).toHaveLength(1);
+
+    await act(async () => {
+      unmount();
+    });
+
+    expect(document.querySelectorAll('[data-testid="player-audio"]')).toHaveLength(0);
+  });
+
+  it('mở lại trình đọc nhiều lần không tích tụ thẻ audio', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      let unmount!: () => void;
+      await act(async () => {
+        ({ unmount } = render(<ReaderScreen detail={detail()} onBack={vi.fn()} />));
+      });
+      await act(async () => {
+        unmount();
+      });
+    }
+
+    expect(document.querySelectorAll('[data-testid="player-audio"]')).toHaveLength(0);
+  });
+});

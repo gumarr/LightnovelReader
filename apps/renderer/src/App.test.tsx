@@ -134,3 +134,33 @@ describe('App', () => {
     expect(fake.settingsListenerCount()).toBe(0);
   });
 });
+
+describe('đường tắt từ thanh player tới màn Giọng đọc (P3.3)', () => {
+  it('đóng sách và mở màn Giọng đọc', async () => {
+    const user = userEvent.setup();
+    // Chưa chọn giọng → thanh player hiện đường tắt
+    fake = installFakeApi({ library: [fakeLibraryEntry()], settings: { voiceVi: '' } });
+    useSettingsStore.setState({ settings: null, error: null, loading: false });
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Kiếm Vực Thần Đế')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Mở Kiếm Vực Thần Đế/ }));
+    await waitFor(() => expect(screen.getAllByTestId('chapter-item').length).toBeGreaterThan(0));
+
+    await act(async () => {
+      // Tên chính xác — `/^Đọc/` trúng cả nút "Đọc <tên chương>" của từng chương
+      await user.click(screen.getByRole('button', { name: 'Đọc' }));
+    });
+    await screen.findByTestId('player-bar');
+
+    await act(async () => {
+      await user.click(screen.getByTestId('player-open-voices'));
+    });
+
+    // Màn Giọng đọc CHỈ hiện khi không còn sách nào mở, nên đường tắt phải đóng
+    // sách chứ không riêng đổi `screen` — thiếu bước đó thì bấm xong không thấy
+    // gì đổi cả.
+    await waitFor(() => expect(screen.queryByTestId('player-bar')).not.toBeInTheDocument());
+    expect(useLibraryStore.getState().opened).toBeNull();
+  });
+});

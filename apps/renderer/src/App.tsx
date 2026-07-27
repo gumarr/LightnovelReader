@@ -49,6 +49,15 @@ export const App = (): JSX.Element => {
             detail={opened}
             {...(reading.chapterId === undefined ? {} : { startChapterId: reading.chapterId })}
             onBack={() => setReading(null)}
+            onOpenVoices={() => {
+              // Màn Giọng đọc chỉ hiện khi không có sách nào mở, nên đường tắt
+              // từ thanh player phải đóng sách chứ không riêng đổi `screen`.
+              // Đóng sách cũng là điều đúng: chọn giọng xong thì trình đọc phải
+              // dựng lại để `voiceReady` có hiệu lực.
+              setReading(null);
+              closeBook();
+              setScreen('voices');
+            }}
           />
         );
       }

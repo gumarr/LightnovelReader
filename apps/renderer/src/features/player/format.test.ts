@@ -3,12 +3,14 @@ import { PLAYBACK_RATE_MAX, PLAYBACK_RATE_MIN } from '@ln/shared';
 import type { SkippedSegment } from '@/stores/player-store';
 import {
   clampRate,
+  formatClock,
   PLAYBACK_RATE_STEPS,
   playButtonLabel,
   playerStateLabel,
   positionPercent,
   rateLabel,
   skippedSummary,
+  stepRate,
 } from './format.js';
 
 describe('playButtonLabel', () => {
@@ -76,6 +78,56 @@ describe('PLAYBACK_RATE_STEPS', () => {
     const sorted = [...PLAYBACK_RATE_STEPS].sort((a, b) => a - b);
     expect([...PLAYBACK_RATE_STEPS]).toEqual(sorted);
     expect(new Set(PLAYBACK_RATE_STEPS).size).toBe(PLAYBACK_RATE_STEPS.length);
+  });
+
+  it('có mốc nhanh 2.5× và 3× (user yêu cầu ở P3.3)', () => {
+    expect(PLAYBACK_RATE_STEPS).toContain(2.5);
+    expect(PLAYBACK_RATE_STEPS).toContain(3);
+  });
+
+  it('mốc cao nhất đúng bằng trần — không có mốc bấm vào là bị kẹp', () => {
+    const highest = PLAYBACK_RATE_STEPS[PLAYBACK_RATE_STEPS.length - 1];
+    expect(highest).toBe(PLAYBACK_RATE_MAX);
+  });
+});
+
+describe('stepRate — đi từng mốc bằng phím tắt', () => {
+  it('đi tới và đi lui đúng một mốc', () => {
+    expect(stepRate(1, 1)).toBe(1.25);
+    expect(stepRate(1.25, -1)).toBe(1);
+    expect(stepRate(2, 1)).toBe(2.5);
+    expect(stepRate(2.5, 1)).toBe(3);
+  });
+
+  it('đứng yên ở hai đầu thay vì vòng lại', () => {
+    // Vòng từ 3× về 0.75× là cú nhảy tốc độ nghe rất chói khi đang phát
+    expect(stepRate(3, 1)).toBe(3);
+    expect(stepRate(0.75, -1)).toBe(0.75);
+  });
+
+  it('tốc độ lạ (settings cũ) thì bắt lấy mốc gần nhất rồi mới đi', () => {
+    // 1.4 gần 1.5 nhất → lui về 1.25, tới lên 1.75
+    expect(stepRate(1.4, -1)).toBe(1.25);
+    expect(stepRate(1.4, 1)).toBe(1.75);
+  });
+});
+
+describe('formatClock', () => {
+  it('dạng m:ss, giây luôn hai chữ số', () => {
+    expect(formatClock(0)).toBe('0:00');
+    expect(formatClock(4_000)).toBe('0:04');
+    expect(formatClock(11_500)).toBe('0:11');
+    expect(formatClock(65_000)).toBe('1:05');
+  });
+
+  it('không vỡ với NaN — `element.duration` là NaN trước khi nạp metadata', () => {
+    expect(formatClock(Number.NaN)).toBe('0:00');
+    expect(formatClock(Number.POSITIVE_INFINITY)).toBe('0:00');
+    expect(formatClock(-5)).toBe('0:00');
+  });
+
+  it('phút vượt 59 thì tràn chứ không cắt mất', () => {
+    expect(formatClock(3_663_000)).toBe('61:03');
   });
 });
 

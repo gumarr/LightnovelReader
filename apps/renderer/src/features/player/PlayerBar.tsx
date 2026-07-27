@@ -1,26 +1,35 @@
 import { usePlayerStore } from '@/stores/player-store';
-import {
-  playButtonLabel,
-  playerStateLabel,
-  PLAYBACK_RATE_STEPS,
-  rateLabel,
-  skippedSummary,
-} from './format';
+import { playButtonLabel, playerStateLabel, skippedSummary } from './format';
+import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from './icons';
+import { RateMenu } from './RateMenu';
+import { SegmentProgress } from './SegmentProgress';
 
 /**
- * Thanh điều khiển player: phát/dừng, đoạn trước/sau, tốc độ.
+ * Thanh điều khiển player: phát/dừng, đoạn trước/sau, tốc độ, tiến độ trong đoạn.
  *
- * **Không** hiện thanh tiến độ theo ms ở đây. Vị trí phát đổi 60 lần/giây; đưa
- * vào state React là re-render cả cây mỗi khung hình, đúng thứ CLAUDE.md cấm.
- * Thanh chạy theo từng từ là việc của subtitle pane ở P3.4, vẽ bằng
- * `requestAnimationFrame` ghi thẳng vào DOM qua `ref`.
+ * Thanh tiến độ và đồng hồ **không** đi qua state React — `SegmentProgress` ghi
+ * thẳng vào DOM trong `requestAnimationFrame`. Vị trí phát đổi 60 lần/giây; đưa
+ * vào state là re-render cả cây mỗi khung hình, đúng thứ CLAUDE.md cấm. Thanh
+ * chạy theo **từng từ** là việc của subtitle pane ở P3.4, dùng chung khuôn mẫu.
  *
  * Đoạn bỏ qua hiện thành **một dòng chữ nhỏ**, không phải hộp cảnh báo: user
  * đang nghe, không cần bấm gì, và chặn đường vì một đoạn hỏng là đúng thứ P3.2
  * sinh ra để tránh.
  */
 
-export const PlayerBar = (): JSX.Element => {
+export type PlayerBarProps = {
+  /**
+   * Chưa chọn giọng đọc cho sách này — player không tự sinh audio được.
+   *
+   * `undefined` nghĩa là người gọi không quản chuyện giọng đọc (chỗ khác dùng
+   * lại thanh này), khác với `false` nghĩa là đã chọn rồi.
+   */
+  voiceReady?: boolean;
+  /** Đưa user tới màn Giọng đọc. Không có thì không hiện đường tắt. */
+  onOpenVoices?: () => void;
+};
+
+export const PlayerBar = ({ voiceReady, onOpenVoices }: PlayerBarProps = {}): JSX.Element => {
   const state = usePlayerStore((s) => s.state);
   const segmentId = usePlayerStore((s) => s.segmentId);
   const playbackRate = usePlayerStore((s) => s.playbackRate);
@@ -34,12 +43,13 @@ export const PlayerBar = (): JSX.Element => {
   const summary = skippedSummary(skipped);
   const isPlaying = state === 'playing';
   const isWaiting = state === 'waiting';
+  const needsVoice = voiceReady === false;
 
   return (
     <div
       data-testid="player-bar"
       data-state={state}
-      className="flex shrink-0 flex-col gap-1 border-t border-border bg-bg-elevated px-4 py-2"
+      className="flex shrink-0 flex-col gap-1.5 border-t border-border bg-bg-elevated px-4 py-2"
     >
       <div className="flex items-center gap-2">
         <button
@@ -47,33 +57,34 @@ export const PlayerBar = (): JSX.Element => {
           data-testid="player-prev"
           onClick={() => void previous()}
           disabled={segmentId === null}
-          title="Đoạn trước"
+          title="Đoạn trước (J)"
           aria-label="Đoạn trước"
-          className="rounded border border-border px-2 py-1 text-sm text-fg transition-colors hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded border border-border p-1.5 text-fg transition-colors hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
         >
-          ⏮
+          <PreviousIcon />
         </button>
 
         <button
           type="button"
           data-testid="player-toggle"
+          data-playing={isPlaying}
           onClick={() => void toggle()}
-          title={playButtonLabel(state)}
+          title={`${playButtonLabel(state)} (Space)`}
           aria-label={playButtonLabel(state)}
-          className="rounded bg-accent px-3 py-1 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90"
+          className="rounded bg-accent p-1.5 text-accent-fg transition-opacity hover:opacity-90"
         >
-          {isPlaying ? '⏸' : '▶'}
+          {isPlaying ? <PauseIcon /> : <PlayIcon />}
         </button>
 
         <button
           type="button"
           data-testid="player-next"
           onClick={() => void next()}
-          title="Đoạn sau"
+          title="Đoạn sau (K)"
           aria-label="Đoạn sau"
-          className="rounded border border-border px-2 py-1 text-sm text-fg transition-colors hover:bg-bg-subtle"
+          className="rounded border border-border p-1.5 text-fg transition-colors hover:bg-bg-subtle"
         >
-          ⏭
+          <NextIcon />
         </button>
 
         <p data-testid="player-state" className="min-w-0 flex-1 truncate text-xs text-fg-muted">
@@ -88,28 +99,29 @@ export const PlayerBar = (): JSX.Element => {
           )}
         </p>
 
-        <div className="flex shrink-0 items-center gap-1">
-          {PLAYBACK_RATE_STEPS.map((rate) => (
-            <button
-              key={rate}
-              type="button"
-              data-testid={`player-rate-${String(rate)}`}
-              data-active={playbackRate === rate}
-              onClick={() => void setRate(rate)}
-              // CLAUDE.md: đổi tốc độ KHÔNG regenerate audio — playbackRate +
-              // preservesPitch, xử lý trong `audio-element.ts`
-              title={`Tốc độ ${rateLabel(rate)}`}
-              className={
-                playbackRate === rate
-                  ? 'rounded bg-accent/10 px-1.5 py-0.5 text-xs font-medium text-accent'
-                  : 'rounded px-1.5 py-0.5 text-xs text-fg-muted transition-colors hover:bg-bg-subtle hover:text-fg'
-              }
-            >
-              {rateLabel(rate)}
-            </button>
-          ))}
-        </div>
+        <RateMenu rate={playbackRate} onSelect={(rate) => void setRate(rate)} />
       </div>
+
+      <SegmentProgress />
+
+      {needsVoice && (
+        // Chưa chọn giọng thì mọi lượt phát đều dừng ở "đang tạo audio" mãi —
+        // nói ngay tại thanh player kèm đường đi thẳng tới chỗ sửa, thay vì để
+        // user tự mò ra màn Giọng đọc.
+        <p data-testid="player-no-voice" className="flex items-center gap-1.5 text-xs text-danger">
+          <span className="min-w-0 truncate">Chưa chọn giọng đọc — không tạo được audio.</span>
+          {onOpenVoices !== undefined && (
+            <button
+              type="button"
+              data-testid="player-open-voices"
+              onClick={onOpenVoices}
+              className="shrink-0 underline transition-opacity hover:opacity-80"
+            >
+              Chọn giọng
+            </button>
+          )}
+        </p>
+      )}
 
       {summary !== undefined && (
         <p data-testid="player-skipped" className="truncate text-xs text-fg-muted">

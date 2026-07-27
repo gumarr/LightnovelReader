@@ -30,12 +30,18 @@ export type ReaderScreenProps = {
   /** Chương user bấm ở mục lục. Không có = mở chỗ đọc dở. */
   startChapterId?: string;
   onBack: () => void;
+  /**
+   * Mở màn Giọng đọc. Dùng cho đường tắt ở thanh player khi chưa chọn giọng —
+   * màn đó nằm ngoài trình đọc nên phải đóng sách, việc của `App`.
+   */
+  onOpenVoices?: () => void;
 };
 
 export const ReaderScreen = ({
   detail,
   startChapterId,
   onBack,
+  onOpenVoices,
 }: ReaderScreenProps): JSX.Element => {
   const { book, chapters, resumeChapterId } = detail;
 
@@ -63,6 +69,11 @@ export const ReaderScreen = ({
   const voiceReady = useSettingsStore(
     (s) => ((book.lang === 'vi' ? s.settings?.voiceVi : s.settings?.voiceEn) ?? '') !== '',
   );
+
+  // Tốc độ phát nhớ qua phiên. `undefined` khi settings chưa nạp xong — player
+  // giữ 1× rồi áp lại khi có, chứ không đoán bừa.
+  const storedRate = useSettingsStore((s) => s.settings?.playbackRate);
+  const updateSettings = useSettingsStore((s) => s.update);
 
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -107,7 +118,17 @@ export const ReaderScreen = ({
   // Player: dựng thẻ audio, nối IPC, nhả Blob URL khi rời trình đọc.
   // `setActiveSegment` để viewer cuộn tới và tô đúng đoạn đang phát — chính là
   // đường P1.6c đã dựng sẵn cho Phase 3.
-  usePlayer({ segments, canGenerate: voiceReady, onSegmentChanged: setActiveSegment });
+  usePlayer({
+    segments,
+    canGenerate: voiceReady,
+    onSegmentChanged: setActiveSegment,
+    ...(storedRate === undefined ? {} : { storedRate }),
+    onRateChanged: (playbackRate) => {
+      // Không `await`: đổi tốc độ phải ăn ngay ở thẻ audio, còn việc ghi xuống
+      // SQLite là chuyện nền. Hỏng thì `settings-store` đã hiện lỗi của nó.
+      void updateSettings({ playbackRate });
+    },
+  });
 
   // Prefetch chương kế khi đọc tới 80% chương hiện tại. Tiến độ đo bằng segment
   // đang đọc chứ không bằng cuộn — xem `nextChapterToPrefetch`.
@@ -285,7 +306,10 @@ export const ReaderScreen = ({
         ) : null}
       </div>
 
-      <PlayerBar />
+      <PlayerBar
+        voiceReady={voiceReady}
+        {...(onOpenVoices === undefined ? {} : { onOpenVoices })}
+      />
     </div>
   );
 };

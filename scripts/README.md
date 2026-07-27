@@ -49,9 +49,13 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
 | Ẩn/hiện panel cho **cùng** số dòng | thứ tự khởi tạo còn quyết định kết quả |
 | Canvas PDF có pixel khác trắng | pdfjs hỏng ở bản đóng gói (4.19) |
 | Thanh dung lượng có chiều cao thật | Storage Manager hỏng bố cục |
-| Thanh player hiện ra, đủ mốc tốc độ, màu không trong suốt | `PlayerBar` hỏng bố cục hoặc mất màu |
+| Thanh player hiện ra, màu không trong suốt | `PlayerBar` hỏng bố cục hoặc mất màu |
+| Icon điều khiển vẽ ra hình thật, ăn màu chữ | icon SVG hỏng path, hoặc lỡ quay lại dùng emoji (P3.3) |
+| Thanh tiến độ có bề ngang & chiều cao thật | `SegmentProgress` hỏng bố cục — đúng loại lỗi 4.43 |
+| Menu tốc độ đủ 8 mốc và **mở lên** | thanh player sát đáy cửa sổ, mở xuống là nằm ngoài màn hình |
 | **Chromium giữ `preservesPitch`** | nền tảng của "đổi tốc độ ≠ regenerate" (CLAUDE.md) — jsdom không có media element nên đây là chỗ **duy nhất** kiểm được |
-| Bấm mốc tốc độ thì mốc đó sáng lên | đứt ở một mắt trong chuỗi store → sink → thẻ `<audio>` |
+| Tốc độ tới được thẻ `<audio>` thật | đứt ở một mắt trong chuỗi store → sink → thẻ `<audio>` |
+| Phím tắt ăn ở ngoài, **nhường** khi đang gõ trong ô nhập | phím tắt gắn ở `window` cướp phím của cả app |
 
 Đổi theme bằng cách **bấm nút thật** (`[data-theme-resolved]`), không sửa
 `classList` — cần biết cả đường đi nút → IPC → settings → biến CSS có đúng không.
@@ -65,6 +69,11 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
 - **Không nghe được tiếng.** CDP không đọc được đầu ra âm thanh, nên script chỉ
   chứng minh được thẻ `<audio>` tồn tại, `preservesPitch` được giữ và nút bấm
   thông suốt. "Nghe liên tục hết chương" (DoD Phase 3) vẫn phải do người kiểm.
+- Thẻ `<audio>` được gắn ẩn vào `document.body` với
+  `data-testid="player-audio"`. Trước P3.3 nó nằm ngoài DOM, và phép kiểm
+  `preservesPitch` **im lặng đo một thẻ `new Audio()` do chính nó tạo** — luôn
+  xanh kể cả khi player không dựng được thẻ nào. Không bao giờ fallback sang thẻ
+  tự tạo trong phép kiểm: thứ tự tạo luôn cho kết quả đẹp.
 - **Chưa vào CI.** Bản dev cần venv Python cho sidecar, và cả hai bản cần một
   sách thật — chưa dựng được trên runner sạch. Xem PROGRESS mục 8.
 

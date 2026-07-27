@@ -29,16 +29,40 @@ beforeEach(() => {
 });
 
 describe('nút phát', () => {
-  it('hiện ▶ lúc chưa phát và ⏸ lúc đang phát', () => {
+  it('đổi giữa icon phát và icon tạm dừng', () => {
     const { rerender } = render(<PlayerBar />);
-    expect(screen.getByTestId('player-toggle')).toHaveTextContent('▶');
+    // Icon là SVG chứ không phải emoji, nên kiểm bằng `data-playing` — bản P3.2
+    // dùng ký tự `▶`/`⏸` và hình dạng do font quyết định, không do mình
+    expect(screen.getByTestId('player-toggle')).toHaveAttribute('data-playing', 'false');
 
     // `setState` của zustand đẩy vào React ngoài vòng render → phải bọc `act`
     act(() => {
       setState({ state: 'playing', segmentId: 'a' });
     });
     rerender(<PlayerBar />);
-    expect(screen.getByTestId('player-toggle')).toHaveTextContent('⏸');
+    expect(screen.getByTestId('player-toggle')).toHaveAttribute('data-playing', 'true');
+  });
+
+  it('icon vẽ bằng SVG ăn theo màu chữ, không phải emoji', () => {
+    render(<PlayerBar />);
+
+    for (const id of ['player-toggle', 'player-prev', 'player-next']) {
+      const svg = screen.getByTestId(id).querySelector('svg');
+      expect(svg).not.toBeNull();
+      // `currentColor` là thứ khiến icon đổi màu theo theme và theo nền nút.
+      // Emoji không làm được điều này — đó là lý do đổi.
+      expect(svg?.getAttribute('fill')).toBe('currentColor');
+      // Nút đã có `aria-label`; icon đọc thêm là đọc trùng
+      expect(svg?.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('không còn ký tự emoji nào trong nút điều khiển', () => {
+    render(<PlayerBar />);
+
+    for (const id of ['player-toggle', 'player-prev', 'player-next']) {
+      expect(screen.getByTestId(id).textContent).toBe('');
+    }
   });
 
   it('nhãn nói đúng việc nút sẽ làm', () => {
@@ -153,27 +177,97 @@ describe('đoạn bị bỏ qua — thông tin, KHÔNG chặn đường', () => 
 });
 
 describe('tốc độ', () => {
-  it('hiện đủ mốc tốc độ và đánh dấu cái đang chọn', () => {
+  it('nút menu hiện tốc độ đang chọn mà không phải mở menu', () => {
     setState({ playbackRate: 1.5 });
     render(<PlayerBar />);
 
-    expect(screen.getByTestId('player-rate-1.5')).toHaveAttribute('data-active', 'true');
-    expect(screen.getByTestId('player-rate-1')).toHaveAttribute('data-active', 'false');
+    expect(screen.getByTestId('player-rate-menu')).toHaveTextContent('1.5×');
   });
 
-  it('bấm mốc gọi setRate với đúng giá trị', async () => {
+  it('mốc chưa hiện cho tới khi mở menu', () => {
+    render(<PlayerBar />);
+    expect(screen.queryByTestId('player-rate-list')).not.toBeInTheDocument();
+  });
+
+  it('mở menu thấy đủ 8 mốc, gồm 2.5× và 3×', async () => {
+    render(<PlayerBar />);
+    await userEvent.click(screen.getByTestId('player-rate-menu'));
+
+    for (const rate of ['0.75', '1', '1.25', '1.5', '1.75', '2', '2.5', '3']) {
+      expect(screen.getByTestId(`player-rate-${rate}`)).toBeEnabled();
+    }
+  });
+
+  it('đánh dấu mốc đang chọn', async () => {
+    setState({ playbackRate: 2.5 });
+    render(<PlayerBar />);
+    await userEvent.click(screen.getByTestId('player-rate-menu'));
+
+    expect(screen.getByTestId('player-rate-2.5')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('player-rate-1')).toHaveAttribute('data-active', 'false');
+    // Không chỉ dựa vào màu — người mù màu vẫn phải phân biệt được
+    expect(screen.getByTestId('player-rate-2.5')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('bấm mốc gọi setRate rồi đóng menu', async () => {
     const setRate = vi.fn(async () => undefined);
     usePlayerStore.setState({ setRate });
     render(<PlayerBar />);
 
-    await userEvent.click(screen.getByTestId('player-rate-1.5'));
-    expect(setRate).toHaveBeenCalledWith(1.5);
+    await userEvent.click(screen.getByTestId('player-rate-menu'));
+    await userEvent.click(screen.getByTestId('player-rate-3'));
+
+    expect(setRate).toHaveBeenCalledWith(3);
+    expect(screen.queryByTestId('player-rate-list')).not.toBeInTheDocument();
   });
 
-  it('mọi mốc đều bấm được', () => {
+  it('bấm ra ngoài thì đóng menu — không dính lại che thanh tiến độ', async () => {
     render(<PlayerBar />);
-    for (const rate of ['0.75', '1', '1.25', '1.5', '1.75', '2']) {
-      expect(screen.getByTestId(`player-rate-${rate}`)).toBeEnabled();
-    }
+    await userEvent.click(screen.getByTestId('player-rate-menu'));
+    expect(screen.getByTestId('player-rate-list')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('player-state'));
+    expect(screen.queryByTestId('player-rate-list')).not.toBeInTheDocument();
+  });
+
+  it('menu mở LÊN — thanh player nằm sát đáy cửa sổ', async () => {
+    render(<PlayerBar />);
+    await userEvent.click(screen.getByTestId('player-rate-menu'));
+
+    // jsdom không tính layout nên không đo được vị trí thật; kiểm lớp định vị.
+    // Vị trí thật do `pnpm ui-check` đo trên Chromium.
+    expect(screen.getByTestId('player-rate-list').className).toContain('bottom-full');
+  });
+});
+
+describe('đường tắt tới màn Giọng đọc', () => {
+  it('không hiện gì khi đã chọn giọng', () => {
+    render(<PlayerBar voiceReady onOpenVoices={vi.fn()} />);
+    expect(screen.queryByTestId('player-no-voice')).not.toBeInTheDocument();
+  });
+
+  it('chưa chọn giọng thì nói rõ lý do ngay tại thanh player', () => {
+    render(<PlayerBar voiceReady={false} onOpenVoices={vi.fn()} />);
+    expect(screen.getByTestId('player-no-voice')).toHaveTextContent('Chưa chọn giọng đọc');
+  });
+
+  it('bấm "Chọn giọng" gọi đúng hàm điều hướng', async () => {
+    const onOpenVoices = vi.fn();
+    render(<PlayerBar voiceReady={false} onOpenVoices={onOpenVoices} />);
+
+    await userEvent.click(screen.getByTestId('player-open-voices'));
+    expect(onOpenVoices).toHaveBeenCalledOnce();
+  });
+
+  it('không có hàm điều hướng thì vẫn báo, chỉ bỏ nút', () => {
+    render(<PlayerBar voiceReady={false} />);
+
+    expect(screen.getByTestId('player-no-voice')).toBeInTheDocument();
+    expect(screen.queryByTestId('player-open-voices')).not.toBeInTheDocument();
+  });
+
+  it('người gọi không truyền voiceReady thì không đoán bừa là thiếu giọng', () => {
+    render(<PlayerBar />);
+    expect(screen.queryByTestId('player-no-voice')).not.toBeInTheDocument();
   });
 });

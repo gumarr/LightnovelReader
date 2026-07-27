@@ -77,8 +77,22 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'audioDir'> = {
 export const VIEWER_PANE_RATIO_MIN = 0.2;
 export const VIEWER_PANE_RATIO_MAX = 0.8;
 
+/**
+ * Khoảng tốc độ phát hợp lệ.
+ *
+ * Trần là **3×** chứ không phải 2× như plan.md ghi ban đầu: user đọc quen thì
+ * 2× vẫn còn chậm, và Chromium giữ được cao độ (`preservesPitch`) tới quá mức
+ * này nên không phải sinh lại audio — đúng ràng buộc của CLAUDE.md.
+ *
+ * Không nới thêm: trên 3× thì `preservesPitch` của Chromium bắt đầu cho ra tiếng
+ * lạo xạo nghe rõ, mà giọng Piper vốn đã không thật tự nhiên.
+ *
+ * Nới trần là thay đổi **an toàn một chiều** với settings đã lưu: mọi giá trị cũ
+ * (≤ 2) vẫn hợp lệ với zod schema nên không cần migration. Hạ trần thì ngược
+ * lại — sẽ làm settings đang lưu 2.5× không parse được.
+ */
 export const PLAYBACK_RATE_MIN = 0.5;
-export const PLAYBACK_RATE_MAX = 2;
+export const PLAYBACK_RATE_MAX = 3;
 
 /**
  * Số segment player xếp ưu tiên trước đầu phát.

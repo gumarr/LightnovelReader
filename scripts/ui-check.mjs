@@ -755,16 +755,85 @@ const checkPlayer = async (cdp) => {
   }
 
   check('thanh player có chiều cao thật', bar.height > 20, `${bar.height} px`);
-  check('có đủ mốc tốc độ', bar.rates === 6, `${bar.rates} mốc`);
   check('nền thanh player không trong suốt', !isTransparent(bar.bg), bar.bg);
   check('nút phát không trong suốt', !isTransparent(bar.toggleBg), bar.toggleBg);
   check('trạng thái ban đầu là idle', bar.state === 'idle', bar.state);
+
+  // Icon SVG thay cho emoji ⏮ ▶ ⏭ của bản P3.2: emoji là *ký tự*, hình dạng do
+  // font quyết định và không ăn theo màu chữ. jsdom không tính CSS nên chỉ chỗ
+  // này mới đo được icon có thật sự hiện ra và có kích thước.
+  const icons = await cdp.evaluate(`
+    (() => {
+      const ids = ['player-prev', 'player-toggle', 'player-next'];
+      return ids.map((id) => {
+        const btn = document.querySelector('[data-testid="' + id + '"]');
+        const svg = btn === null ? null : btn.querySelector('svg');
+        if (svg === null) return { id, ok: false };
+        const box = svg.getBoundingClientRect();
+        return {
+          id,
+          ok: true,
+          w: Math.round(box.width),
+          h: Math.round(box.height),
+          // Màu icon lấy từ màu chữ của nút — thứ emoji không làm được
+          color: getComputedStyle(svg).color,
+          text: btn.textContent.trim(),
+        };
+      });
+    })()
+  `);
+
+  const drawn = (icons ?? []).filter((i) => i.ok && i.w >= 10 && i.h >= 10);
+  check('icon điều khiển vẽ ra hình thật', drawn.length === 3, `${drawn.length}/3 icon có kích thước`);
+  check(
+    'icon ăn theo màu chữ của nút',
+    drawn.every((i) => !isTransparent(i.color)),
+    drawn.map((i) => i.color).join(' · '),
+  );
+  check(
+    'không còn emoji trong nút điều khiển',
+    (icons ?? []).every((i) => i.text === ''),
+    (icons ?? []).map((i) => JSON.stringify(i.text)).join(' '),
+  );
+
+  // Thanh tiến độ trong đoạn — `flex-1` nên phải rộng thật, và cao thật.
+  // Đúng loại lỗi mà mục 4.43 đã gặp: jsdom cho `clientHeight` luôn bằng 0.
+  const progress = await cdp.evaluate(`
+    (() => {
+      const track = document.querySelector('[data-testid="player-progress"]');
+      const fill = document.querySelector('[data-testid="player-progress-fill"]');
+      const clock = document.querySelector('[data-testid="player-clock"]');
+      if (track === null || fill === null) return null;
+      const box = track.getBoundingClientRect();
+      return {
+        w: Math.round(box.width),
+        h: Math.round(box.height),
+        trackBg: getComputedStyle(track).backgroundColor,
+        fillBg: getComputedStyle(fill).backgroundColor,
+        clock: clock === null ? null : clock.textContent.trim(),
+      };
+    })()
+  `);
+
+  if (progress === null) {
+    fail('thanh tiến độ trong đoạn hiện ra', 'không thấy [data-testid="player-progress"]');
+  } else {
+    check('thanh tiến độ có bề ngang thật', progress.w > 100, `${progress.w} px`);
+    check('thanh tiến độ có chiều cao thật', progress.h >= 4, `${progress.h} px`);
+    check('nền rãnh không trong suốt', !isTransparent(progress.trackBg), progress.trackBg);
+    check('màu thanh chạy không trong suốt', !isTransparent(progress.fillBg), progress.fillBg);
+    check('đồng hồ hiện đúng dạng m:ss', /^\d+:\d{2} \/ \d+:\d{2}$/.test(progress.clock ?? ''), progress.clock);
+  }
 
   // Thẻ `<audio>` do `usePlayer` dựng bằng `document.createElement` — không nằm
   // trong cây React nên `querySelector` trên document mới thấy.
   const media = await cdp.evaluate(`
     (() => {
-      const el = document.querySelector('audio') ?? new Audio();
+      // KHÔNG fallback sang \`new Audio()\`: thẻ tự tạo luôn cho kết quả đẹp, nên
+      // fallback biến phép kiểm này thành luôn-xanh kể cả khi player không dựng
+      // được thẻ nào. Không thấy thẻ thật thì phải đỏ.
+      const el = document.querySelector('[data-testid="player-audio"]');
+      if (el === null) return null;
       // preservesPitch giữ lời hứa "đổi tốc độ KHÔNG regenerate audio".
       // Trình duyệt không hỗ trợ thì gán vào cũng không giữ lại.
       el.playbackRate = 1.5;
@@ -773,23 +842,122 @@ const checkPlayer = async (cdp) => {
     })()
   `);
 
-  check('Chromium giữ preservesPitch', media?.supportsPitch === true, String(media?.supportsPitch));
-  check('playbackRate đặt được', media?.rate === 1.5, String(media?.rate));
+  if (media === null) {
+    fail('player dựng được thẻ <audio> thật', 'không thấy [data-testid="player-audio"]');
+  } else {
+    check('Chromium giữ preservesPitch', media.supportsPitch === true, String(media.supportsPitch));
+    check('playbackRate đặt được', media.rate === 1.5, String(media.rate));
+  }
 
-  // Bấm một mốc tốc độ thật rồi đo lại — đường này đi qua store, sink, và thẻ
-  // audio thật, tức đúng chuỗi mà user bấm.
-  await cdp.evaluate(clickTestId('player-rate-1.5'));
-  const afterRate = await cdp.evaluate(`
+  // Menu tốc độ: mốc chỉ tồn tại sau khi mở menu (P3.3 đổi từ 6 nút bày ngang
+  // sang menu thả xuống — 8 mốc bày ngang thì thanh player chật).
+  await cdp.evaluate(clickTestId('player-rate-menu'));
+  const menu = await cdp.evaluate(`
     (() => {
-      const btn = document.querySelector('[data-testid="player-rate-1.5"]');
-      if (btn === null) return null;
-      const style = getComputedStyle(btn);
-      return { active: btn.getAttribute('data-active'), color: style.color };
+      const list = document.querySelector('[data-testid="player-rate-list"]');
+      if (list === null) return null;
+      const box = list.getBoundingClientRect();
+      const bar = document.querySelector('[data-testid="player-bar"]').getBoundingClientRect();
+      const steps = [...list.querySelectorAll('[data-testid^="player-rate-"]')];
+      return {
+        count: steps.length,
+        labels: steps.map((s) => s.textContent.trim()),
+        bg: getComputedStyle(list).backgroundColor,
+        // Thanh player nằm sát đáy cửa sổ → menu PHẢI mở lên, nếu không nó nằm
+        // ngoài màn hình. jsdom không tính layout nên chỉ đo được ở đây.
+        opensUpward: box.top < bar.top,
+        insideViewport: box.top >= 0 && box.bottom <= window.innerHeight,
+      };
     })()
   `);
 
-  check('bấm mốc tốc độ thì mốc đó sáng lên', afterRate?.active === 'true', String(afterRate?.active));
-  check('màu mốc đang chọn không trong suốt', !isTransparent(afterRate?.color), afterRate?.color);
+  if (menu === null) {
+    fail('mở được menu tốc độ', 'không thấy [data-testid="player-rate-list"]');
+  } else {
+    check('menu tốc độ có đủ 8 mốc', menu.count === 8, `${menu.count} mốc`);
+    check(
+      'có mốc nhanh 2.5× và 3×',
+      menu.labels.some((l) => l.includes('2.5')) && menu.labels.some((l) => l.includes('3×')),
+      menu.labels.join(' '),
+    );
+    check('nền menu không trong suốt', !isTransparent(menu.bg), menu.bg);
+    check('menu mở LÊN, không bị đáy cửa sổ cắt', menu.opensUpward === true, String(menu.opensUpward));
+    check('menu nằm trọn trong màn hình', menu.insideViewport === true, String(menu.insideViewport));
+  }
+
+  // Bấm một mốc thật rồi đo lại — đường này đi qua store, sink, và thẻ audio
+  // thật, tức đúng chuỗi mà user bấm. Chọn 3× để kiểm luôn mốc mới của P3.3.
+  await cdp.evaluate(clickTestId('player-rate-3'));
+  const afterRate = await cdp.evaluate(`
+    (() => {
+      const btn = document.querySelector('[data-testid="player-rate-menu"]');
+      const audio = document.querySelector('[data-testid="player-audio"]');
+      return {
+        label: btn === null ? null : btn.textContent.trim(),
+        closed: document.querySelector('[data-testid="player-rate-list"]') === null,
+        // Giá trị đã tới thẻ audio thật chưa — mắt xích cuối của chuỗi
+        audioRate: audio === null ? null : audio.playbackRate,
+        pitch: audio === null ? null : audio.preservesPitch,
+      };
+    })()
+  `);
+
+  check('bấm mốc thì nút hiện đúng tốc độ vừa chọn', afterRate?.label?.includes('3×') === true, afterRate?.label);
+  check('chọn xong thì menu đóng lại', afterRate?.closed === true, String(afterRate?.closed));
+  check('tốc độ 3× tới được thẻ audio thật', afterRate?.audioRate === 3, String(afterRate?.audioRate));
+  check('preservesPitch vẫn bật ở 3×', afterRate?.pitch === true, String(afterRate?.pitch));
+
+  // Phím tắt: gửi sự kiện bàn phím thật vào `window` như Chromium sinh ra.
+  // Kiểm hai chiều — phím phải ăn ở ngoài, và phải NHƯỜNG khi user đang gõ.
+  const shortcut = await cdp.evaluate(`
+    (async () => {
+      const press = (key, target) =>
+        (target ?? window).dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+        );
+
+      const rateOf = () =>
+        document.querySelector('[data-testid="player-rate-menu"]').textContent.trim();
+
+      // \`setRate\` là async và React phải render lại thì nhãn nút mới đổi. Đọc
+      // ngay sau khi bấm phím là đọc nhãn cũ → đỏ giả.
+      const settle = () => new Promise((r) => setTimeout(r, 120));
+
+      const before = rateOf();
+      press('[');
+      await settle();
+      const afterBracket = rateOf();
+
+      // Ô nhập tạm để kiểm việc nhường phím — user gõ trong ô tìm kiếm hoặc ô
+      // đổi tên chương thì KHÔNG được đổi tốc độ / tạm dừng nhạc.
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      input.focus();
+      const rateBeforeTyping = rateOf();
+      press('[', input);
+      await settle();
+      const rateAfterTyping = rateOf();
+      input.remove();
+
+      return {
+        changedOutside: before !== afterBracket,
+        before,
+        after: afterBracket,
+        ignoredWhileTyping: rateBeforeTyping === rateAfterTyping,
+      };
+    })()
+  `);
+
+  check(
+    'phím [ đổi tốc độ khi đang đọc',
+    shortcut?.changedOutside === true,
+    `${shortcut?.before} → ${shortcut?.after}`,
+  );
+  check(
+    'phím tắt NHƯỜNG khi user đang gõ trong ô nhập',
+    shortcut?.ignoredWhileTyping === true,
+    String(shortcut?.ignoredWhileTyping),
+  );
 };
 
 /* ---------------------------------------------------------------- điều phối */

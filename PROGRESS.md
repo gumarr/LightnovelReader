@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-27 · commit `0fdf7f6`
+> **Cập nhật lần cuối:** 2026-07-27 · commit `_______`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,10 +39,11 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P3.3 — Player UI hoàn chỉnh (xem mục 3).
+**Việc tiếp theo:** P3.4 — Subtitle pane + highlight từng từ (xem mục 3).
 **Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy
 lẫn bản đóng gói.** P2.8 đã trả **hết 4 nợ mức Cao** trong mục 8.
-**Phase 3 đang làm: P3.1 + P3.2 xong** (tầng dữ liệu, và máy trạng thái phát).
+**Phase 3 đang làm: P3.1 + P3.2 + P3.3 xong** (tầng dữ liệu, máy trạng thái phát,
+và player UI đầy đủ). Còn P3.4 là hết Phase 3.
 
 ---
 
@@ -705,14 +706,76 @@ Tìm ra **1 lỗi thật** mà 1793 unit test suýt không lộ — xem mục 4.
 bắt bởi một test tích hợp ở `ReaderScreen`, không phải test đơn vị của store: nó
 chỉ tồn tại ở **chỗ nối** giữa `reader-store` và `player-store`.
 
+### Phase 3 — P3.3 Player UI đầy đủ ✅
+
+Phần còn lại của player theo plan.md, cộng hai thứ **user yêu cầu trực tiếp**:
+icon next/previous xấu (emoji), và thêm mốc tốc độ 2.5×/3×.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `player/icons.tsx` | 5 icon SVG inline thay emoji `⏮ ▶ ⏸ ⏭` | (qua PlayerBar) |
+| `player/SegmentProgress.tsx` | Thanh tiến độ trong đoạn + đồng hồ + bấm/kéo để tua | 9 |
+| `player/useSegmentProgress.ts` | Vòng `rAF` ghi thẳng DOM qua `ref` | (chung ở trên) |
+| `player/RateMenu.tsx` | Menu tốc độ 8 mốc, mở lên | (qua PlayerBar) |
+| `player/usePlayerShortcuts.ts` | Space, ←/→, J/K, `[`/`]` — gắn ở `window` | 18 |
+| `player/format.ts` | `+stepRate`, `+formatClock`, 8 mốc tốc độ | +11 |
+| `player/PlayerBar.tsx` | Bố cục lại: 2 hàng, thêm đường tắt Giọng đọc | 26 |
+| `stores/player-store.ts` | `+playerPositionMs`, `+applyStoredRate`, `+persistRate` | +6 |
+| `reader/ReaderScreen.tsx` | Nối settings ↔ tốc độ, truyền `onOpenVoices` | +8 |
+| `App.tsx` | Đường tắt phải **đóng sách** rồi mới đổi màn | +1 |
+| `shared/constants.ts` | `PLAYBACK_RATE_MAX` 2 → **3** | +2 |
+
+**Bốn quyết định đáng nhớ** (chi tiết ở mục 4.55–4.58):
+
+- **Icon là SVG, không phải emoji.** Emoji là *ký tự* — hình dạng do font quyết
+  định, không ăn theo `currentColor`, nên nút phát có nền accent mà icon vẫn đen.
+  Không thêm thư viện icon (CLAUDE.md cấm thêm dependency): 5 hình là 5 `path`.
+- **Tốc độ chuyển sang menu thả xuống** (user chọn). 8 mốc bày ngang thì thanh
+  player chật và trên cửa sổ hẹp sẽ xuống dòng đè lên thanh tiến độ.
+- **Thanh tiến độ không đi qua state React.** `rAF` → ghi thẳng `style.width` và
+  `textContent` qua `ref`, có bộ nhớ giá trị đã vẽ để không đụng DOM khi con số
+  không đổi. Vòng lặp **dừng hẳn** khi không phát.
+- **Tốc độ giờ mới thật sự được nhớ.** `settings.playbackRate` đã có trong DB từ
+  Phase 0 nhưng **chưa bao giờ được đọc hay ghi** — mở lại app là về 1×. Xem 4.58.
+
+**Đã chạy thật trên app đang chạy** (`pnpm ui-check`, 25 phép kiểm player):
+
+| Phép kiểm | Số đo thật |
+|---|---|
+| Thanh player có chiều cao thật | ✅ **69 px** (46 → 69 vì thêm hàng tiến độ) |
+| Icon điều khiển vẽ ra hình thật | ✅ 3/3 có kích thước ≥ 10 px |
+| Icon ăn theo màu chữ của nút | ✅ `rgb(244,244,245)` · `rgb(15,15,17)` · `rgb(244,244,245)` |
+| Không còn emoji trong nút | ✅ `textContent` cả ba nút đều rỗng |
+| Thanh tiến độ có bề ngang/chiều cao thật | ✅ **1349 × 6 px** |
+| Đồng hồ đúng dạng `m:ss` | ✅ `0:00 / 0:00` |
+| Menu tốc độ đủ 8 mốc, có 2.5× và 3× | ✅ `0.75× 1×✓ 1.25× 1.5× 1.75× 2× 2.5× 3×` |
+| Menu **mở lên**, nằm trọn trong màn hình | ✅ `true` — thanh player sát đáy cửa sổ |
+| **Tốc độ 3× tới được thẻ `<audio>` thật** | ✅ `3` |
+| **`preservesPitch` vẫn bật ở 3×** | ✅ `true` |
+| Phím `[` đổi tốc độ khi đang đọc | ✅ `3× → 2.5×` |
+| Phím tắt **nhường** khi đang gõ trong ô nhập | ✅ `true` |
+
+`pnpm ui-check` nay có **47 phép kiểm** (33 → 47). **45/47 đạt**; 2 phép kiểm đỏ
+là **lỗi có sẵn từ trước P3.3**, không phải do phần này — xem mục 8.
+
+**Ba lỗi tìm ra khi kiểm trên app thật**, cả ba đều vô hình với 1863 unit test:
+
+1. **Phép kiểm `preservesPitch` trước nay vô nghĩa** (mục 4.56). Thẻ `<audio>`
+   nằm ngoài DOM nên `querySelector('audio')` không thấy gì, và script tự tạo
+   `new Audio()` để đo — luôn xanh kể cả khi player không dựng được thẻ nào.
+2. **`isContentEditable` không có trong jsdom** (mục 4.57) — nhánh "nhường phím
+   khi user đang gõ" không kiểm được, mà đó đúng là nhánh hỏng âm thầm tệ nhất.
+3. **Đường tắt Giọng đọc phải đóng sách**, không chỉ đổi `screen`: màn đó chỉ
+   render khi `opened === null`. Chỉ đổi `screen` thì bấm xong không thấy gì đổi.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1801 passed** (+134 ở P3.2) |
+| Unit test TypeScript | **1863 passed** (+62 ở P3.3) |
 | Unit test sidecar (pytest) | **345 passed** (không đổi — P3.1 không đụng sidecar) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (+1 ở P3.1) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **33 phép kiểm** (+9 player ở P3.2), 33/33 đạt ở bản dev |
+| **Kiểm UI thật (`pnpm ui-check`)** | **47 phép kiểm** (+14 ở P3.3), 45/47 đạt — 2 đỏ là lỗi có sẵn (mục 8) |
 | Schema DB | **v2** (v2 thêm `chapters.error_count` — mục 4.42) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
@@ -730,12 +793,29 @@ Giữ nguyên quy ước **logic thuần trước, UI sau**:
 |---|---|---|
 | P3.1 | Tầng dữ liệu: `reader:getSegmentAudio`, ước lượng timing, tra từ theo mốc | ✅ Xong |
 | P3.2 | Playback engine: máy trạng thái play/pause/next/prev, nối segment liên tục, `playbackRate` + `preservesPitch`, segment sắp phát nhảy đầu hàng đợi | ✅ Xong |
-| P3.3 | Player UI đầy đủ: thanh tiến độ trong đoạn, phím tắt, đường tắt tới màn Giọng đọc | ⬅️ **Đang tới** |
-| P3.4 | Subtitle pane 3 dòng + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ⬜ Chưa |
+| P3.3 | Player UI đầy đủ: thanh tiến độ trong đoạn, phím tắt, đường tắt tới màn Giọng đọc, icon SVG, mốc 2.5×/3× | ✅ Xong |
+| P3.4 | Subtitle pane 3 dòng + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ⬅️ **Đang tới** |
 
 P3.2 đã kèm sẵn một `PlayerBar` chạy được (nút phát/trước/sau + 6 mốc tốc độ) vì
-không có nút thì không kiểm được máy trạng thái trên app thật. P3.3 làm phần còn
-lại của plan.md.
+không có nút thì không kiểm được máy trạng thái trên app thật. P3.3 đã làm phần
+còn lại của plan.md.
+
+### Những gì P3.3 để lại sẵn cho P3.4
+
+- **`playerPositionMs()`** (export từ `player-store`) là đường đọc vị trí phát mà
+  P3.2 còn thiếu. Ghép với `wordIndexAt` của P3.1 là đủ để highlight từng từ —
+  không cần đụng vào `sink`.
+- **`useSegmentProgress` là khuôn mẫu sẵn cho highlight**: `rAF` → so với giá trị
+  đã vẽ → chỉ đụng DOM khi khác → dừng vòng lặp khi không phát. Subtitle pane làm
+  y hệt, chỉ đổi thứ ghi ra (`className` của `<span>` thay vì `style.width`).
+  Test `KHÔNG re-render React dù chạy hàng chục khung hình` copy được nguyên.
+- **`seek(ms)` + `seekMsForChar` (P3.1)** là xong đường click-to-seek. `SegmentProgress`
+  đã có mẫu quy đổi toạ độ chuột → ms, gồm cả `setPointerCapture` để kéo ra ngoài
+  vẫn tua tiếp.
+- **Phím tắt đã có khung loại trừ** (`isTyping`, `isActivatable`). Thêm phím mới
+  chỉ là thêm một `case`; đừng bỏ qua hai hàm đó — xem mục 4.57.
+- **`viewerPaneRatio` vẫn chưa ai dùng.** Đã có trong settings + zod schema
+  (0.2–0.8) từ Phase 0, splitter là việc của P3.4.
 
 **DoD Phase 3** (`plan.md`): nghe liên tục hết chương, chữ sáng đúng nhịp.
 
@@ -748,17 +828,18 @@ lại của plan.md.
   re-render 60 lần/giây, đúng thứ CLAUDE.md cấm.
 - **`wordIndexAt` (P3.1) + `positionMs()` (P3.2) là đủ để highlight**: mỗi khung
   hình gọi `wordIndexAt(timings, sink.positionMs())`, so với chỉ số lần trước, chỉ
-  đụng DOM khi khác. Nhưng `sink` hiện **không expose ra ngoài store** — P3.4 phải
-  thêm một cách đọc vị trí (getter trên store, hoặc trả `sink` từ `usePlayer`).
+  đụng DOM khi khác. ~~Nhưng `sink` không expose ra ngoài store~~ — **P3.3 đã thêm
+  `playerPositionMs()`**, dùng thẳng được.
 - **`seek(positionMs)` đã có** cho click-to-seek; ghép với `seekMsForChar` của P3.1
   là xong đường "bấm vào chữ để nghe lại từ đó".
 - **`skipped` đã đủ dữ liệu để hiện chi tiết**: mỗi mục có `segmentId`, `index`,
   `reason`. Hiện đang gộp thành một dòng; muốn danh sách bấm được thì không cần
   đổi store.
 - **`PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa được đo trên sách thật.** Con số suy ra
-  từ RTF 0.24: sinh ~2s, phát ~10s. Nếu P3.3 thấy player vẫn hụt thì tăng.
-- **Phím tắt chưa có** (plan.md Phase 5 nhắc Space, ←/→). Store đã có `toggle`,
-  `next`, `previous` nên chỉ là chuyện gắn listener.
+  từ RTF 0.24: sinh ~2s, phát ~10s. P3.3 **vẫn chưa đo được** — phải *nghe* mới
+  biết có hụt không, mà CDP không đọc được tiếng. Để lại cho lượt nghe thử ở P3.4.
+- ~~**Phím tắt chưa có**~~ — **P3.3 đã làm**: Space, ←/→, J/K, `[`/`]`. Không chỉ
+  là "gắn listener" như ghi ở đây: phần khó là **loại trừ** đúng chỗ (mục 4.57).
 
 ### Những gì P3.1 để lại sẵn cho P3.2
 
@@ -2132,6 +2213,112 @@ Còn một thứ **không** giả được: có nghe thấy tiếng hay không. 
 `preservesPitch` — nền tảng của lời hứa "đổi tốc độ không regenerate audio" trong
 CLAUDE.md. Việc nghe thử vẫn phải do người làm.
 
+### 4.55 Icon phải là SVG, không phải emoji — và không đáng một thư viện
+
+User nói thẳng nút next/previous "khá xấu". Nguyên nhân không phải chọn sai hình
+mà là chọn sai **loại thứ**: `⏮ ▶ ⏸ ⏭` là *ký tự*, nên ba hệ quả đi kèm và không
+cái nào sửa được bằng CSS:
+
+1. **Hình dạng do font quyết định.** Trên Windows chúng rơi vào Segoe UI Emoji →
+   khối màu đặc, nét dày mỏng không đồng bộ với phần còn lại của giao diện.
+2. **Không ăn `currentColor`.** Nút phát có nền accent và chữ `text-accent-fg`,
+   nhưng emoji giữ nguyên màu của nó → icon đen sì trên nền tím.
+3. **Cỡ không đều nhau.** `⏸` và `▶` có bề rộng khác nhau nên nút nhảy kích thước
+   mỗi lần đổi trạng thái.
+
+Thay bằng SVG inline `fill="currentColor"`: cả ba hệ quả biến mất cùng lúc, và
+icon tự đổi màu theo theme. **Không thêm thư viện icon** (`lucide-react`,
+`react-icons`…) — CLAUDE.md cấm tự thêm dependency, và 5 hình này là 5 `path`.
+
+Test khoá lại bằng `textContent === ''` trên cả ba nút: nếu ai đó lỡ quay lại dùng
+emoji thì test đỏ ngay. `ui-check` đo thêm kích thước thật và màu thật.
+
+### 4.56 Phép kiểm `preservesPitch` của P3.2 trước nay **luôn xanh một cách vô nghĩa**
+
+Đây là lỗi đáng nhớ nhất của P3.3, và nó nằm trong chính công cụ dùng để chứng
+minh mọi thứ khác.
+
+`usePlayer` dựng thẻ `<audio>` bằng `document.createElement` và **không gắn vào
+DOM** — thẻ rời vẫn phát được nên P3.2 để vậy. Nhưng `ui-check` dò bằng:
+
+```js
+const el = document.querySelector('audio') ?? new Audio();   // ← fallback
+```
+
+`querySelector` không bao giờ thấy gì, nên mọi lượt chạy đều đo **một thẻ
+`new Audio()` do chính script vừa tạo**. Thẻ đó tất nhiên nhận `preservesPitch` và
+`playbackRate` — nên phép kiểm xanh kể cả khi player không dựng nổi thẻ nào, hoặc
+khi chuỗi store → sink → thẻ audio đứt hoàn toàn. Suốt P3.2 nó không chứng minh
+điều gì cả.
+
+Sửa hai đầu:
+
+- `usePlayer` gắn thẻ vào `document.body` (ẩn) với `data-testid="player-audio"`,
+  và **gỡ khi rời trình đọc** — gắn vào DOM là mở thêm một đường rò. Ba test khoá
+  lại chuyện gỡ; đã kiểm chúng đỏ thật bằng cách bỏ `element.remove()`.
+- `ui-check` **bỏ hẳn fallback**. Không thấy thẻ thật thì đỏ.
+
+Bài học rộng hơn: **trong phép kiểm, đừng bao giờ fallback sang thứ mình tự tạo.**
+Thứ tự tạo luôn cho kết quả đẹp, nên fallback biến phép kiểm thành hằng số `true`.
+Nếu không tìm thấy thứ cần đo thì đó *chính là* thứ cần báo đỏ.
+
+Kết quả sau khi sửa: `tốc độ 3× tới được thẻ audio thật — 3`, đo trên thẻ mà
+player thật sự phát.
+
+### 4.57 Phím tắt gắn ở `window` — phần khó là loại trừ, không phải gắn listener
+
+Ghi chú của P3.2 nói phím tắt "chỉ là chuyện gắn listener". Sai. Gắn ở `window`
+nghĩa là **cướp phím của cả app**, và có ba chỗ phải trả lại:
+
+| Chỗ | Vì sao |
+|---|---|
+| `input` / `textarea` / `select` | user gõ dấu cách trong ô đổi tên chương → phải ra dấu cách, không phải tạm dừng nhạc |
+| Vùng `contenteditable` (và **thẻ con** của nó) | cùng lý do, nhưng `tagName` chỉ là `DIV` |
+| `button` / `a` đang có tiêu điểm | Space trên một nút là "bấm nút đó" theo chuẩn web — cướp là hỏng thao tác bàn phím của cả app |
+
+Cộng thêm: tổ hợp có `Ctrl`/`Alt`/`Meta` thuộc về app/OS, không đụng.
+
+**`isContentEditable` không có trong jsdom** — trả `undefined` dù thuộc tính có
+mặt (đã dựng test dò để xác nhận, chứ không đoán). Nếu chỉ dựa vào property đó thì
+nhánh này *không kiểm được bằng test*, mà nó đúng là nhánh hỏng âm thầm tệ nhất:
+hỏng thì user gõ chữ trong ô soạn thảo lại thành đổi tốc độ. Nên đọc **cả** property
+**lẫn** thuộc tính qua `closest('[contenteditable]:not([contenteditable="false"])')`
+— vừa kiểm được, vừa bắt luôn ca tiêu điểm nằm ở thẻ con.
+
+`←`/`→` tua **trong** đoạn 5s chứ không nhảy đoạn: đoạn chỉ ~10s nên nhảy đoạn là
+bước quá thô cho thao tác "nghe lại chỗ vừa rồi". Nhảy đoạn là J/K.
+
+### 4.58 `settings.playbackRate` có trong DB từ Phase 0 mà chưa bao giờ được dùng
+
+Phát hiện khi đọc lại đường đi của tốc độ để thêm mốc 2.5×/3×: `playbackRate` có
+trong `AppSettings`, có trong zod schema, có trong `DEFAULT_SETTINGS`, có cột
+trong DB — nhưng `grep` cho thấy **không nơi nào đọc hay ghi nó**. Player
+hardcode `playbackRate: 1` và reset về 1× mỗi lần mở app. Một thiết lập tồn tại
+đầy đủ trên giấy tờ và không có tác dụng gì.
+
+User chọn sửa luôn trong P3.3. Hai chiều phải **tách riêng**, và đây là chỗ dễ sai:
+
+- `setRate` (user bấm) → áp vào sink **và** ghi xuống settings.
+- `applyStoredRate` (đọc từ settings) → chỉ áp vào sink, **không** ghi ngược.
+
+Gộp làm một thì lượt đọc lúc mở trình đọc sẽ tự ghi đè lên chính thứ vừa đọc —
+vô hại về giá trị nhưng là một lượt IPC + ghi SQLite thừa mỗi lần mở sách. Có
+test riêng cho việc "đọc thì không ghi".
+
+Thêm hai chốt nữa:
+
+- `setRate` **thoát sớm khi giá trị không đổi**. Phím `[`/`]` ở hai đầu danh sách
+  trả về chính mốc cũ, nên không có chốt này thì mỗi lần bấm ở đầu/cuối là một
+  lượt ghi SQLite cho thứ không đổi.
+- Áp tốc độ đã lưu phải nằm ở **effect riêng**, không gộp vào effect dựng player:
+  effect đó chạy đúng một lần lúc mở trình đọc, mà `settings` thường về sau đó một
+  nhịp → gộp vào là mãi mãi 1×. Kèm cờ `applied` để lần sau `settings` đổi vì lý
+  do khác (đổi theme) không kéo tốc độ về giá trị cũ, đè lên thứ user vừa chọn.
+
+**Nới `PLAYBACK_RATE_MAX` 2 → 3 là thay đổi an toàn một chiều** với settings đã
+lưu: mọi giá trị cũ vẫn hợp lệ nên không cần migration. Hạ trần thì ngược lại —
+sẽ làm settings đang lưu 2.5× không parse được. Có test khoá điều này.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -2313,15 +2500,24 @@ apps/renderer/src/
   stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng
   stores/storage-store.ts  Dung lượng + xoá; giữ lỗi qua lượt nạp lại
   stores/player-store.ts   Máy trạng thái phát: idle/playing/paused/waiting.
-                           KHÔNG giữ vị trí ms (đổi 60 lần/giây — P3.4 đọc rAF)
+                           KHÔNG giữ vị trí ms (đổi 60 lần/giây) — đọc qua
+                           playerPositionMs() trong rAF. Tốc độ: setRate ghi
+                           settings, applyStoredRate thì KHÔNG (4.58)
   features/player/
     playback-plan.ts       "Đoạn này làm gì với nó": play/skip/wait/request.
                            Chỗ DUY NHẤT quyết định bỏ qua đoạn hỏng (4.51)
     audio-element.ts       Bọc <audio> + Blob URL + kho nạp trước.
                            Chỗ DUY NHẤT chạm DOM audio; tự thu hồi url (4.54)
-    usePlayer.ts           Dựng thẻ audio, nối window.api, dọn khi rời
-    PlayerBar.tsx          Nút phát/trước/sau + 6 mốc tốc độ
-    format.ts              Nhãn trạng thái, mốc tốc độ, phần trăm (thuần)
+    usePlayer.ts           Dựng thẻ audio (gắn ẩn vào body — 4.56), nối
+                           window.api, dọn khi rời
+    usePlayerShortcuts.ts  Space/←→/JK/[]. Phần khó là LOẠI TRỪ (4.57)
+    useSegmentProgress.ts  Vòng rAF ghi thẳng DOM qua ref — khuôn mẫu P3.4
+                           dùng lại để highlight từng từ
+    SegmentProgress.tsx    Thanh tiến độ trong đoạn + đồng hồ + bấm/kéo tua
+    RateMenu.tsx           Menu 8 mốc tốc độ (0.75×–3×), mở LÊN
+    icons.tsx              5 icon SVG inline — KHÔNG emoji, KHÔNG thư viện (4.55)
+    PlayerBar.tsx          Nút phát/trước/sau + menu tốc độ + đường tắt Giọng đọc
+    format.ts              Nhãn trạng thái, mốc tốc độ, stepRate, formatClock (thuần)
   features/generate/
     GenerateControls.tsx   Nút tạo audio chương/cả sách (chỗ DUY NHẤT gọi queue:*)
     GenerateEstimateDialog.tsx  Hộp ước lượng BẮT BUỘC trước khi generate (4.38)
@@ -2452,9 +2648,11 @@ scripts/
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
 | **`apps/main/probe/` nằm ngoài typecheck** | **TB** | `apps/main/tsconfig.json` chỉ `include` `src/**/*.ts`. Đã kiểm chứng: đổi `errorCount` thành `XXerrorCount` mà `tsc --noEmit` vẫn xanh. Cộng với việc probe không ở `pnpm test` lẫn CI thì nó **không có lưới nào** — chính vì thế lỗi 4.50 nằm im qua hai commit. Sửa: nới `include` (kèm `rootDir`) hoặc thêm `tsconfig.probe.json` nối vào `pnpm typecheck` |
 | ~~Renderer phải tự `revokeObjectURL` cho audio~~ | ✅ Xong | P3.2: việc tạo và thu hồi gom vào `audio-element.ts`, không có đường nào tạo url mà không đi qua chỗ thu hồi. `setup.ts` **đếm** url chưa nhả và xuất `countOpenObjectUrls()` — test khoá lại: phát 3 đoạn liên tiếp còn đúng 1 url mở, rời trình đọc về 0 (mục 4.54) |
-| `PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa đo trên sách thật | TB | Suy ra từ RTF 0.24 (sinh ~2s, phát ~10s) chứ chưa nghe hết một chương thật để xem player có hụt không. Quá nhỏ thì đứt tiếng giữa các câu; quá lớn thì generate audio user không nghe tới. Đo khi P3.3 nghe liên tục một chương |
-| Chưa nghe thử bằng tai | **TB** | `ui-check` chứng minh được thẻ audio tồn tại, `preservesPitch` được giữ, nút bấm thông suốt — nhưng **CDP không đọc được đầu ra âm thanh**. "Nghe liên tục hết chương, chữ sáng đúng nhịp" (DoD Phase 3) vẫn phải do người kiểm. Làm ở P3.3/P3.4 khi có đủ nút |
-| Player chưa có phím tắt | Thấp | plan.md Phase 5 nhắc Space, ←/→, J/K. Store đã có `toggle`/`next`/`previous` nên chỉ là gắn listener — để ở P3.3 |
+| `PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa đo trên sách thật | TB | Suy ra từ RTF 0.24 (sinh ~2s, phát ~10s) chứ chưa nghe hết một chương thật để xem player có hụt không. Quá nhỏ thì đứt tiếng giữa các câu; quá lớn thì generate audio user không nghe tới. Vẫn chưa đo được ở P3.3 vì cần **nghe** mới biết hụt — đo cùng lượt nghe thử ở P3.4 |
+| Chưa nghe thử bằng tai | **TB** | `ui-check` chứng minh được thẻ audio **thật** tồn tại (P3.3 sửa lại phép kiểm này — trước nó đo nhầm thẻ tự tạo, mục 4.56), `preservesPitch` được giữ tới 3×, tốc độ tới được thẻ, phím tắt thông suốt — nhưng **CDP không đọc được đầu ra âm thanh**. "Nghe liên tục hết chương, chữ sáng đúng nhịp" (DoD Phase 3) vẫn phải do người kiểm |
+| ~~Player chưa có phím tắt~~ | ✅ Xong | P3.3: Space, ←/→, J/K, `[`/`]`. Phần khó hoá ra không phải gắn listener mà là **loại trừ** — ô nhập, vùng `contenteditable`, nút đang có tiêu điểm, tổ hợp có phím bổ trợ (mục 4.57) |
+| **Danh sách đoạn chỉ render 5 dòng cho khung chứa được ~10** | **TB** | `ui-check` đỏ ở "số dòng khớp chiều cao khung": khung 695 px (≈10 dòng × 64 px) mà virtualizer chỉ dựng 5. **Có sẵn từ trước P3.3** — đã xác nhận bằng cách stash toàn bộ P3.3 rồi chạy lại: baseline cũng đỏ (5 dòng / ~11). Không phải do thanh player cao thêm; P3.3 chỉ đổi con số kỳ vọng 11 → 10 vì khung ngắn lại. Chưa sửa ở đây để commit này đúng phạm vi. Hậu quả thật: cuộn nhanh thấy khoảng trắng ở nửa dưới danh sách |
+| Thanh tiến độ chưa kiểm khi audio **đang chạy thật** | Thấp | `ui-check` đo được kích thước, màu, và dạng chuỗi `0:00 / 0:00` — nhưng lúc đó player `idle` nên chưa chứng minh được thanh **chạy** đúng nhịp. Unit test có kiểm (giả `positionMs`), còn trên app thật thì cùng chung nợ với "chưa nghe thử bằng tai" |
 | Bấm đoạn lúc player `idle` không tự phát | Thấp | Cố ý: bấm đoạn để xem nó ở trang nào là thao tác thường gặp, tự phát tiếng lúc đó là bất ngờ khó chịu. Đang phát rồi thì bấm đoạn khác mới nhảy tới. Đổi được nếu user thấy ngược |
 | `getSegmentAudio` chưa kiểm trên sách EN | Thấp | Probe chạy trên giọng VI. Cách gộp phoneme → từ của espeak với tiếng Anh chưa đo (đã là nợ sẵn ở hàng "Timing chưa kiểm trên giọng EN"); đường ước lượng thì độc lập ngôn ngữ vì chỉ đếm ký tự |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

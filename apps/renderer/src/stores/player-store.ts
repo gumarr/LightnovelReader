@@ -79,6 +79,8 @@ export type PlayerState = {
   /** Nhảy tới mốc trong segment đang phát — click-to-seek ở P3.4 */
   seek: (positionMs: number) => void;
   setRate: (rate: number) => Promise<void>;
+  /** Áp tốc độ đọc từ settings — KHÔNG ghi ngược xuống settings */
+  applyStoredRate: (rate: number) => void;
   /** Hàng đợi báo một segment vừa đổi trạng thái — có thể là thứ đang chờ */
   handleSegmentUpdate: (segment: Segment) => Promise<void>;
   /** Audio chạy hết segment hiện tại */
@@ -107,6 +109,13 @@ export type PlayerDeps = {
   onSegmentChanged: (segmentId: string) => void;
   fetchAudio: (segmentId: string) => Promise<SegmentAudio | undefined>;
   enqueueUrgent: (segmentIds: string[]) => Promise<void>;
+  /**
+   * Ghi tốc độ user vừa chọn xuống settings để phiên sau dùng lại.
+   *
+   * Tuỳ chọn: store vẫn chạy đúng khi không có nó, chỉ là không nhớ qua phiên.
+   * Tách khỏi `window.api` để test không phải dựng preload.
+   */
+  persistRate?: (rate: number) => void;
 };
 
 let deps: PlayerDeps | undefined;
@@ -381,6 +390,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
     setRate: async (rate) => {
       const clamped = Math.min(PLAYBACK_RATE_MAX, Math.max(PLAYBACK_RATE_MIN, rate));
+      // Bấm lại đúng mốc đang chọn thì không ghi settings — phím tắt ở hai đầu
+      // danh sách trả về chính giá trị cũ, và mỗi lần ghi là một lượt IPC + một
+      // lượt ghi SQLite cho thứ không đổi.
+      if (get().playbackRate === clamped) return;
+
+      set({ playbackRate: clamped });
+      deps?.sink.setRate(clamped);
+      deps?.persistRate?.(clamped);
+    },
+
+    /**
+     * Áp tốc độ đã lưu từ phiên trước.
+     *
+     * Tách khỏi `setRate` vì **không** được ghi ngược xuống settings: đây là
+     * đường đọc, ghi lại là tự ghi đè chính thứ vừa đọc lên.
+     */
+    applyStoredRate: (rate) => {
+      const clamped = Math.min(PLAYBACK_RATE_MAX, Math.max(PLAYBACK_RATE_MIN, rate));
       set({ playbackRate: clamped });
       deps?.sink.setRate(clamped);
     },
@@ -435,6 +462,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
   };
 });
+
+/**
+ * Vị trí phát hiện tại, ms. `0` khi chưa nối player hoặc chưa nạp gì.
+ *
+ * **Cố ý không phải state zustand.** Giá trị này đổi 60 lần/giây; đưa vào store
+ * là re-render cả cây mỗi khung hình, đúng thứ CLAUDE.md cấm. Người gọi đọc nó
+ * trong `requestAnimationFrame` rồi ghi thẳng vào DOM qua `ref` — xem
+ * `useSegmentProgress`. P3.4 dùng chung đường này để highlight từng từ.
+ */
+export const playerPositionMs = (): number => deps?.sink.positionMs() ?? 0;
 
 /** Gói lỗi IPC thành thông điệp cho user. Dùng ở chỗ nối `window.api`. */
 export const playerIpcError = (e: unknown): string => `${IPC_FAILED} (${errorMessage(e)})`;

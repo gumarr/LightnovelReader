@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Segment, SegmentAudio, SegmentStatus, WordTiming } from '@ln/shared';
+import {
+  PLAYBACK_RATE_MAX,
+  PLAYBACK_RATE_MIN,
+  type Segment,
+  type SegmentAudio,
+  type SegmentStatus,
+  type WordTiming,
+} from '@ln/shared';
 import type { AudioPreloader, AudioSink } from '../features/player/audio-element.js';
 import { attachPlayer, detachPlayer, usePlayerStore } from './player-store.js';
 
@@ -102,6 +109,9 @@ const setup = (
     enqueued.push(ids);
   });
 
+  /** Tốc độ đã ghi xuống settings — để kiểm chuyện nhớ qua phiên */
+  const persisted: number[] = [];
+
   attachPlayer({
     sink,
     preloader,
@@ -110,6 +120,7 @@ const setup = (
     onSegmentChanged: (id) => changed.push(id),
     fetchAudio,
     enqueueUrgent,
+    persistRate: (rate) => persisted.push(rate),
   });
 
   /** Đổi trạng thái một segment như hàng đợi làm */
@@ -126,7 +137,19 @@ const setup = (
     return next;
   };
 
-  return { sink, calls, preloader, held, changed, enqueued, fetched, fetchAudio, setStatus, list };
+  return {
+    sink,
+    calls,
+    preloader,
+    held,
+    changed,
+    enqueued,
+    fetched,
+    fetchAudio,
+    setStatus,
+    list,
+    persisted,
+  };
 };
 
 beforeEach(() => {
@@ -573,14 +596,27 @@ describe('điều khiển', () => {
     expect(fetched).toHaveLength(before);
   });
 
-  it('kẹp tốc độ trong 0.5–2.0', async () => {
+  it('kẹp tốc độ trong khoảng hợp lệ', async () => {
     setup([seg('a', 'ready')]);
 
-    await usePlayerStore.getState().setRate(5);
-    expect(usePlayerStore.getState().playbackRate).toBe(2);
+    // Trần là 3× từ P3.3 (user yêu cầu thêm 2.5× và 3×)
+    await usePlayerStore.getState().setRate(9);
+    expect(usePlayerStore.getState().playbackRate).toBe(PLAYBACK_RATE_MAX);
 
     await usePlayerStore.getState().setRate(0.1);
-    expect(usePlayerStore.getState().playbackRate).toBe(0.5);
+    expect(usePlayerStore.getState().playbackRate).toBe(PLAYBACK_RATE_MIN);
+  });
+
+  it('đặt được mốc nhanh 2.5× và 3×', async () => {
+    const { calls } = setup([seg('a', 'ready')]);
+
+    await usePlayerStore.getState().setRate(2.5);
+    expect(usePlayerStore.getState().playbackRate).toBe(2.5);
+    expect(calls).toContain('rate=2.5');
+
+    await usePlayerStore.getState().setRate(3);
+    expect(usePlayerStore.getState().playbackRate).toBe(3);
+    expect(calls).toContain('rate=3');
   });
 
   it('tốc độ đã đặt được áp cho segment kế', async () => {
@@ -591,6 +627,54 @@ describe('điều khiển', () => {
     await usePlayerStore.getState().handleEnded();
 
     expect(calls.filter((c) => c === 'rate=1.5').length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('nhớ tốc độ qua phiên (P3.3)', () => {
+  it('đổi tốc độ thì ghi xuống settings', async () => {
+    const { persisted } = setup([seg('a', 'ready')]);
+
+    await usePlayerStore.getState().setRate(2.5);
+    expect(persisted).toEqual([2.5]);
+  });
+
+  it('ghi giá trị ĐÃ kẹp, không ghi giá trị thô', async () => {
+    const { persisted } = setup([seg('a', 'ready')]);
+
+    // Ghi 9 xuống settings là ghi thứ zod schema sẽ từ chối ở lần đọc sau
+    await usePlayerStore.getState().setRate(9);
+    expect(persisted).toEqual([PLAYBACK_RATE_MAX]);
+  });
+
+  it('bấm lại đúng mốc đang chọn thì KHÔNG ghi lại', async () => {
+    const { persisted } = setup([seg('a', 'ready')]);
+
+    await usePlayerStore.getState().setRate(1.5);
+    await usePlayerStore.getState().setRate(1.5);
+    await usePlayerStore.getState().setRate(1.5);
+
+    // Phím tắt ở hai đầu danh sách trả về chính giá trị cũ; mỗi lượt ghi là một
+    // lượt IPC + một lượt ghi SQLite cho thứ không đổi
+    expect(persisted).toEqual([1.5]);
+  });
+
+  it('applyStoredRate áp tốc độ nhưng KHÔNG ghi ngược xuống settings', () => {
+    const { calls, persisted } = setup([seg('a', 'ready')]);
+
+    usePlayerStore.getState().applyStoredRate(2);
+
+    expect(usePlayerStore.getState().playbackRate).toBe(2);
+    // Đã tới thẻ audio…
+    expect(calls).toContain('rate=2');
+    // …mà không tự ghi đè lên chính thứ vừa đọc lên
+    expect(persisted).toEqual([]);
+  });
+
+  it('applyStoredRate cũng kẹp — settings hỏng không làm vỡ player', () => {
+    setup([seg('a', 'ready')]);
+
+    usePlayerStore.getState().applyStoredRate(99);
+    expect(usePlayerStore.getState().playbackRate).toBe(PLAYBACK_RATE_MAX);
   });
 
   it('reset nhả Blob URL và quên hết', async () => {

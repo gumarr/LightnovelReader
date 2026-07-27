@@ -144,8 +144,48 @@ const killOrphanElectron = () => {
   spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], { stdio: 'ignore' });
 };
 
+/**
+ * Cổng Vite của bản dev. Trùng `apps/renderer/vite.config.ts` (`strictPort`).
+ *
+ * `strictPort: true` là **cố ý**: `dev.mjs` trỏ Electron vào đúng URL này, nên
+ * Vite nhảy sang cổng khác thì cửa sổ mở ra trắng trơn. Vì thế trùng cổng phải
+ * là lỗi cứng — nhưng lỗi đó cần nói rõ ai đang giữ cổng.
+ */
+const VITE_PORT = 5273;
+
+/**
+ * Giải phóng cổng Vite nếu còn dev server mồ côi.
+ *
+ * Cùng gốc với `killOrphanElectron`: `pnpm dev` bị ngắt để lại `node.exe` chạy
+ * Vite, và lượt sau chết với `Port 5273 is already in use` — thông báo đúng
+ * nhưng không nói tiến trình nào, mà `node.exe` thì có cả chục cái.
+ *
+ * **Chỉ giết đúng PID đang LISTENING trên cổng đó.** Không bao giờ
+ * `taskkill /IM node.exe`: trong đó có thể là editor, terminal, hoặc chính
+ * script này.
+ */
+const freeVitePort = () => {
+  const netstat = spawnSync('netstat', ['-ano'], { encoding: 'utf8' });
+  const pids = new Set();
+
+  for (const line of (netstat.stdout ?? '').split('\n')) {
+    if (!line.includes(`:${String(VITE_PORT)}`) || !line.includes('LISTENING')) continue;
+    const pid = line.trim().split(/\s+/).pop();
+    if (pid !== undefined && /^\d+$/.test(pid) && pid !== '0') pids.add(pid);
+  }
+
+  if (pids.size === 0) return;
+
+  log(`Cổng ${String(VITE_PORT)} đang bị giữ (PID ${[...pids].join(', ')}) — dọn dev server cũ`);
+  for (const pid of pids) {
+    spawnSync('taskkill', ['/F', '/PID', pid, '/T'], { stdio: 'ignore' });
+  }
+  spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], { stdio: 'ignore' });
+};
+
 const ensureElectronAbi = () => {
   killOrphanElectron();
+  if (!packaged) freeVitePort();
 
   log('Tráo better-sqlite3 sang ABI của Electron');
   const result = spawnSync(process.execPath, [join(root, 'scripts', 'sqlite-abi.mjs'), 'electron'], {

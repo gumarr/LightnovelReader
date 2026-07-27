@@ -2645,14 +2645,42 @@ pnpm dev
 
 Hoặc chạy từ PowerShell/Terminal ngoài VS Code.
 
-### 5.5 `EBUSY` khi tráo ABI — có Electron mồ côi đang giữ file
+### 5.5 Tiến trình mồ côi sau khi ngắt `pnpm dev` / `pnpm ui-check`
 
-Triệu chứng: `pnpm dev` / `pnpm ui-check` / `pnpm test` chết ngay bước đầu với
+Ngắt hai lệnh này giữa chừng (Ctrl-C, hoặc công cụ gọi bị huỷ) thì khối dọn dẹp
+không chạy tới nơi, để lại **hai loại** tiến trình mồ côi gây ra **hai lỗi khác
+nhau ở lượt sau**. Cả hai đều báo lỗi đúng nhưng không chỉ ra thủ phạm.
+
+**Loại 1 — `electron.exe` giữ `.node` → `EBUSY`:**
 
 ```
 Error: EBUSY: resource busy or locked, copyfile
   '.abi-cache\better_sqlite3-electron.node' -> '...\better_sqlite3.node'
 ```
+
+**Loại 2 — `node.exe` chạy Vite giữ cổng → `Port 5273 is already in use`:**
+
+```
+[dev] Lỗi khởi động: Error: Port 5273 is already in use
+```
+
+Cổng 5273 đặt `strictPort: true` trong `apps/renderer/vite.config.ts` — **cố ý**,
+vì `dev.mjs` trỏ Electron vào đúng URL đó, Vite nhảy cổng khác thì cửa sổ mở ra
+trắng trơn. Nên trùng cổng phải là lỗi cứng.
+
+Tìm thủ phạm của loại 2:
+
+```powershell
+netstat -ano | findstr :5273      # cột cuối là PID
+taskkill /F /PID <PID> /T
+```
+
+⚠️ **Đừng `taskkill /IM node.exe`** — trong đó có editor, terminal, và chính
+lệnh đang chạy. Luôn giết theo **PID** cho `node.exe`; chỉ `electron.exe` mới an
+toàn để giết theo tên.
+
+`ui-check` nay tự dọn **cả hai** loại trước khi chạy, nên hầu như không phải làm
+tay nữa. Phần còn lại của mục này nói về loại 1.
 
 **Nguyên nhân luôn là một:** còn `electron.exe` từ lượt chạy trước đang **nạp**
 file `.node` đó. Windows khoá DLL đang dùng, không cho ghi đè. Xảy ra khi

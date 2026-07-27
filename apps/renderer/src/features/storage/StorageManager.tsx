@@ -87,6 +87,7 @@ export const StorageManager = ({ onBack }: StorageManagerProps): JSX.Element => 
       <header>
         <button
           type="button"
+          data-testid="storage-back"
           onClick={onBack}
           className="text-xs text-fg-muted transition-colors hover:text-fg"
         >

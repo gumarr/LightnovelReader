@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-26 · commit `bf6c465`
+> **Cập nhật lần cuối:** 2026-07-27 · commit `(điền sau khi commit)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -27,14 +27,21 @@ cd .. && pnpm test:sidecar
 # (ngoài pnpm test — xem apps/main/probe/). Cần voice đã tải trong userData.
 npx vitest run -c apps/main/probe/vitest.config.ts
 
-# Đóng gói sidecar thành .exe (BẮT BUỘC chạy TRƯỚC pnpm build:win — mục 4.29)
+# Đóng gói sidecar thành .exe. `pnpm build:win` tự gọi bước này rồi preflight
+# kiểm lại (mục 4.44) — không còn phải nhớ thứ tự như trước.
 pnpm build:sidecar
+
+# Kiểm UI trong app đang chạy bằng CDP — đo màu, chiều cao, số dòng thật.
+# Bắt được hai loại lỗi vitest không thể bắt (mục 4.45).
+pnpm ui-check              # bản dev
+pnpm ui-check --packaged   # bản đã build:win
 ```
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
 **Việc tiếp theo:** Phase 3 — Player & Subtitle sync (xem mục 3).
-**Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy.**
+**Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy
+lẫn bản đóng gói.** P2.8 đã trả **hết 4 nợ mức Cao** trong mục 8.
 
 ---
 
@@ -544,17 +551,69 @@ nhận "test xanh mà UI vẫn hỏng".
 | Danh sách đoạn lần đầu mở chương | ✅ **15 dòng** (trước khi sửa: 4 dòng), khung 764/811 px |
 | Ẩn rồi hiện lại | ✅ vẫn 15 dòng — không còn khác biệt giữa hai đường |
 
+### P2.8 Trả hết nợ kỹ thuật mức Cao ✅
+
+Bốn nợ mức **Cao** trong mục 8, và ba trong bốn cùng cần một thứ: một script CDP
+chạy được bằng một lệnh. Không thêm dependency nào — Node 22 có sẵn `WebSocket`
+và `fetch`.
+
+| Nợ | Đã làm |
+|---|---|
+| Đóng gói sidecar chưa vào CI | `build:win` tự gọi `build:sidecar` + `sidecar-preflight.mjs`; CI dựng venv 3.12 ở cả 2 job (mục 4.44) |
+| Kiểm bản đóng gói vẫn làm thủ công | `scripts/ui-check.mjs` + `pnpm ui-check` (mục 4.45) |
+| Không test nào bắt được lỗi bố cục/chiều cao | Cùng script: đo `clientHeight` + số dòng thật |
+| UI Phase 2 chưa kiểm trên bản đóng gói | `pnpm ui-check --packaged` trên `.exe` đã build |
+
+| File | Việc |
+|---|---|
+| `scripts/ui-check.mjs` | Lái app qua CDP, 24 phép kiểm bằng **số đo thật** |
+| `scripts/sidecar-preflight.mjs` | Chặn đóng gói khi sidecar thiếu / không đủ / cũ hơn `.py` |
+| `scripts/README.md` | Kiểm những gì, bắt được lỗi loại nào, giới hạn |
+| `scripts/dev.mjs` | `LN_REMOTE_DEBUG_PORT` — chỉ mở cổng debug khi được yêu cầu |
+| `.github/workflows/ci.yml` | venv Python 2 job, `pnpm test:sidecar`, kiểm `resources/sidecar/` sau đóng gói |
+| `StorageManager.tsx` | Thêm `data-testid="storage-back"` |
+| `eslint.config.js` | Cho phép `fetch`/`WebSocket`/`Buffer` trong `scripts/**` |
+
+**Đã chạy thật trên CẢ HAI bản** — `pnpm ui-check` và `pnpm ui-check --packaged`,
+**24/24 đạt ở cả hai**:
+
+| Phép kiểm | Bản dev | **Bản đóng gói** |
+|---|---|---|
+| Sidecar lên `ready` | ✅ (venv Python) | ✅ **`.exe` PyInstaller**, cổng 64601 |
+| Catalog voice | ✅ 2 voice | ✅ 2 voice, đọc từ `resources/voices/` |
+| Ô cuộn cao so với panel | 776 px (90%) | **764/811 px = 94%** |
+| Số dòng vs chiều cao khung | 16 dòng (khung ~12) | **15 dòng** (khung ~11) |
+| Ẩn rồi hiện lại | 776 px cả hai đường | **764 px cả hai đường** |
+| Màu `accent` dark / light | `rgb(129,140,248)` / `rgb(79,70,229)` | ✅ y hệt |
+| Nhánh **alpha** `bg-accent/10` | `rgba(…, 0.1)` cả 2 theme | ✅ y hệt — 4.23 chưa quay lại |
+| Viewer DOCX | 388 khối, cao 27 366 px | 388 khối, cao 27 058 px |
+
+Bản đóng gói là chỗ duy nhất chứng minh được đường dẫn kiểu asar đúng: sidecar
+`.exe` nằm trong `resources/sidecar/` lên được `ready`, và catalog đọc từ
+`resources/voices/` — hai đường mà bản dev đi qua venv và gốc repo nên không chạm tới.
+
+Installer sau khi thêm sidecar: **NSIS 143.0 MB**, portable **142.8 MB**
+(trước là 80.8 MB). `resources/sidecar/` trong bản giải nén đo được **147 MB**,
+đủ cả `_internal/` — tức electron-builder **có** chép trọn onedir.
+
+Viết script này mất **bốn lượt chạy đỏ**, và cả bốn nguyên nhân đều là bẫy của
+chính phép kiểm chứ không phải lỗi app — trong đó có một cái mà script này sinh ra
+để bắt (`crash.log` do sai ABI). Chi tiết ở mục 4.45; đáng đọc trước khi thêm phép
+kiểm mới, vì cả bốn sẽ gặp lại.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1627 passed** (+140 ở P2.7, +33 ở P2.7b) |
-| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.7 không đụng sidecar) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | 13 kịch bản (+2 ở P2.7) |
+| Unit test TypeScript | **1627 passed** (không đổi ở P2.8 — chỉ thêm `data-testid`) |
+| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.8 không đụng sidecar) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | 13 kịch bản |
+| **Kiểm UI thật (`pnpm ui-check`)** | **24 phép kiểm** × 2 bản (dev + đóng gói) |
 | Schema DB | **v2** (v2 thêm `chapters.error_count` — mục 4.42) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
+| Installer NSIS / portable | **143.0 / 142.8 MB** (80.8 MB trước khi có sidecar) |
 
 ---
 
@@ -578,6 +637,7 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 | P2.5 | Job queue persist SQLite: priority, pause/resume/cancel | ✅ Xong |
 | P2.6 | Generate theo chương + prefetch + ước lượng "cả sách" | ✅ Xong |
 | P2.7 | Storage Manager: xem/xoá theo sách-chương, đổi thư mục, cảnh báo | ✅ Xong |
+| P2.8 | Trả hết nợ mức **Cao**: `ui-check` CDP, sidecar vào `build:win` + CI | ✅ Xong |
 
 **DoD Phase 2 — đạt đủ, kiểm trên app đang chạy** (không chỉ unit test):
 
@@ -588,9 +648,9 @@ dài cho một phiên). Vẫn giữ quy ước **logic thuần trước, UI sau*
 | Xem được dung lượng | ✅ theo sách và theo chương, số DB khớp đĩa từng byte |
 | Xoá được dung lượng | ✅ xoá 380 file qua UI, tiến độ đọc và cấu trúc chương còn nguyên |
 
-Còn một mục **chưa** làm: kiểm trên **bản đóng gói** (`pnpm build:win`). Lần này
-kiểm ở `pnpm dev`, tức đã thấy CSS thật và IPC thật nhưng chưa thấy lỗi đường
-dẫn kiểu asar. Xem mục 8.
+Mục "kiểm trên **bản đóng gói**" đã làm ở **P2.8**: `pnpm build:win` (nay tự đóng
+gói sidecar) rồi `pnpm ui-check --packaged` trên `.exe` — đường đi mà bản dev không
+lộ được lỗi đường dẫn kiểu asar. Xem mục 4.44, 4.45.
 
 ### Ghi chú cho Phase 3 (Player & Subtitle sync)
 
@@ -1637,6 +1697,84 @@ Sau khi sửa 4.23, ô highlight vẫn nhạt. `mix-blend-multiply` nhân màu p
 nền — nền trang PDF là **trắng** (1.0) nên phép nhân gần như không đổi gì.
 Đổi sang phủ thẳng `bg-accent/[0.28]`: thấy rõ mà chữ bên dưới vẫn đọc được.
 
+### 4.44 `pnpm build:win` tự đóng gói sidecar, và preflight chặn bản thiếu
+
+Nợ mức Cao "đóng gói sidecar chưa vào CI" có hai nửa, và nửa nguy hiểm hơn không
+phải nửa CI: **electron-builder không coi `extraResources` trỏ vào thư mục không
+tồn tại là lỗi.** Nó chép được gì thì chép rồi báo build thành công. Bản cài mở
+lên vẫn đọc được sách, chỉ tới lúc user bấm generate mới lộ ra là không có sidecar.
+
+Vì vậy `build:win` giờ là chuỗi bốn bước, không còn dựa vào việc ai đó nhớ:
+
+```
+build:sidecar → sidecar-preflight → build → abi:electron → electron-builder
+```
+
+`scripts/sidecar-preflight.mjs` kiểm **ba** cách hỏng đã gặp thật, không chỉ một:
+
+| Kiểm | Cách hỏng tương ứng |
+|---|---|
+| có `ln-sidecar.exe` | chưa build, hoặc PyInstaller trả 0 mà file vẫn thiếu |
+| có `_internal/` | onedir không đầy đủ → chết ngay lúc khởi động |
+| `.exe` **mới hơn** mọi `.py` | sửa sidecar rồi quên build lại |
+
+Cái thứ ba là cái duy nhất mắt thường không thấy được, và cũng là cái đã kiểm
+chứng bằng cách `touch app/config.py` rồi chạy lại: preflight đỏ đúng như mong đợi.
+
+**Preflight chỉ kiểm phía nguồn.** Phía đích — electron-builder có thật sự chép
+trọn 145 MB onedir vào `resources/sidecar/` hay không — là chỗ hỏng **khác**, nên
+có bước riêng ở CI kiểm `release/win-unpacked/resources/sidecar/`. Cả `catalog.json`
+cũng kiểm ở đó, vì cùng đi qua `extraResources`.
+
+CI giờ dựng venv Python 3.12 ở **cả hai** job: `check` để `pnpm test:sidecar` thật
+sự chạy (trước đây thiếu venv thì nó thoát 0 và pytest im lặng không chạy — job vẫn
+xanh), và `build` để PyInstaller chạy được.
+
+### 4.45 `ui-check.mjs` — đo số thật trong app đang chạy, và bốn cái bẫy của nó
+
+Hai nợ mức Cao cùng cần một thứ: một script CDP chạy bằng một lệnh. Lý do là
+jsdom không làm hai việc mà vitest không thể bù được — **không tính CSS thật**
+(lỗi 4.23) và **không tính layout**, nên `clientHeight` luôn 0 (lỗi 4.43).
+
+Nguyên tắc: mọi phép kiểm phải là **số đo lấy từ Chromium thật**, không phải sự
+có mặt của một class. Test cấu trúc (`flex-1 min-h-0` có mặt) vẫn giữ ở tầng
+nhanh — hai lưới chặn hai tầng khác nhau, không thay thế nhau.
+
+Viết script này mất bốn lượt chạy, và cả bốn cái bẫy đều đáng ghi lại vì lần sau
+sẽ gặp lại:
+
+1. **Thiếu `abi:electron`.** Chạy `dev.mjs` thẳng bỏ mất bước tráo ABI mà
+   `pnpm dev` vẫn làm. Hậu quả rất dễ chẩn đoán sai: `/json/version` **vẫn** trả
+   lời (tiến trình browser sống) trong khi `/json/list` rỗng — trông y như renderer
+   nạp chậm. Lý do thật chỉ nằm ở `crash.log`. Script giờ tự tráo ABI, và khi hết
+   hạn chờ thì **tự in 20 dòng cuối của `crash.log`**.
+2. **Tailwind JIT không sinh class ta tự nghĩ ra.** Probe đo `bg-accent/30` — một
+   class **không có trong `src/**`** — nên luôn ra `rgba(0, 0, 0, 0)` và đỏ giả,
+   trông hệt như lỗi 4.23 thật. Chỉ được đo class có thật: `bg-accent/10`,
+   `bg-accent/5`. Kiểm bằng `grep` trước khi viết vào probe.
+3. **`element.click()` luôn "thành công"** ngay cả khi React chưa gắn handler, nên
+   một cú bấm có thể rơi vào khoảng trống mà không có gì xảy ra. Mọi bước điều
+   hướng phải **bấm lại tới khi màn hình đổi thật**, không bấm một lần rồi tin.
+4. **`Page.captureScreenshot` treo vô hạn** khi cửa sổ bị che hoặc thu nhỏ. Ảnh chỉ
+   là bằng chứng, kết luận nằm ở số đo — nên chụp ảnh có hạn 15s và **không** được
+   phép làm đỏ phép kiểm nào.
+5. **Số dòng render không so được qua hai vị trí cuộn khác nhau.** Ở đầu danh sách
+   overscan bị cắt một phía (đo được 13 dòng), ở giữa thì đủ cả hai phía (10 dòng)
+   — cả hai đều **đúng**. Phép kiểm "ẩn/hiện lại cho cùng kết quả" vì vậy so
+   `clientHeight` (đại lượng mà 4.43 làm sai, không phụ thuộc vị trí cuộn), rồi
+   kiểm riêng "số dòng đủ so với khung" ở mỗi vị trí.
+
+**Số đo thật của một lượt chạy** (bản dev, sách DOCX 388 khối, theme dark + light):
+ô cuộn **428/475 px = 90%** panel, **13 dòng** khi khung chứa được ~6, canvas DOCX
+cao 27 366 px. Màu ở cả hai theme: `accent` `rgb(129,140,248)`/`rgb(79,70,229)`,
+`bg-accent/10` ra đúng `rgba(…, 0.1)` — nhánh alpha còn sống, tức 4.23 chưa quay lại.
+
+Bấm nút theme thật (`[data-theme-resolved]`) chứ không sửa `classList`: cần biết
+cả đường đi nút → IPC → settings → biến CSS có ra đúng màu không.
+
+`StorageManager` được thêm `data-testid="storage-back"` — dò nút bằng chữ
+("Thư viện") đã đỏ giả một lượt vì nhãn thật là "← Quay lại".
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -1891,7 +2029,7 @@ scripts/
 | Chưa có file mẫu nhóm B/C | Thấp | Còn thiếu **PDF 2 cột (B1)** — user xác nhận không có mẫu, `minGutterRatio` 0.04 vẫn chưa được kiểm lần nào. C1 (PDF scan) **đã có** và đã kiểm ở bản đóng gói: báo `PDF_NO_TEXT_LAYER` đúng như thiết kế |
 | Detector chỉ kiểm trên 2 file PDF | TB | Cả hai đều là LN dịch bố cục 1 cột, đánh số kiểu phương Tây. Chưa biết hành xử với sách đánh số kiểu `第一章`, sách nhiều chương nhỏ, hay chương không có tiêu đề |
 | ~~pdfjs chưa kiểm ở bản đóng gói~~ | ✅ Xong | Đã kiểm ở P1.5 và **lộ ra 2 lỗi thật** (mục 4.19). Nay chạy đúng trên `.exe` với cả 5 file mẫu, gọi qua IPC thật |
-| Kiểm bản đóng gói vẫn làm thủ công | **Cao** | Quy trình CDP ở mục 4.19 chạy tay. P1.6c lại lộ thêm 2 lỗi nữa mà 1008 test không thấy (4.22, 4.23) — đây là lần thứ ba. Nên có ít nhất một script CDP chạy được bằng một lệnh, kiểm: mở PDF ra canvas có pixel, `getComputedStyle` của lớp `/opacity` khác `rgba(0,0,0,0)` |
+| ~~Kiểm bản đóng gói vẫn làm thủ công~~ | ✅ Xong | `scripts/ui-check.mjs` + `pnpm ui-check` (thêm `--packaged` cho bản đã build). Đo số thật trong Chromium: màu ở cả 2 theme gồm nhánh có alpha, `clientHeight` + số dòng, pixel khác trắng của canvas PDF. Chạy thật ở bản dev **và** bản đóng gói — xem mục 4.45. **Chưa vào CI**, xem hàng dưới |
 | Không có test nào chặn lỗi màu trong suốt | **TB** | Lỗi 4.23 nằm im từ P1.6b. Test hiện chỉ kiểm class có mặt, không kiểm màu tính ra được. jsdom không tính CSS thật nên phải kiểm ở app đang chạy |
 | Viewer PDF chưa có text layer | TB | Neo highlight vẽ bằng `rects` nên **không cần** text layer. Nhưng vậy user không bôi chọn hay copy chữ được. plan.md có nhắc "canvas + text layer" — để lại tới khi thật sự cần |
 | Chưa có zoom / xoay trang | Thấp | Scale tính vừa bề ngang khung, trần 2×. Đủ đọc nhưng chưa cho user phóng to |
@@ -1908,8 +2046,8 @@ scripts/
 | Probe chạy thật sidecar chưa vào CI | TB | `apps/main/probe/` đã tìm ra lỗi 4.27 nhưng phải gọi tay. Cần venv nên chưa nối vào CI được — nối cùng lúc với hàng trên. Đây là lần thứ tư "unit test xanh mà đường nối thật hỏng" |
 | ~~Sidecar chưa đóng gói~~ | ✅ Xong | `build.py` + `extraResources` đã có. **Đã kiểm thật ở bản đóng gói**: sidecar `.exe` lên `ready`, tải voice 63 MB xong trong app đã build. Lộ ra 1 lỗi thật (mục 4.29a). Phần **CI** vẫn còn nợ — xem hàng dưới |
 | ~~Renderer chưa hiện trạng thái sidecar~~ | ✅ Xong | `SidecarBadge` hiện ở màn Giọng đọc, có cả 5 trạng thái. Đã đo màu thật trong app đóng gói ở cả dark lẫn light |
-| Đóng gói sidecar chưa vào CI | **Cao** | `pnpm build:win` **không** tự gọi `pnpm build:sidecar` — quên chạy thì installer ra vẫn thành công nhưng thiếu sidecar, hỏng lặng lẽ. Cố ý chưa nối vào vì PyInstaller cần venv Python mà CI chưa dựng; nối cùng lúc với `pnpm test:sidecar`. Trong lúc chờ: **luôn chạy `pnpm build:sidecar` trước `pnpm build:win`**. P2.4 lại xác nhận rủi ro này: `.exe` hỏng mà 340 test vẫn xanh (mục 4.34) |
-| Chưa dựng lại installer sau P2.4/P2.5 | TB | `.exe` sidecar **đã** build và chạy thật (bắt tay, `/synthesize`, `.ogg` nghe được). Nhưng `pnpm build:win` chưa chạy lại nên chưa biết installer mới bao nhiêu MB và electron-builder có chép trọn 145 MB onedir không. P2.5 không đụng sidecar nên rủi ro không tăng thêm |
+| ~~Đóng gói sidecar chưa vào CI~~ | ✅ Xong | `pnpm build:win` giờ tự gọi `build:sidecar` rồi `scripts/sidecar-preflight.mjs` — không còn phải nhớ. Preflight chặn cả 3 cách hỏng (thiếu `.exe`, thiếu `_internal/`, `.exe` cũ hơn `.py`), đã kiểm chứng bằng `touch` một file `.py`. CI dựng venv 3.12 ở **cả hai** job + kiểm phía đích `resources/sidecar/` sau khi đóng gói. Xem mục 4.44 |
+| ~~Chưa dựng lại installer sau P2.4/P2.5~~ | ✅ Xong | P2.8 chạy lại `pnpm build:win`: NSIS **143.0 MB**, portable **142.8 MB** (trước khi có sidecar là 80.8 MB). electron-builder **có** chép trọn onedir — đo được `resources/sidecar/` **147 MB** đủ cả `_internal/`, và `resources/voices/catalog.json` cũng có. Vượt mốc 200 MB của plan.md thì chưa, nhưng đã dùng hết 71% |
 | Chỉ có 2 voice trong catalog | Thấp | VI (`vais1000`) + EN (`lessac`), đều `medium`. Đủ cho P2.4, nhưng user muốn giọng khác thì phải sửa file — chưa có đường thêm voice từ UI |
 | Tải voice không resume được | TB | Đứt giữa chừng là mất cả 63 MB, tải lại từ đầu. HF có hỗ trợ `Range` nên làm được, nhưng phải giữ trạng thái băm dở — băm theo dòng chảy hiện tại không nối tiếp được. Để lại tới khi thấy người dùng thật kêu |
 | Nút "Giọng đọc" chỉ có ở màn thư viện | Thấp | Vào đọc sách rồi thì phải quay ra mới tải voice được. Hợp lý cho tới khi có nút generate trong reader (P2.6) |
@@ -1918,9 +2056,11 @@ scripts/
 | ~~Chưa có màn hình nào gọi `queue:*`~~ | ✅ Xong | `GenerateControls` gọi 8/12 channel từ trình đọc và màn chi tiết sách. Còn `queue:listPending` và `queue:cancelJob` chưa có UI — xem hàng dưới |
 | ~~Chưa có UI chọn giọng đọc~~ | ✅ Xong | Nút "Dùng giọng này" ở `VoiceRow`, chỉ hiện với voice **đã cài**. Xoá voice đang chọn thì tự bỏ chọn, nên settings không bao giờ trỏ tới model đã mất |
 | ~~P2.6 UI chưa mở app thật lần nào~~ | ✅ Xong | P2.7 đã kiểm ở `pnpm dev` bằng CDP: hộp ước lượng, thanh tiến độ, generate 190 đoạn thật, prefetch, xoá 380 file. Đo `getComputedStyle` ở **cả dark lẫn light** — không màu nào trong suốt. Phần **bản đóng gói** vẫn còn nợ, xem hàng dưới |
-| UI Phase 2 chưa kiểm trên bản đóng gói | **Cao** | Đã kiểm ở `pnpm dev` (thấy CSS thật + IPC thật) nhưng **chưa** `pnpm build:win`. Bản dev không lộ được lỗi đường dẫn kiểu asar — đúng loại lỗi 4.19 và 4.29a. Phải chạy `pnpm build:sidecar` trước rồi `pnpm build:win`, mở `.exe` và đi lại luồng: nhập sách → generate → xem/xoá dung lượng |
-| Không test nào bắt được lỗi bố cục/chiều cao | **Cao** | jsdom không tính layout nên `clientHeight` luôn 0 — lỗi 4.43 (danh sách đoạn bị cắt) **không thể** bắt bằng unit test, và nó nằm im suốt P1.6c → P2.7. Test hiện chỉ khoá được ràng buộc *cấu trúc* (`flex-1 min-h-0` có mặt), không khoá được kết quả thật. Cần script CDP đo `clientHeight` + số dòng render trong app đang chạy |
-| Quy trình kiểm UI bằng CDP vẫn viết tay mỗi lần | **TB** | P2.7 lái app qua `--remote-debugging-port=9222` + `Runtime.evaluate`, nhưng script là file tạm rồi xoá. Lần thứ năm làm lại từ đầu. Nên có `scripts/ui-check.mjs` cố định: mở app, đi luồng, đo `getComputedStyle` những token màu, chụp ảnh cả 2 theme |
+| ~~UI Phase 2 chưa kiểm trên bản đóng gói~~ | ✅ Xong | P2.8: `pnpm build:win` (tự đóng gói sidecar) rồi `pnpm ui-check --packaged` trên `.exe`. Đo được sidecar `.exe` lên `ready`, catalog đọc từ `resources/voices/`, màu ở cả 2 theme, bố cục danh sách đoạn — tức đã đi qua đúng đường dẫn kiểu asar mà bản dev không lộ |
+| ~~Không test nào bắt được lỗi bố cục/chiều cao~~ | ✅ Xong | `pnpm ui-check` đo `clientHeight` của ô cuộn, tỉ lệ so với panel, số dòng render, và so số dòng giữa hai đường "lần đầu mở" vs "ẩn rồi hiện lại" — chính chênh lệch đã lộ ra lỗi 4.43. Test cấu trúc ở tầng vitest **vẫn giữ**: hai lưới chặn hai tầng, không thay nhau |
+| ~~Quy trình kiểm UI bằng CDP vẫn viết tay mỗi lần~~ | ✅ Xong | `scripts/ui-check.mjs` là script cố định, `pnpm ui-check`. Có `scripts/README.md` ghi kiểm những gì và bắt được lỗi loại nào |
+| `pnpm ui-check` chưa vào CI | **TB** | Chạy tay được rồi, nhưng runner sạch thiếu hai thứ: venv Python (để sidecar lên `ready`) và **ít nhất một sách trong thư viện** — phần reader/storage tự bỏ qua nếu thư viện rỗng, nên nối vào CI lúc này chỉ kiểm được nửa đầu. Cần một sách mẫu nhỏ commit được (`samples/` hiện không commit) hoặc bước import qua IPC trước khi kiểm |
+| Ảnh chụp trong `ui-check` hay bị bỏ qua | Thấp | `Page.captureScreenshot` treo khi cửa sổ bị che (chạy nền là ca thường gặp), nên script bỏ ảnh sau 15s thay vì đỏ. Số đo vẫn đủ để kết luận, chỉ mất bằng chứng nhìn bằng mắt. Muốn chắc có ảnh thì chạy với cửa sổ hiện lên trước |
 | Xoá 1 chương huỷ job của CẢ sách | Thấp | Hàng đợi không có `cancelByChapter` nên `storage:deleteChapterAudio` gọi `cancelBook` (mục 4.41). Quá tay: job của chương khác bị huỷ oan rồi phải xếp lại. Đổi được nếu thêm `cancelByChapter` vào `jobs.ts` |
 | `deleteReadAudio` chưa có nút trong UI | TB | Handler + service + 5 test đã có (xoá chương **trước** chương đang đọc), nhưng `StorageManager` chưa gọi. plan.md có nhắc nút "Xoá audio các chương đã đọc xong" — thiếu chỗ bấm thì tính năng không tồn tại với user |
 | Ngưỡng cảnh báo nhỏ nhất là 2 GB | Thấp | Nhánh `near`/`over` chỉ tới được khi user có >1.6 GB audio. Đúng với app này (1 vol ≈ 97 MB → cảnh báo ở ~16 vol) nhưng nghĩa là đường cảnh báo hiếm khi chạy thật. Đã kiểm bằng cách hạ ngưỡng qua IPC: thanh 100%, fill đổi đỏ, câu cảnh báo đúng |

@@ -5,6 +5,10 @@ out/
 release/
 *.tsbuildinfo
 
+# Ảnh chụp do `pnpm ui-check` sinh ra — bằng chứng của một lượt chạy,
+# không phải mã nguồn. Kết luận đo được thì ghi vào PROGRESS.md.
+artifacts/
+
 # Bản build native module theo từng ABI (Node/Electron)
 .abi-cache/
 

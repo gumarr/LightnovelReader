@@ -70,6 +70,11 @@ export default tseslint.config(
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         __dirname: 'readonly',
+        // Có sẵn từ Node 18/22, `scripts/ui-check.mjs` dùng để nói CDP mà không
+        // phải thêm dependency (`ws`, `chrome-remote-interface`).
+        fetch: 'readonly',
+        WebSocket: 'readonly',
+        Buffer: 'readonly',
       },
     },
     rules: {

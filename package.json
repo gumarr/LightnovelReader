@@ -21,7 +21,8 @@
     "test:sidecar": "node scripts/sidecar-test.mjs",
     "build:sidecar": "node scripts/sidecar-build.mjs",
     "build": "pnpm -r --stream build",
-    "build:win": "pnpm build && pnpm abi:electron && electron-builder --win --config electron-builder.yml",
+    "build:win": "pnpm build:sidecar && node scripts/sidecar-preflight.mjs && pnpm build && pnpm abi:electron && electron-builder --win --config electron-builder.yml",
+    "ui-check": "node scripts/ui-check.mjs",
     "abi:node": "node scripts/sqlite-abi.mjs node",
     "abi:electron": "node scripts/sqlite-abi.mjs electron"
   },

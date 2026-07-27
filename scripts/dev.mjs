@@ -92,7 +92,16 @@ const main = async () => {
   //    Chờ file thật xuất hiện thay vì hẹn giờ cố định — máy chậm vẫn chạy đúng.
   await waitForFile(join(root, 'apps/main/dist/index.cjs'), 60_000);
 
-  electronProcess = spawn(electron, [join(root, 'apps/main')], {
+  // Cổng debug cho `scripts/ui-check.mjs`. Chỉ bật khi được yêu cầu tường minh:
+  // mở cổng này mặc định là để hở một đường điều khiển renderer trong mọi phiên dev.
+  const debugPort = process.env.LN_REMOTE_DEBUG_PORT;
+  const electronArgs = [join(root, 'apps/main')];
+  if (debugPort !== undefined && debugPort !== '') {
+    electronArgs.push(`--remote-debugging-port=${debugPort}`);
+    console.log(`[dev] Cổng debug renderer: ${debugPort}`);
+  }
+
+  electronProcess = spawn(electron, electronArgs, {
     stdio: 'inherit',
     env: { ...process.env, VITE_DEV_SERVER_URL: address, NODE_ENV: 'development' },
   });

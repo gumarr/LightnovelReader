@@ -53,8 +53,13 @@ portable:
 #   `apps/main/src/services/sidecar-paths.ts`. Đổi một bên phải đổi bên kia,
 #   nếu không bản đóng gói không tìm thấy sidecar trong khi mọi unit test vẫn xanh.
 #
-# `sidecar/dist/ln-sidecar/` do `python sidecar/build.py` sinh ra — phải chạy
-# TRƯỚC `pnpm build:win`.
+# `sidecar/dist/ln-sidecar/` do `python sidecar/build.py` sinh ra. `pnpm build:win`
+# tự gọi `build:sidecar` rồi `scripts/sidecar-preflight.mjs` trước khi tới đây,
+# nên không còn phải nhớ chạy tay.
+#
+# LƯU Ý: electron-builder **không** báo lỗi khi `from:` không tồn tại — nó chép
+# được gì thì chép rồi báo thành công. Vì vậy việc chặn nằm ở preflight, đừng
+# trông vào chỗ này.
 extraResources:
   - from: sidecar/dist/ln-sidecar
     to: sidecar

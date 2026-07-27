@@ -29,13 +29,34 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      # Sidecar dùng 3.12 trên máy dev (PROGRESS mục 5.4). Ghim cùng phiên bản
+      # ở CI để lỗi phụ thuộc phiên bản không chỉ hiện ở một trong hai chỗ.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: sidecar/requirements-dev.txt
+
       - run: pnpm install --frozen-lockfile
+
+      # `pnpm test:sidecar` tự bỏ qua khi thiếu venv, nên nếu bước này hỏng thì
+      # pytest sẽ im lặng không chạy mà job vẫn xanh. Dựng venv là bước riêng để
+      # lỗi cài đặt hiện ra ngay tại đây.
+      - name: Dựng venv cho sidecar
+        run: |
+          python -m venv sidecar/.venv
+          sidecar/.venv/Scripts/python.exe -m pip install --upgrade pip
+          sidecar/.venv/Scripts/python.exe -m pip install -r sidecar/requirements-dev.txt
 
       - run: pnpm typecheck
 
       - run: pnpm lint
 
       - run: pnpm test
+
+      # Nợ mức Thấp/TB ở PROGRESS mục 8 đã đóng: pytest chạy trong cùng job
+      # `check` thay vì phải gọi tay trên máy dev.
+      - run: pnpm test:sidecar
 
   build:
     name: Build Windows portable
@@ -54,13 +75,49 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: sidecar/requirements-dev.txt
+
       - run: pnpm install --frozen-lockfile
 
+      # `pnpm build:win` gọi `build:sidecar` → PyInstaller, nên venv là bắt buộc
+      # ở job này. Thiếu venv thì `sidecar-build.mjs` thoát khác 0 và job đỏ —
+      # đúng ý muốn, nhưng dựng sẵn ở đây để không đỏ oan.
+      - name: Dựng venv cho sidecar
+        run: |
+          python -m venv sidecar/.venv
+          sidecar/.venv/Scripts/python.exe -m pip install --upgrade pip
+          sidecar/.venv/Scripts/python.exe -m pip install -r sidecar/requirements-dev.txt
+
+      # Gồm cả `build:sidecar` + preflight — xem `scripts/sidecar-preflight.mjs`.
       - name: Build installer + portable
         run: pnpm build:win
         env:
           # Không code sign — chấp nhận SmartScreen warning
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Preflight chỉ kiểm PHÍA NGUỒN (`sidecar/dist/`). Còn đây kiểm phía ĐÍCH:
+      # electron-builder có thật sự chép trọn onedir vào `resources/sidecar/` hay
+      # không. Hai chỗ hỏng khác nhau — nợ mục 8 "chưa biết electron-builder có
+      # chép trọn 145 MB onedir không".
+      - name: Kiểm sidecar có trong bản đóng gói
+        shell: pwsh
+        run: |
+          $exe = "release/win-unpacked/resources/sidecar/ln-sidecar.exe"
+          if (-not (Test-Path $exe)) { throw "Bản đóng gói thiếu sidecar: $exe" }
+
+          $internal = "release/win-unpacked/resources/sidecar/_internal"
+          if (-not (Test-Path $internal)) { throw "Thiếu _internal — onedir không đầy đủ" }
+
+          $catalog = "release/win-unpacked/resources/voices/catalog.json"
+          if (-not (Test-Path $catalog)) { throw "Thiếu catalog voice: $catalog" }
+
+          $mb = [math]::Round((Get-ChildItem -Recurse "release/win-unpacked/resources/sidecar" |
+            Measure-Object -Property Length -Sum).Sum / 1MB, 1)
+          Write-Host "Sidecar trong bản đóng gói: $mb MB"
 
       - name: Kiểm tra bản đóng gói khởi động được
         shell: pwsh

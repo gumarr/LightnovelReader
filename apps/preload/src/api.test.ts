@@ -62,6 +62,7 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.reader.getBookFile('book-1'),
     () => api.reader.getBookHtml('book-1'),
     () => api.reader.listSegments('ch-1'),
+    () => api.reader.getSegmentAudio('seg-1'),
     () => api.sidecar.getStatus(),
     () => api.voices.listCatalog(),
     () => api.voices.listInstalled(),

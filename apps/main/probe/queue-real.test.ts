@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { AudioBitrate, Book, Chapter, Segment } from '@ln/shared';
@@ -28,6 +29,7 @@ import { createJobRepository } from '../src/db/repositories/jobs.js';
 import { createGenerateQueue } from '../src/services/queue.js';
 import { createTimingsStore } from '../src/services/timings-store.js';
 import { createQueueHandlers } from '../src/ipc/handlers/queue.js';
+import { createReaderHandlers } from '../src/ipc/handlers/reader.js';
 import { createStorageHandlers } from '../src/ipc/handlers/storage.js';
 import { createStorageService } from '../src/services/storage.js';
 import { createSidecarSupervisor } from '../src/services/sidecar-supervisor.js';
@@ -70,6 +72,8 @@ type Harness = {
   handlers: ReturnType<typeof createQueueHandlers>;
   /** Handler Storage Manager thật (P2.7) — xoá file thật do sidecar vừa ghi */
   storage: ReturnType<typeof createStorageHandlers>;
+  /** Handler trình đọc thật (P3.1) — đọc lại đúng file sidecar vừa ghi */
+  reader: ReturnType<typeof createReaderHandlers>;
   supervisor: ReturnType<typeof createSidecarSupervisor>;
   cleanup: () => Promise<void>;
 };
@@ -117,6 +121,9 @@ const setup = async (bitrate: AudioBitrate = 24): Promise<Harness> => {
     title: 'Chương 1',
     segmentCount: TEXTS.length,
     audioBytes: 0,
+    // Cột của schema v2 (P2.7b). Thiếu là `NOT NULL constraint failed` ngay ở
+    // `insertMany` — cả file probe đã hỏng từ lúc thêm migration.
+    errorCount: 0,
     generateStatus: 'none',
   };
   const segmentRows: Segment[] = TEXTS.map((text, index) => ({
@@ -162,6 +169,20 @@ const setup = async (bitrate: AudioBitrate = 24): Promise<Harness> => {
     getWarnBytes: () => 5 * 1024 ** 3,
   });
 
+  // Dựng như `index.ts`: cùng `timingsStore`, cùng `getAudioDir`. Đây là đường
+  // đọc lại thứ hàng đợi vừa ghi — hai nửa mà unit test luôn giả một bên.
+  const reader = createReaderHandlers({
+    books,
+    chapters,
+    segments,
+    readFile: (filePath) => readFile(filePath),
+    convertDocx: () => {
+      throw new Error('probe không dùng DOCX');
+    },
+    timings: createTimingsStore(),
+    getAudioDir: () => audioDir,
+  });
+
   return {
     audioDir,
     db,
@@ -171,6 +192,7 @@ const setup = async (bitrate: AudioBitrate = 24): Promise<Harness> => {
     jobs,
     handlers,
     storage,
+    reader,
     supervisor,
     cleanup: async () => {
       await supervisor.stop();
@@ -259,6 +281,88 @@ describe.skipIf(!canRun)('hàng đợi thật + sidecar thật + model thật', 
       await harness.cleanup();
     }
   });
+
+  it('P3.1: đọc lại audio + timing thật qua reader:getSegmentAudio', async () => {
+    const harness = await setup();
+    try {
+      harness.queue.enqueueSegments({ segmentIds: ['probe-seg-0'] });
+      harness.queue.start();
+      await waitForIdle(harness, 240_000);
+
+      const segment = harness.segments.findById('probe-seg-0');
+      expect(segment?.status).toBe('ready');
+
+      const result = await harness.reader.getSegmentAudio('probe-seg-0');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const { bytes, durationMs, timings, timingSource } = result.data;
+
+      // Bytes qua IPC phải là chính file trên đĩa — không cụt, không lệch offset
+      const oggPath = join(harness.audioDir, 'probe-book', 'probe-seg-0.ogg');
+      const onDisk = readFileSync(oggPath);
+      expect(bytes.byteLength).toBe(onDisk.byteLength);
+      expect(Buffer.from(bytes).equals(onDisk)).toBe(true);
+      expect(Buffer.from(bytes).subarray(0, 4).toString('ascii')).toBe('OggS');
+
+      // Timing phải là bản thật từ phoneme, không phải ước lượng: file `.json`
+      // do hàng đợi ghi ngay cạnh, nên rơi về `estimate` ở đây nghĩa là đường
+      // đọc đang trỏ sai chỗ.
+      expect(timingSource).toBe('phoneme');
+      expect(durationMs).toBe(segment?.durationMs);
+      expect(timings.length).toBeGreaterThan(0);
+
+      // Bất biến mà player dựa vào: mốc tăng dần và nằm trong thời lượng audio
+      for (let i = 0; i < timings.length; i += 1) {
+        const t = timings[i];
+        if (t === undefined) continue;
+        expect(t.endMs).toBeGreaterThanOrEqual(t.startMs);
+        expect(t.startMs).toBeGreaterThanOrEqual(0);
+        expect(t.endMs).toBeLessThanOrEqual(durationMs + 50);
+        if (i > 0) expect(t.startMs).toBeGreaterThanOrEqual(timings[i - 1]?.startMs ?? 0);
+      }
+
+      // `charStart`/`charEnd` phải cắt lại đúng chữ trong text gốc — đây là thứ
+      // subtitle pane dùng để tô, sai một ký tự là tô lệch cả câu.
+      const text = segment?.text ?? '';
+      let matched = 0;
+      for (const t of timings) {
+        if (text.slice(t.charStart, t.charEnd) === t.w) matched += 1;
+      }
+      console.log(
+        `  ${String(timings.length)} từ · ${String(matched)} khớp charStart/charEnd · ` +
+          `${String(durationMs)} ms · nguồn=${timingSource}`,
+      );
+      expect(matched).toBe(timings.length);
+
+      // Xoá file `.json` rồi đọc lại: phải rơi về ước lượng chứ không trả mảng
+      // rỗng — nếu không thì highlight đứng im mà không ai biết vì sao.
+      rmSync(join(harness.audioDir, 'probe-book', 'probe-seg-0.json'));
+      const fallback = await harness.reader.getSegmentAudio('probe-seg-0');
+      expect(fallback.ok).toBe(true);
+      if (!fallback.ok) return;
+      expect(fallback.data.timingSource).toBe('estimate');
+      expect(fallback.data.timings.length).toBeGreaterThan(0);
+      expect(fallback.data.durationMs).toBe(segment?.durationMs);
+      console.log(`  Mất file timing → ước lượng ${String(fallback.data.timings.length)} từ`);
+
+      // Xoá luôn `.ogg`: DB vẫn nói `ready` nhưng file không còn — player phải
+      // nhận `NOT_FOUND` để xếp lại hàng đợi, không phải lỗi hệ thống.
+      rmSync(oggPath);
+      const gone = await harness.reader.getSegmentAudio('probe-seg-0');
+      expect(gone.ok).toBe(false);
+      if (gone.ok) return;
+      expect(gone.error.code).toBe('NOT_FOUND');
+
+      // Segment chưa generate cũng cùng mã
+      const pending = await harness.reader.getSegmentAudio('probe-seg-1');
+      expect(pending.ok).toBe(false);
+      if (pending.ok) return;
+      expect(pending.error.code).toBe('NOT_FOUND');
+    } finally {
+      await harness.cleanup();
+    }
+  }, 300_000);
 
   it('bitrate 16 cho file NHỎ HƠN 32 — settings thật sự có tác dụng', async () => {
     // Nợ từ P2.4: `AppSettings.bitrate` có sẵn mà chưa ai đọc. Chỉ đo trên file

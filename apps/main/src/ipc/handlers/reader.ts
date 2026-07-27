@@ -1,16 +1,20 @@
 import {
   bookIdSchema,
   err,
+  estimateWordTimings,
   ok,
   type BookFileBytes,
   type BookHtml,
   type Result,
   type Segment,
+  type SegmentAudio,
 } from '@ln/shared';
 import type { BookRepository } from '../../db/repositories/books.js';
 import type { ChapterRepository } from '../../db/repositories/chapters.js';
 import type { SegmentRepository } from '../../db/repositories/segments.js';
 import { prepareDocxHtml } from '../../services/docx-html.js';
+import { segmentAudioPath } from '../../services/paths.js';
+import type { TimingsStore } from '../../services/timings-store.js';
 import { InvalidInputError } from '../wrap.js';
 
 /**
@@ -25,6 +29,7 @@ export type ReaderHandlers = {
   getBookFile: (input: unknown) => Promise<Result<BookFileBytes>>;
   getBookHtml: (input: unknown) => Promise<Result<BookHtml>>;
   listSegments: (input: unknown) => Result<Segment[]>;
+  getSegmentAudio: (input: unknown) => Promise<Result<SegmentAudio>>;
 };
 
 /** Đọc file thành bytes. Tách ra để test không cần file thật. */
@@ -39,6 +44,14 @@ export type ReaderHandlerDeps = {
   segments: SegmentRepository;
   readFile: FileReader;
   convertDocx: HtmlConverter;
+  timings: TimingsStore;
+  /**
+   * Hàm chứ không phải chuỗi: user đổi thư mục audio ở Storage Manager giữa
+   * phiên, mà handler được dựng đúng một lần lúc khởi động — chụp giá trị lúc đó
+   * là player sẽ đọc mãi ở thư mục cũ. Cùng lý do với `audioDir` của supervisor
+   * (PROGRESS mục 2, P2.4).
+   */
+  getAudioDir: () => string;
 };
 
 export const createReaderHandlers = (deps: ReaderHandlerDeps): ReaderHandlers => {
@@ -121,6 +134,82 @@ export const createReaderHandlers = (deps: ReaderHandlerDeps): ReaderHandlers =>
       }
 
       return ok(deps.segments.listByChapter(chapterId));
+    },
+
+    getSegmentAudio: async (input) => {
+      const parsed = bookIdSchema.safeParse(input);
+      if (!parsed.success) throw new InvalidInputError('segmentId không hợp lệ');
+
+      const segmentId = parsed.data;
+      const segment = deps.segments.findById(segmentId);
+      if (segment === undefined) {
+        return err('NOT_FOUND', 'Không tìm thấy đoạn này.', `segmentId=${segmentId}`);
+      }
+
+      if (segment.status !== 'ready') {
+        // Không phải lỗi hệ thống — player bắt `NOT_FOUND` để xếp segment lên
+        // đầu hàng đợi rồi chờ, thay vì hiện hộp lỗi cho user.
+        return err(
+          'NOT_FOUND',
+          'Đoạn này chưa có audio.',
+          `segmentId=${segmentId} status=${segment.status}`,
+        );
+      }
+
+      const bookId = deps.segments.findBookId(segmentId);
+      if (bookId === undefined) {
+        return err('NOT_FOUND', 'Không tìm thấy sách chứa đoạn này.', `segmentId=${segmentId}`);
+      }
+
+      const audioDir = deps.getAudioDir();
+
+      let bytes: Uint8Array;
+      try {
+        bytes = await deps.readFile(segmentAudioPath(audioDir, bookId, segmentId));
+      } catch (error) {
+        // DB nói `ready` mà file không còn: Storage Manager vừa xoá, hoặc user
+        // xoá tay trong Explorer. Trả cùng mã với "chưa generate" vì cách xử lý
+        // giống hệt nhau — generate lại. Lỗi khác (mất quyền, ổ rút ra) vẫn nổi
+        // lên để `wrap` ghi log và báo user, chứ nuốt hết thì trông y như "chưa
+        // generate" và user bấm generate lại mãi.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        return err(
+          'NOT_FOUND',
+          'File audio của đoạn này không còn trên đĩa.',
+          `segmentId=${segmentId}`,
+        );
+      }
+
+      const copy = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(copy).set(bytes);
+
+      const stored = await deps.timings.read({ audioDir, bookId, segmentId });
+
+      // Thời lượng ưu tiên lấy từ file timing: đó là số sidecar đo từ số mẫu
+      // ngay lúc encode. `segment.durationMs` trong DB là bản sao của cùng số
+      // đó, dùng khi file timing mất.
+      const durationMs = stored?.durationMs ?? segment.durationMs ?? 0;
+
+      // Có tiếng mà không có mốc thì highlight đứng im — ước lượng ngay ở đây để
+      // renderer không phải có nhánh riêng cho ca đó. CLAUDE.md: UI phải chạy ở
+      // cả ba `alignStatus`, và đây là chỗ làm cho `estimated` luôn dùng được.
+      if (stored === undefined || stored.words.length === 0) {
+        return ok({
+          segmentId,
+          bytes: copy,
+          durationMs,
+          timings: estimateWordTimings(segment.text, durationMs),
+          timingSource: 'estimate',
+        });
+      }
+
+      return ok({
+        segmentId,
+        bytes: copy,
+        durationMs,
+        timings: stored.words,
+        timingSource: stored.source,
+      });
     },
   };
 };

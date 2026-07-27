@@ -124,6 +124,11 @@ const start = (): void => {
   const segmentRepo = createSegmentRepository(db);
   const jobRepo = createJobRepository(db);
 
+  // Một instance dùng chung cho cả hàng đợi (ghi) lẫn trình đọc (đọc): store
+  // không giữ trạng thái nào, nhưng dựng hai bản thì lần sau sửa cách ghi mà
+  // quên phía đọc sẽ không lộ ra ở typecheck.
+  const timingsStore = createTimingsStore();
+
   // Chỗ duy nhất trong app xoá file của user: audio, timing, và bản copy sách.
   // Dựng trước `libraryHandlers` vì xoá sách cũng phải đi qua đây.
   const storage = createStorageService({
@@ -157,6 +162,8 @@ const start = (): void => {
     // `readFile` của fs/promises trả Buffer — handler tự cắt sang ArrayBuffer riêng
     readFile: (filePath) => readFile(filePath),
     convertDocx: async (filePath) => (await nodeDocxConverter(filePath)).html,
+    timings: timingsStore,
+    getAudioDir: () => settings.getAll().audioDir,
   });
 
   // Sidecar: chạy từ mã nguồn lúc dev, từ `resources/sidecar/` ở bản đóng gói.
@@ -193,7 +200,7 @@ const start = (): void => {
   const queue = createGenerateQueue({
     jobs: jobRepo,
     segments: segmentRepo,
-    timings: createTimingsStore(),
+    timings: timingsStore,
     getClient: () => supervisor.getClient(),
     // Đọc lúc chạy chứ không chốt sẵn: user đổi thư mục audio và bitrate trong
     // Settings giữa lúc hàng đợi đang chạy.
@@ -271,6 +278,7 @@ const start = (): void => {
   registerHandler('reader:getBookFile', readerHandlers.getBookFile, logger);
   registerHandler('reader:getBookHtml', readerHandlers.getBookHtml, logger);
   registerHandler('reader:listSegments', readerHandlers.listSegments, logger);
+  registerHandler('reader:getSegmentAudio', readerHandlers.getSegmentAudio, logger);
   registerHandler('sidecar:getStatus', sidecarHandlers.getStatus, logger);
   registerHandler('voices:listCatalog', voicesHandlers.listCatalog, logger);
   registerHandler('voices:listInstalled', voicesHandlers.listInstalled, logger);

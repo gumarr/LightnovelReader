@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-27 · commit `b85a22e`
+> **Cập nhật lần cuối:** 2026-07-27 · commit `<P3.1>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,9 +39,10 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** Phase 3 — Player & Subtitle sync (xem mục 3).
+**Việc tiếp theo:** P3.2 — Playback engine (xem mục 3).
 **Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy
 lẫn bản đóng gói.** P2.8 đã trả **hết 4 nợ mức Cao** trong mục 8.
+**Phase 3 đang làm: P3.1 xong** (tầng dữ liệu audio + timing).
 
 ---
 
@@ -601,13 +602,55 @@ chính phép kiểm chứ không phải lỗi app — trong đó có một cái 
 để bắt (`crash.log` do sai ABI). Chi tiết ở mục 4.45; đáng đọc trước khi thêm phép
 kiểm mới, vì cả bốn sẽ gặp lại.
 
+### Phase 3 — P3.1 Tầng dữ liệu audio + timing ✅
+
+Phần đầu Phase 3. **Chưa có nút phát nào** — cố ý: đây là tầng cấp audio và mốc
+từng từ cho player, dựng UI trước khi có dữ liệu chạy được là dựng khung rỗng.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `shared/timings.ts` | `splitWords`, `estimateWordTimings`, `wordIndexAt`, `seekMsForChar` — **hàm thuần** | 28 |
+| `shared/ipc.ts` | `SegmentAudio` + kênh `reader:getSegmentAudio` | — |
+| `main/ipc/handlers/reader.ts` | Đọc `.ogg` + `.json`, ước lượng khi thiếu mốc | +11 |
+| `main/index.ts` | `timingsStore` dùng chung hàng đợi ↔ trình đọc | — |
+| `preload/api.ts` | `window.api.reader.getSegmentAudio` | +1 |
+
+Bốn quyết định ở mục 4.46–4.49. Tóm tắt:
+
+- **Bytes qua IPC, không phải path** — cùng lý do `BookFileBytes`; segment ~10s ở
+  24 kbps chỉ ~30 KB nên structured clone không đáng kể.
+- **Audio và timing về trong MỘT lượt** — tách hai kênh thì có cửa sổ mà `.ogg`
+  là bản mới còn `.json` là bản cũ, highlight lệch hẳn một câu.
+- **Thiếu file timing thì main ước lượng ngay**, renderer không bao giờ nhận
+  segment `ready` mà mảng mốc rỗng.
+- **Ranh giới từ theo khoảng trắng**, không phải `\w+` — `\w` cắt mất dấu tiếng
+  Việt và chẻ đôi `Wi-Fi`, `John's`.
+
+**Đã chạy thật với sidecar + model 63 MB + đĩa thật** (`probe/queue-real.test.ts`,
+kịch bản mới) — sinh audio bằng hàng đợi thật rồi đọc lại bằng handler thật:
+
+| | Kết quả |
+|---|---|
+| Bytes qua handler vs file trên đĩa | ✅ **khớp từng byte**, magic `OggS` |
+| Nguồn timing | ✅ `phoneme` — không âm thầm rơi về ước lượng |
+| `durationMs` handler vs DB | ✅ khớp (2810 ms) |
+| `charStart`/`charEnd` cắt lại đúng chữ | ✅ **13/13 từ** trên text thật |
+| Mốc tăng dần, nằm trong thời lượng | ✅ |
+| Xoá file `.json` rồi đọc lại | ✅ rơi về `estimate`, **13 từ**, không rỗng |
+| Xoá file `.ogg` (DB vẫn `ready`) | ✅ `NOT_FOUND` — player xếp lại hàng đợi được |
+| Segment chưa generate | ✅ `NOT_FOUND` cùng mã, không đọc đĩa |
+
+Tìm ra **1 lỗi thật** mà 1667 unit test không lộ — xem mục 4.50. Đây là lần thứ
+bảy ghi nhận "test xanh mà đường nối thật hỏng", và lần này nạn nhân là chính
+lớp probe dựng ra để bắt loại lỗi đó.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1627 passed** (không đổi ở P2.8 — chỉ thêm `data-testid`) |
-| Unit test sidecar (pytest) | **345 passed** (không đổi — P2.8 không đụng sidecar) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | 13 kịch bản |
+| Unit test TypeScript | **1667 passed** (+40 ở P3.1: 28 timing, 11 handler, 1 preload) |
+| Unit test sidecar (pytest) | **345 passed** (không đổi — P3.1 không đụng sidecar) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (+1 ở P3.1) |
 | **Kiểm UI thật (`pnpm ui-check`)** | **24 phép kiểm** × 2 bản (dev + đóng gói) |
 | Schema DB | **v2** (v2 thêm `chapters.error_count` — mục 4.42) |
 | Typecheck | Sạch (5 package) |
@@ -617,7 +660,44 @@ kiểm mới, vì cả bốn sẽ gặp lại.
 
 ---
 
-## 3. Việc tiếp theo — Phase 2
+## 3. Việc tiếp theo — Phase 3
+
+Phase 3 chia **bốn phần** (thống nhất với user — mỗi phần một commit, không dồn).
+Giữ nguyên quy ước **logic thuần trước, UI sau**:
+
+| Mã | Nội dung | Trạng thái |
+|---|---|---|
+| P3.1 | Tầng dữ liệu: `reader:getSegmentAudio`, ước lượng timing, tra từ theo mốc | ✅ Xong |
+| P3.2 | Playback engine: máy trạng thái play/pause/next/prev, nối segment liên tục, `playbackRate` + `preservesPitch`, segment sắp phát nhảy đầu hàng đợi | ⬅️ **Đang tới** |
+| P3.3 | Player UI: thanh điều khiển, tốc độ 0.5–2.0×, nối vào `ReaderScreen` | ⬜ Chưa |
+| P3.4 | Subtitle pane 3 dòng + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ⬜ Chưa |
+
+**DoD Phase 3** (`plan.md`): nghe liên tục hết chương, chữ sáng đúng nhịp.
+
+### Những gì P3.1 để lại sẵn cho P3.2
+
+- **Lấy audio của một segment chỉ là một lượt gọi**:
+  `window.api.reader.getSegmentAudio(id)` trả bytes `.ogg` + `durationMs` +
+  `timings[]` + `timingSource`. Renderer bọc bytes thành Blob URL cho `<audio>`
+  và **phải `URL.revokeObjectURL`** khi đổi segment — không thì mỗi câu rò ~30 KB,
+  cả chương 1353 segment là 40 MB.
+- **`timings` không bao giờ rỗng** với segment có audio và có chữ: main tự ước
+  lượng khi thiếu file `.json`. P3.2 không cần nhánh riêng cho ca đó.
+- **`wordIndexAt(timings, ms)`** là hàm thuần, tìm nhị phân — gọi được mỗi khung
+  hình trong `rAF` ở P3.4 mà không tốn kém. Trả `-1` khi chưa tới từ nào hoặc đã
+  qua từ cuối; giữ nguyên từ vừa đọc khi rơi vào khe im lặng giữa hai từ phoneme.
+- **`seekMsForChar(timings, charOffset)`** cho click-to-seek ở P3.4, đã xử lý ca
+  bấm trúng khoảng trắng (trả về từ đứng trước).
+- **`NOT_FOUND` là tín hiệu, không phải lỗi**: segment chưa generate *và* segment
+  bị Storage Manager xoá dưới chân player đều trả cùng mã. P3.2 bắt mã đó để gọi
+  `enqueueSegments` với `JOB_PRIORITY_URGENT` (100) rồi chờ `queue:segmentUpdated`,
+  chứ **không** hiện hộp lỗi. Lỗi đĩa thật (mất quyền, ổ rút ra) vẫn ném lên.
+- **`getAudioDir` là hàm** trong handler nên user đổi thư mục audio giữa phiên
+  vẫn đọc đúng chỗ — đã có test riêng.
+
+---
+
+## 3b. Phase 2 — đã xong
 
 **Phase 1 đã xong đủ 8/8 phần** (P1.1–P1.6c). DoD Phase 1 đạt: mở PDF & DOCX,
 thấy danh sách chương đúng, sửa được, thấy segment — kiểm trên bản đóng gói
@@ -652,7 +732,9 @@ Mục "kiểm trên **bản đóng gói**" đã làm ở **P2.8**: `pnpm build:w
 gói sidecar) rồi `pnpm ui-check --packaged` trên `.exe` — đường đi mà bản dev không
 lộ được lỗi đường dẫn kiểu asar. Xem mục 4.44, 4.45.
 
-### Ghi chú cho Phase 3 (Player & Subtitle sync)
+### Ghi chú Phase 2 để lại cho Phase 3 (viết trước khi làm P3.1)
+
+Vẫn còn đúng; phần trùng với P3.1 đã được giải quyết ở mục 3.
 
 What Phase 2 leaves ready:
 
@@ -1764,6 +1846,107 @@ sẽ gặp lại:
    `clientHeight` (đại lượng mà 4.43 làm sai, không phụ thuộc vị trí cuộn), rồi
    kiểm riêng "số dòng đủ so với khung" ở mỗi vị trí.
 
+### 4.46 Audio và timing về trong MỘT lượt IPC
+
+`reader:getSegmentAudio` trả cả bytes `.ogg` lẫn `timings[]`, không tách hai kênh.
+
+Tách ra thì có một cửa sổ thời gian mà hai đầu **không cùng một lần generate**:
+hàng đợi có thể sinh lại đúng segment đó giữa hai lượt gọi (user bấm generate lại,
+hoặc job retry sau lỗi tạm thời), và renderer nhận `.ogg` bản mới ghép với mốc của
+bản cũ. Hậu quả là highlight lệch hẳn một câu — mà không có gì báo, vì cả hai lượt
+gọi đều `ok`. Gộp một lượt thì hai thứ luôn đọc từ cùng một trạng thái đĩa.
+
+Đổi lại là không cache riêng được phần timing. Chấp nhận vì cả hai đều nhỏ và
+luôn dùng cùng nhau — chưa có ca nào cần timing mà không cần audio.
+
+### 4.47 Bytes qua IPC chứ không phải path, kể cả khi file nhỏ
+
+Cùng lý do với `BookFileBytes` ở P1.6c: đưa path ra renderer là mở đường cho nó
+đọc file tuỳ ý, và CLAUDE.md cấm renderer chạm `fs`.
+
+Cân nhắc `protocol.handle('ln-audio://')` — Chromium tự stream, tự cache, hỗ trợ
+`Range` sẵn. Không chọn vì ba lý do: (a) đó là một bề mặt tấn công mới phải tự
+validate lại từ đầu, (b) timings vẫn cần một kênh IPC riêng nên thành hai đường
+đọc, đúng thứ mục 4.46 vừa loại bỏ, (c) segment ~10s ở 24 kbps chỉ khoảng 30 KB —
+structured clone không đáng kể, khác hẳn `getBookFile` phải chuyển cả file PDF
+vài chục MB.
+
+Cái giá: renderer **phải** `URL.revokeObjectURL` khi đổi segment. Đã ghi vào ghi
+chú cho P3.2 ở mục 3 vì đây là thứ dễ quên và chỉ lộ ra sau khi nghe vài trăm câu.
+
+### 4.48 Thiếu file timing thì MAIN ước lượng, không đẩy việc sang renderer
+
+Segment `ready` mà không có file `.json` là ca có thật: sidecar ghi hỏng, user xoá
+tay trong Explorer, hoặc file cụt vì mất điện giữa lúc ghi (`timings-store` trả
+`undefined` cho cả ba).
+
+Có thể để renderer tự ước lượng khi thấy mảng rỗng. Không làm vậy vì như thế mọi
+nơi tiêu thụ timing về sau — player, subtitle pane, và cả CTC aligner ở Phase 4 —
+đều phải nhớ kiểm nhánh đó. Ước lượng ngay ở main thì hợp đồng đơn giản hơn hẳn:
+**segment có audio và có chữ thì `timings` không bao giờ rỗng.**
+
+`timingSource` vẫn nói thật là `estimate`, nên UI vẫn phân biệt được để báo user
+vì sao highlight chưa khớp hẳn, và Phase 4 vẫn biết segment nào đáng chạy aligner.
+
+Thời lượng ưu tiên lấy từ file timing (số sidecar đo từ số mẫu lúc encode), rơi
+về `segment.durationMs` trong DB khi file mất — hai chỗ giữ cùng một con số, đã
+kiểm khớp trên probe.
+
+### 4.49 Ranh giới từ theo KHOẢNG TRẮNG, không phải `\w+`
+
+`splitWords` cắt theo `\s`, không dùng `\w+` hay `\p{L}+`.
+
+`\w` của regex JS không cờ `u` **không** bao gồm chữ có dấu tiếng Việt — `nghiêng`
+bị chẻ thành `nghi` + `ng`. Đổi sang `\p{L}+` thì hết lỗi đó nhưng lại cắt đôi
+`Wi-Fi` và `John's`. Cả hai cách đều làm highlight nhảy giữa thân một từ user đang
+nhìn, mà đó chính là thứ Phase 3 tồn tại để làm cho đúng.
+
+Cắt theo khoảng trắng còn khớp với cách sidecar gộp phoneme thành từ (mục 4.32),
+nên mảng ước lượng và mảng thật có cùng số phần tử trên cùng một câu — đã kiểm:
+13 từ ở cả hai đường trên câu probe.
+
+Trọng lượng thời gian dùng `độ dài + 1.5` chứ không phải độ dài thuần: giữa hai từ
+luôn có quãng chuyển, nên từ một ký tự không bao giờ ngắn bằng 1/8 từ tám ký tự.
+Chia đều theo **số từ** thì `"Ừ"` và `"nghiêng"` bằng nhau — lệch thấy rõ ngay câu
+đầu.
+
+### 4.50 Probe đã hỏng từ P2.7b mà không ai biết — migration v2 không chạm tới nó
+
+Chạy probe P3.1 lần đầu thì **cả 14 kịch bản** đỏ với
+`NOT NULL constraint failed: chapters.error_count`.
+
+Nguyên nhân: P2.7b thêm cột `chapters.error_count` (migration v2, mục 4.42) và sửa
+mọi chỗ dựng `Chapter` trong `src/**` — nhưng `probe/queue-real.test.ts` dựng một
+`Chapter` literal của riêng nó, và probe **không nằm trong `pnpm test`** (config
+gốc loại `**/probe/**`).
+
+Nghĩa là từ P2.7b tới nay, **mọi kết luận "đã chạy thật" của P2.8 đều không đi qua
+probe** — P2.8 chỉ chạy `ui-check`, không chạy probe, nên không ai phát hiện.
+
+Bài học không phải "nhớ sửa probe khi migrate". Là: **lớp kiểm chứng nằm ngoài
+`pnpm test` sẽ mục đi trong im lặng.** `ui-check` cùng chỗ đó — nó chưa vào CI (nợ
+mục 8) nên đang có đúng rủi ro này.
+
+**Vì sao typecheck không bắt.** `apps/main/tsconfig.json` khai
+`"include": ["src/**/*.ts"]` — thư mục `probe/` **nằm ngoài** hoàn toàn. Đã kiểm
+chứng chứ không suy đoán: đổi `errorCount` thành `XXerrorCount` rồi chạy
+`tsc --noEmit -p apps/main/tsconfig.json` vẫn **xanh**. Probe khai
+`const chapter: Chapter = {...}` nên nếu được phủ thì TS đã bắt ngay — vấn đề
+thuần tuý là phạm vi `include`.
+
+Vậy probe hiện **không có lưới nào cả**: không ở `pnpm test`, không ở `pnpm
+typecheck`, không ở CI. Ba tầng cùng hụt một chỗ.
+
+Cách chặn rẻ nhất: thêm `probe/**/*.ts` vào `include` của `apps/main/tsconfig.json`
+(hoặc một `tsconfig.probe.json` riêng nối vào `pnpm typecheck`). Chưa làm ở P3.1 vì
+`rootDir: "./src"` sẽ phải nới theo, mà `outDir` của main lại dùng cho bản build —
+đụng vào là chạm đường đóng gói, không đáng gộp chung một commit với tầng dữ liệu
+player. Đã ghi thành nợ mức **TB** ở mục 8.
+
+Bài học rộng hơn: **lớp kiểm chứng nằm ngoài `pnpm test` sẽ mục đi trong im lặng.**
+`ui-check` đang ở đúng chỗ đó — chạy tay được, chưa vào CI (nợ mục 8). Lần sau thêm
+một lớp kiểm chứng "chạy riêng", phải hỏi ngay: cái gì báo cho ta biết khi nó hỏng?
+
 **Số đo thật của một lượt chạy** (bản dev, sách DOCX 388 khối, theme dark + light):
 ô cuộn **428/475 px = 90%** panel, **13 dòng** khi khung chứa được ~6, canvas DOCX
 cao 27 366 px. Màu ở cả hai theme: `accent` `rgb(129,140,248)`/`rgb(79,70,229)`,
@@ -1859,6 +2042,7 @@ packages/shared/src/
   result.ts       Result<T> — handler không throw qua IPC
   schemas.ts      zod, validate ở biên IPC
   estimate.ts     Ước lượng thời lượng/dung lượng trước khi generate
+  timings.ts      Ước lượng mốc từng từ + tra từ theo mốc (hàm thuần, mục 4.48–4.49)
   constants.ts    SEGMENT_MAX_CHARS, bitrate, ngưỡng job…
 
 packages/parsers/src/
@@ -1910,6 +2094,7 @@ apps/main/src/
   ipc/handlers/            app / settings / window / import / library / sidecar
                            / voices (tải chạy nền, chặn tải trùng)
                            / queue (9 channel, handler mỏng — policy ở service)
+                           / reader (nội dung sách + getSegmentAudio cho player)
   services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
   services/library.ts      Copy file + hash + dựng segment + lưu DB
   services/queue.ts        Hàng đợi generate: MỘT worker tuần tự, persist SQLite
@@ -2080,4 +2265,7 @@ scripts/
 | ~~`SYNTHESIS_RTF_ESTIMATE` chưa hiệu chỉnh~~ | ✅ Xong | Đã đối chiếu với số đo thật ở P2.6: ước 1680 ms vs thật 2045 ms (**RTF thật 0.24** gồm nạp model). Lệch +22% → giữ nguyên 0.15. Dung lượng lệch −15%, thời lượng −24%. Probe khoá lại ngưỡng 0.25–4× để hằng số không âm thầm sai bản chất |
 | Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
+| **`apps/main/probe/` nằm ngoài typecheck** | **TB** | `apps/main/tsconfig.json` chỉ `include` `src/**/*.ts`. Đã kiểm chứng: đổi `errorCount` thành `XXerrorCount` mà `tsc --noEmit` vẫn xanh. Cộng với việc probe không ở `pnpm test` lẫn CI thì nó **không có lưới nào** — chính vì thế lỗi 4.50 nằm im qua hai commit. Sửa: nới `include` (kèm `rootDir`) hoặc thêm `tsconfig.probe.json` nối vào `pnpm typecheck` |
+| Renderer phải tự `revokeObjectURL` cho audio | TB | `reader:getSegmentAudio` trả `ArrayBuffer`; renderer bọc Blob URL nên **phải** thu hồi khi đổi segment. Chưa có gì ép — quên là mỗi câu rò ~30 KB, cả chương 1353 segment là ~40 MB. P3.2 phải làm trong cùng chỗ tạo URL, và nên có test đếm số lần gọi |
+| `getSegmentAudio` chưa kiểm trên sách EN | Thấp | Probe chạy trên giọng VI. Cách gộp phoneme → từ của espeak với tiếng Anh chưa đo (đã là nợ sẵn ở hàng "Timing chưa kiểm trên giọng EN"); đường ước lượng thì độc lập ngôn ngữ vì chỉ đếm ký tự |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |

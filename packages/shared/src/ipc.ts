@@ -10,8 +10,10 @@ import type {
   Segment,
   SidecarStatus,
   ThemeMode,
+  TimingSource,
   VoiceDownloadProgress,
   VoiceQuality,
+  WordTiming,
 } from './types.js';
 import type { ChapterDraft } from './chapter-draft.js';
 import type { Result } from './result.js';
@@ -156,6 +158,40 @@ export type BookHtml = {
    * `SegmentAnchor.nodePath = "p:<index>"` trỏ vào chỉ số này.
    */
   blockCount: number;
+};
+
+/**
+ * Audio + mốc thời gian của **một** segment — thứ player cần để phát một câu.
+ *
+ * **Vì sao gộp bytes và timing vào một lượt.** Hai thứ này luôn dùng cùng nhau
+ * và luôn ứng với cùng một lần generate. Tách làm hai kênh thì có cửa sổ mà
+ * `.ogg` là bản mới còn `.json` là bản cũ (hàng đợi vừa generate lại segment
+ * giữa hai lượt gọi) — highlight lệch hẳn một câu mà không có gì báo.
+ *
+ * **Vì sao trả bytes chứ không phải path.** Cùng lý do với `BookFileBytes`:
+ * renderer không chạm `fs`, và đưa path ra renderer là mở đường cho nó đọc file
+ * tuỳ ý. Segment ~10s ở 24 kbps chỉ khoảng 30 KB nên structured clone không
+ * đáng kể — khác hẳn `getBookFile` phải chuyển cả file PDF.
+ */
+export type SegmentAudio = {
+  segmentId: string;
+  /** Nội dung `.ogg`. Renderer bọc thành Blob URL cho `<audio>` */
+  bytes: ArrayBuffer;
+  /** Thời lượng thật do sidecar đo từ số mẫu, không phải ước lượng theo ký tự */
+  durationMs: number;
+  /**
+   * Mốc từng từ. **Không bao giờ rỗng** khi segment có audio và có chữ: thiếu
+   * file timing thì main tự ước lượng bằng `estimateWordTimings` trước khi trả
+   * về, nên renderer không phải xử lý nhánh "có tiếng mà không có mốc".
+   */
+  timings: WordTiming[];
+  /**
+   * `phoneme` là mốc thật từ Piper; `estimate` là chia theo độ dài từ.
+   *
+   * UI dùng để nói cho user biết vì sao highlight chưa khớp hẳn, và Phase 4 dùng
+   * để biết segment nào đáng chạy CTC aligner lại.
+   */
+  timingSource: TimingSource;
 };
 
 /**
@@ -312,6 +348,13 @@ export type IpcContract = {
   'reader:getBookHtml': { in: string; out: Result<BookHtml> };
   /** Segment của một chương — nguồn để highlight và seek */
   'reader:listSegments': { in: string; out: Result<Segment[]> };
+  /**
+   * Audio + mốc từng từ của một segment, để player phát.
+   *
+   * `NOT_FOUND` khi segment chưa generate hoặc file `.ogg` đã bị Storage Manager
+   * xoá — player bắt mã đó để xếp lại hàng đợi chứ không coi là lỗi hệ thống.
+   */
+  'reader:getSegmentAudio': { in: string; out: Result<SegmentAudio> };
 
   /** Trạng thái sidecar TTS. Renderer chỉ đọc — không tự start/stop được */
   'sidecar:getStatus': { in: void; out: Result<SidecarStatus> };
@@ -430,6 +473,7 @@ export const IPC_CHANNELS = [
   'reader:getBookFile',
   'reader:getBookHtml',
   'reader:listSegments',
+  'reader:getSegmentAudio',
   'sidecar:getStatus',
   'voices:listCatalog',
   'voices:listInstalled',

@@ -26,6 +26,7 @@ import {
   type SaveBookRequest,
   type SaveBookResponse,
   type Segment,
+  type SegmentAudio,
   type SidecarStatus,
   type StorageUsageInfo,
   type IpcEventName,
@@ -118,6 +119,9 @@ export const api = {
       invoke('reader:getBookHtml', bookId),
     listSegments: (chapterId: string): Promise<Result<Segment[]>> =>
       invoke('reader:listSegments', chapterId),
+    /** Audio + mốc từng từ của một đoạn. `NOT_FOUND` = chưa generate hoặc đã bị xoá */
+    getSegmentAudio: (segmentId: string): Promise<Result<SegmentAudio>> =>
+      invoke('reader:getSegmentAudio', segmentId),
   },
 
   sidecar: {

@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-31 · commit `38b8c4a`
+> **Cập nhật lần cuối:** 2026-07-31 · commit `(P5.4-uicheck)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -1135,15 +1135,25 @@ Phase 5 chia **năm phần** (thống nhất với user — mỗi phần một c
 | P5.2 | UI tầng 3 phiên âm: sửa cách đọc từ menu chuột phải trên phụ đề (nợ mục 8) | ✅ Xong |
 | P5.3 | Màn Cài đặt (cỡ chữ phụ đề) + trả 3 nợ mức TB | ✅ Xong |
 | P5.4 | Dấu trang + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ✅ Xong |
-| P5.5 | Đóng gói: icon app, auto-update, README qua SmartScreen, log rotate | ⬅️ **tiếp theo** |
+| P5.5 | Đóng gói + phát hành — chia nhỏ thành **a/b/c**, xem bảng dưới | ⬅️ **đang làm** |
 
-✅ **`pnpm ui-check` đã chạy sau P5.3 — 59/63 đạt.** Toàn bộ P3.4 và P5.3 xanh.
-4 phép đỏ: 2 là **đỏ giả của chính phép kiểm** (mục 4.72, đã sửa), 2 là nợ
-virtualizer có sẵn từ trước P3.3 (mục 8).
+**P5.5 chia ba, mỗi phần một commit** (thống nhất với user — mỗi phần xong thì
+commit và dừng phiên):
 
-⚠️ **P5.4 thêm 10 phép kiểm nhưng CHƯA chạy lần nào** (73 phép tổng). Hai thứ
-đáng ngờ nhất ở đó: chiều cao thật của từng tab panel (đúng loại lỗi 4.43) và
-màu hai thanh tiến độ (đúng loại lỗi 4.23 — jsdom không thấy được cả hai).
+| Mã | Nội dung | Trạng thái |
+|---|---|---|
+| P5.5a | Icon app + metadata installer; `latest.yml` sinh ra đúng; log rotate | ⬅️ **tiếp theo** |
+| P5.5b | Auto-update: `electron-updater` ở main + IPC contract | ⏳ Chờ |
+| P5.5c | UI auto-update (báo có bản mới, tải, cài lại) + README qua SmartScreen | ⏳ Chờ |
+
+✅ **`pnpm ui-check` đã chạy sau P5.4 — 71/73 đạt.** Toàn bộ P5.3 **và P5.4**
+xanh: mỗi tab panel cao 664 px thật, hai thanh tiến độ ra màu thật,
+`queue:listPending` trả lời được.
+
+2 phép đỏ còn lại **đều là đỏ giả của chính phép kiểm** (mục 4.74, đã sửa) — mốc
+`rows >= floor(khung / 64)` ngầm giả định chương dài hơn khung, mà chương đang mở
+chỉ có 5 đoạn. **Không có lỗi app nào trong lượt này.** Hai nợ virtualizer ghi ở
+lượt trước cũng chính là hai phép đỏ giả này, nay đã đóng.
 
 ⚠️ **Còn lại phải bấm tay** — `ui-check` không thay được: nút "Nghe thử" giọng
 (P5.1) và chuột phải sửa cách đọc (P5.2). CDP không đọc được đầu ra âm thanh.
@@ -3013,6 +3023,46 @@ stylesheet") và **không tính** `rgb(var(--x) / .15)` — cho `rgba(0,0,0,0)` 
 hai nhánh, tức không phân biệt được đúng/sai. Đó chính là lý do `ui-check` tồn
 tại. Xác nhận cuối cùng phải là một lượt `pnpm ui-check` thật.
 
+### 4.74 `ui-check` đỏ giả lần thứ ba: mốc kiểm ngầm giả định chương dài
+
+Lượt chạy `ui-check` sau P5.4 đỏ 2 phép kiểm — **cả hai lại là lỗi của phép kiểm**,
+không phải lỗi app (lần thứ ba liên tiếp, xem 4.72).
+
+Triệu chứng: `5 dòng, khung chứa được ~10` ở cả `checkSegmentLayout` lẫn
+`checkSegmentToggle`. Trông y hệt lỗi 2 của 4.43 (`height` kẹt ở 0 → render thiếu
+dòng).
+
+Nguyên nhân thật: chương đang mở là **"Bản quyền", cả chương chỉ có 5 đoạn**.
+Render đủ 5/5 là **đúng**. Ảnh chụp `dev-reader-dark.png` cho thấy rõ: nhãn thanh
+đầu ghi "Bản quyền · 5 đoạn", 5 dòng hiện đủ, dưới còn khoảng trống. Các phần
+khác của 4.43 vẫn lành: ô cuộn 664/742 px = 89%.
+
+Mốc cũ `rows >= floor(khung / 64)` **ngầm giả định chương luôn dài hơn khung**.
+Nó chỉ xanh từ trước tới nay vì mọi lượt chạy đều tình cờ rơi vào chương dài. Mốc
+đúng là:
+
+```
+expected = min(sức chứa khung, số đoạn thật của chương)
+```
+
+Số đoạn thật lấy từ hai nguồn, kiểm chéo nhau: `scrollHeight` của ô cuộn (chiều
+cao nội dung) và nhãn "N đoạn" ở thanh đầu (`data-testid="reader-subtitle"`, thêm
+ở lượt này). Hai nguồn vì nếu chính khối ảo hoá dựng sai `totalHeight` thì nguồn
+thứ nhất hỏng theo.
+
+**Đã kiểm phép kiểm mới không bị nhờn:** ca lỗi 4.43 gốc (4 dòng / khung 764 px /
+chương 1353 đoạn) vẫn **đỏ**, và vẫn đỏ cả khi không đọc được nhãn. Phép kiểm chặt
+hơn chứ không lỏng đi.
+
+> Đánh đổi có ý thức: `min()` nghĩa là `scrollable` sai *nhỏ đi* sẽ che được lỗi
+> thật. Chọn vậy vì `max()` dựng lại đúng cái đỏ giả đang sửa, và nhãn "N đoạn" là
+> lưới thứ hai cho đúng ca đó.
+
+**Bài học lặp lại lần thứ ba, nay đã đủ thành quy tắc:** ba lượt `ui-check` đỏ gần
+nhất, **cả ba** là lỗi phép kiểm. Trước khi sửa app vì `ui-check` đỏ, bắt buộc mở
+`artifacts/ui-check/*.png` xem app **thật sự** trông thế nào — ảnh chụp lần này
+trả lời trong 5 giây thứ mà đọc mã nguồn không trả lời được.
+
 ### 4.71 "Setting chết": ba lần cùng một hình dạng, và cách nhận ra lần thứ tư
 
 `subtitleFontSize` có trong `AppSettings`, trong zod schema, trong
@@ -3464,7 +3514,7 @@ scripts/
 | ~~Chỉ có 2 voice trong catalog~~ | ✅ Xong (một phần) | P5.1 thêm `vi_VN-25hours_single-low` (16 kHz, sha256 **tải thật rồi tính**, md5 đối chiếu khớp `voices.json` của HF). Nay **3 giọng**: 2 VI + 1 EN. Piper chỉ có đúng 3 giọng VI và giọng thứ ba (`vivos`) là nhiều người nói — xem hàng dưới. Giọng EN thì Piper có 38 cái, chưa thêm vì app là LN tiếng Việt; thêm = sửa JSON, không sửa code |
 | ~~UI tầng 3 phiên âm chưa có~~ | ✅ Xong | P5.2: 3 kênh `pronunciations:*` + hộp sửa cách đọc mở bằng **chuột phải** trên từ ở phụ đề. Mặc định lưu theo sách, tích ô để áp toàn cục. `term` tự hạ chữ thường ở biên, cấm khoảng trắng trong cách đọc kèm câu giải thích. 33 test mới. **Chưa chạy trên app thật** — xem hàng dưới |
 | ~~Phiên âm Nhật chưa nghe thật lần nào~~ | ✅ Xong | User đã nghe hết một chương và xác nhận cả hai vế của DoD Phase 3: nghe liên tục được, chữ sáng đúng nhịp. Đây cũng là căn cứ **bỏ Phase 4** (mục 4.68). P5.1 thêm nút nghe thử với câu mẫu **có sẵn tên riêng Nhật** nên từ nay kiểm lại được bất cứ lúc nào mà không phải generate cả chương |
-| ~~**`ui-check` chưa chạy suốt P3.4 → P5.3**~~ | ✅ Xong | User đã chạy sau P5.3. **59/63 đạt.** Toàn bộ P3.4 xanh (2 pane chia đúng 80% đo được, kéo thanh thì phụ đề cao lên **thật** 147→162 px, ẩn/hiện về đúng chiều cao cũ) và toàn bộ P5.3 xanh (cỡ chữ 18 px, xem thử **khớp** thanh trượt, chữ không trong suốt, nút xoá phần đã đọc 106×24 px). 4 phép đỏ: **2 là đỏ giả của chính phép kiểm** (mục 4.72, đã sửa) và 2 là nợ virtualizer có sẵn từ trước P3.3 — xem hàng dưới |
+| ~~**`ui-check` chưa chạy suốt P3.4 → P5.3**~~ | ✅ Xong | User đã chạy sau P5.3. **59/63 đạt.** Toàn bộ P3.4 xanh (2 pane chia đúng 80% đo được, kéo thanh thì phụ đề cao lên **thật** 147→162 px, ẩn/hiện về đúng chiều cao cũ) và toàn bộ P5.3 xanh (cỡ chữ 18 px, xem thử **khớp** thanh trượt, chữ không trong suốt, nút xoá phần đã đọc 106×24 px). 4 phép đỏ: **2 là đỏ giả của chính phép kiểm** (mục 4.72, đã sửa) và 2 là "nợ virtualizer" — mà lượt chạy sau P5.4 cho thấy **cũng là đỏ giả** (mục 4.74): chương chỉ có 5 đoạn thật. Tức **cả 4 phép đỏ lượt đó đều là lỗi phép kiểm, không có lỗi app nào** |
 | Phụ đề chưa giới hạn 3 dòng như plan.md | Thấp | plan.md ghi "subtitle pane 3 dòng". Bản này cho pane cuộn tự do theo tỉ lệ splitter thay vì chốt cứng 3 dòng — user kéo được nên tự chọn được số dòng, và chốt cứng thì đoạn dài bị cắt mất chữ. Nếu thấy vướng thì thêm chế độ "gọn" sau |
 | Không tô màu "đã đọc" cho từ phía trước | Thấp | Chỉ từ **đang đọc** đổi màu. Tô cả phần đã đọc thì mỗi khung hình phải duyệt toàn bộ `<span>` đứng trước (mục 4.66). Làm được nếu cần: đặt một class ở container rồi dùng CSS sibling selector, nhưng chưa ai thấy thiếu |
 | Từ điển Nhật mới 193 mục | Thấp | Phủ địa danh, xưng hô, thuật ngữ LN phổ biến. Tên nhân vật lạ do luật romaji lo (đo được 65/65 nhận đúng), nên thiếu mục không làm hỏng gì — chỉ là cách đọc kém tự nhiên hơn ở vài tên. Thêm mục = sửa `sidecar/app/text/data/lexicon_jp.json`, có cảnh báo sẵn về việc tránh âm tiết trùng tiếng Việt |
@@ -3505,7 +3555,7 @@ scripts/
 | ~~`PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa đo trên sách thật~~ | ✅ Xong | Lượt nghe cả chương của user không báo đứt tiếng giữa các câu → 5 là đủ với RTF 0.24. Giữ nguyên hằng số |
 | ~~Chưa nghe thử bằng tai~~ | ✅ Xong | User nghe hết một chương ở P3.4: audio liên tục, highlight bám đúng từng chữ. `ui-check` vẫn không thay được lượt nghe này (CDP không đọc được đầu ra âm thanh) nên mọi thay đổi đụng tới timing sau này vẫn phải nghe lại tay |
 | ~~Player chưa có phím tắt~~ | ✅ Xong | P3.3: Space, ←/→, J/K, `[`/`]`. Phần khó hoá ra không phải gắn listener mà là **loại trừ** — ô nhập, vùng `contenteditable`, nút đang có tiêu điểm, tổ hợp có phím bổ trợ (mục 4.57) |
-| **Danh sách đoạn chỉ render 5 dòng cho khung chứa được ~10** | **TB** | `ui-check` đỏ ở "số dòng khớp chiều cao khung": khung 695 px (≈10 dòng × 64 px) mà virtualizer chỉ dựng 5. **Có sẵn từ trước P3.3** — đã xác nhận bằng cách stash toàn bộ P3.3 rồi chạy lại: baseline cũng đỏ (5 dòng / ~11). Không phải do thanh player cao thêm; P3.3 chỉ đổi con số kỳ vọng 11 → 10 vì khung ngắn lại. Chưa sửa ở đây để commit này đúng phạm vi. Hậu quả thật: cuộn nhanh thấy khoảng trắng ở nửa dưới danh sách |
+| ~~Danh sách đoạn chỉ render 5 dòng cho khung chứa được ~10~~ | ✅ **đã đóng — chẩn đoán sai, không có lỗi** | Ghi nhầm thành nợ **TB** suốt từ trước P3.3. Sự thật: chương đang mở ("Bản quyền") **chỉ có 5 đoạn**, render đủ 5/5 là đúng — xem 4.74. Virtualizer chưa bao giờ hỏng ở đây. ⚠️ **Bài học về cách xác nhận:** lần đó "xác nhận" bằng cách stash P3.3 rồi chạy lại, thấy baseline cũng 5 dòng nên kết luận "lỗi có sẵn từ trước". Phép thử đó **không phân biệt được hai giả thuyết** — thứ giữ nguyên giữa hai lượt chạy là **chương đang mở**, không phải mã nguồn. Chạy lại cùng một tình huống chỉ tái hiện được triệu chứng, không chứng minh được nguyên nhân. Một lượt mở `artifacts/ui-check/dev-reader-dark.png` (nhãn ghi rõ "5 đoạn") đã trả lời trong 5 giây |
 | Thanh tiến độ chưa kiểm khi audio **đang chạy thật** | Thấp | `ui-check` đo được kích thước, màu, và dạng chuỗi `0:00 / 0:00` — nhưng lúc đó player `idle` nên chưa chứng minh được thanh **chạy** đúng nhịp. Unit test có kiểm (giả `positionMs`), còn trên app thật thì cùng chung nợ với "chưa nghe thử bằng tai" |
 | Bấm đoạn lúc player `idle` không tự phát | Thấp | Cố ý: bấm đoạn để xem nó ở trang nào là thao tác thường gặp, tự phát tiếng lúc đó là bất ngờ khó chịu. Đang phát rồi thì bấm đoạn khác mới nhảy tới. Đổi được nếu user thấy ngược |
 | `getSegmentAudio` chưa kiểm trên sách EN | Thấp | Probe chạy trên giọng VI. Cách gộp phoneme → từ của espeak với tiếng Anh chưa đo (đã là nợ sẵn ở hàng "Timing chưa kiểm trên giọng EN"); đường ước lượng thì độc lập ngôn ngữ vì chỉ đếm ký tự |
@@ -3517,8 +3567,8 @@ scripts/
 | Dấu trang không sửa được từ ngoài trình đọc | Thấp | Chỉ xem/sửa được khi đang mở sách. Màn chi tiết sách không có tab dấu trang — muốn xem lại chỗ đã đánh dấu phải vào đọc trước. Đủ dùng vì dấu trang vốn để **quay lại chỗ đọc**, mà quay lại thì đằng nào cũng phải mở sách |
 | Đánh dấu lại đoạn cũ mà bỏ trống ghi chú thì **xoá** ghi chú | Thấp | `upsert` ghi `note = NULL` khi không truyền. Đúng với đường UI hiện tại (`BookmarkButton` luôn điền sẵn ghi chú cũ vào ô nên user thấy trước khi lưu), nhưng nếu sau này có đường gọi `bookmarks:add` không qua ô đó thì nó xoá ghi chú lặng lẽ. Cả bản thật lẫn bản giả trong test đều hành xử giống nhau — đã khoá lại |
 | Bảng hàng đợi hiện `segmentId` chứ không hiện text đoạn | Thấp | Job chỉ mang id; tra text cho tới 200 hàng là 200 lượt truy vấn cho một bảng chẩn đoán. Id đủ để đối chiếu với danh sách đoạn, nhưng không đọc được bằng mắt. Sửa được bằng một truy vấn JOIN trả kèm text nếu thấy cần |
-| **P5.4 chưa chạy trên app thật** | **TB** | Dấu trang, thống kê và bảng hàng đợi mới ở mức unit test. Hai thứ jsdom **không thể** kiểm: (1) mỗi tab panel có chiều cao thật không — mỗi tab một khối `flex-1 min-h-0` riêng, chèn thêm một lớp `div` là dựng lại lỗi 4.43; (2) màu hai thanh tiến độ — token `bg-success` **không tồn tại** trong `tailwind.config.js`, viết nhầm thì trong suốt chứ không đỏ ở đâu cả (lỗi 4.23). 10 phép kiểm `ui-check` đã viết sẵn cho đúng những thứ này |
-| **Màn Cài đặt chưa chạy trên app thật** | **TB** | P5.3 mới ở mức unit test. jsdom không tính CSS thật nên **chưa xác nhận** cỡ chữ preview khớp thanh trượt trong Chromium, hay màn Cài đặt có hiện đúng ở cả dark lẫn light. 5 phép kiểm `ui-check` đã viết sẵn cho đúng ba thứ này — chỉ còn chạy |
+| ~~P5.4 chưa chạy trên app thật~~ | ✅ **đã đóng** | Đã chạy `pnpm ui-check` thật: 10 phép kiểm P5.4 **xanh hết**. Xác nhận trong Chromium: mỗi tab panel cao 664 px thật (không dựng lại 4.43), hai thanh tiến độ ra màu thật (`rgb(129,140,248)` / `rgb(113,113,122)` — không rơi vào bẫy `bg-success` của 4.23), `queue:listPending` trả lời được |
+| ~~Màn Cài đặt chưa chạy trên app thật~~ | ✅ **đã đóng** | Cùng lượt chạy trên: 5 phép kiểm P5.3 xanh. Cỡ chữ preview khớp thanh trượt (18 px vs 18 px), chữ preview không trong suốt, cả dark lẫn light đều ra màu khác nhau thật |
 | Chọn ngôn ngữ sách chỉ đổi được lúc nhập | Thấp | Lưu xong thì `lang` cố định; chọn nhầm phải xoá sách nhập lại (mất luôn cấu trúc chương đã sửa tay). Sửa được: thêm `library:setLang` + ô chọn ở màn chi tiết sách, nhưng phải xoá audio đã sinh vì chúng theo giọng cũ. Chưa làm vì chọn nhầm ngay ở màn xác nhận là ca hiếm — ô nằm cạnh ô tên sách, khó bỏ sót |
 | Không có UI cho `alignmentEnabled` | Thấp | **Cố ý**, xem 4.71. Phase 4 đã bỏ nên không có gì để bật/tắt; giữ field vì gỡ khỏi schema tốn một migration đổi lấy hư không. Đừng dựng UI cho nó |
 | Giọng `25hours` chưa nghe thử lần nào | TB | sha256/size đã đối chiếu thật với HF, và đường 16 kHz đã lần theo code (`target_rate_for_opus` trả 16000 → **bỏ qua resample**), nhưng **chưa tải model 63 MB về để nghe**. Chất lượng `low` + 16 kHz nghe ra sao so với `vais1000` (`medium`, 22 kHz) thì chưa ai biết. Nếu tệ hơn hẳn thì nên ghi chú vào catalog để user khỏi mất công tải |

@@ -526,14 +526,50 @@ const measureSegmentList = `
     const scroll = document.querySelector('[data-testid="segment-scroll"]');
     const panel = document.querySelector('[data-testid="segment-panel"]');
     if (scroll === null || panel === null) return null;
+    const header = document.querySelector('[data-testid="reader-subtitle"]');
     return {
       scrollHeight: scroll.clientHeight,
       panelHeight: panel.clientHeight,
       rows: document.querySelectorAll('[data-testid="segment-row"]').length,
       scrollable: scroll.scrollHeight,
+      // Tổng số đoạn của chương, lấy từ nhãn "… · N đoạn" ở thanh đầu. Không có
+      // thì trả 0 và phép kiểm tự lùi về chỉ dựa vào scrollHeight.
+      total: Number(/(\\d+)\\s*đoạn/.exec(header?.textContent ?? '')?.[1] ?? 0),
     };
   })()
 `;
+
+/**
+ * Số dòng render có khớp khung nhìn không.
+ *
+ * **Không so thẳng `rows >= floor(khung / 64)`.** Công thức đó ngầm giả định
+ * chương luôn dài hơn khung, và nó đã đỏ giả một lượt trên chương "Bản quyền"
+ * chỉ có 5 đoạn: khung 664 px chứa được ~10 dòng, mà cả chương chỉ có 5 —
+ * render đủ 5 là **đúng**, không phải lỗi.
+ *
+ * Mốc đúng là `min(sức chứa khung, số đoạn thật)`. Hai nguồn cho số đoạn thật,
+ * theo thứ tự tin cậy:
+ *
+ * 1. `scrollHeight` của ô cuộn (chiều cao nội dung) — luôn có, kể cả khi nhãn
+ *    thanh đầu đổi chữ.
+ * 2. Nhãn "N đoạn" ở thanh đầu — kiểm chéo, phòng khi chính khối ảo hoá dựng
+ *    sai `totalHeight` và làm hỏng luôn nguồn 1.
+ *
+ * Vẫn bắt được lỗi 4.43 nguyên vẹn: chương dài mà chỉ render 4 dòng thì cả hai
+ * nguồn đều nói phải nhiều hơn.
+ */
+const checkRowCount = (label, measured) => {
+  const capacity = Math.floor(measured.scrollHeight / 64);
+  const byContent = Math.ceil(measured.scrollable / 64);
+  const total = measured.total > 0 ? Math.min(measured.total, byContent) : byContent;
+  const expected = Math.min(capacity, total);
+
+  check(
+    label,
+    measured.rows >= expected,
+    `${measured.rows} dòng, khung chứa được ~${capacity}, chương có ${total} đoạn → cần ≥ ${expected}`,
+  );
+};
 
 const checkSegmentLayout = async (cdp) => {
   const measured = await waitFor(
@@ -560,14 +596,9 @@ const checkSegmentLayout = async (cdp) => {
   // phép chia đều "đúng" một cách vô nghĩa.
   check('ô cuộn có chiều cao thật', measured.scrollHeight > 200, `${measured.scrollHeight} px`);
 
-  // Số dòng phải xấp xỉ chiều cao / ROW_HEIGHT(64) + overscan. Đây là số đã bắt
-  // được lỗi thật: 4 dòng trong khung 764 px.
-  const expected = Math.floor(measured.scrollHeight / 64);
-  check(
-    'số dòng khớp chiều cao khung',
-    measured.rows >= expected,
-    `${measured.rows} dòng, khung chứa được ~${expected}`,
-  );
+  // Số dòng phải phủ kín khung — hoặc phủ hết chương nếu chương ngắn hơn khung.
+  // Đây là số đã bắt được lỗi thật: 4 dòng trong khung 764 px.
+  checkRowCount('số dòng khớp chiều cao khung', measured);
 
   return measured;
 };
@@ -624,12 +655,7 @@ const checkSegmentToggle = async (cdp, first) => {
 
   // Và số dòng vẫn phải đủ so với khung — bắt được ca "chiều cao đúng mà `height`
   // trong state vẫn 0", tức lỗi thứ hai của 4.43.
-  const expected = Math.floor(again.scrollHeight / 64);
-  check(
-    'sau khi hiện lại vẫn đủ dòng',
-    again.rows >= expected,
-    `${again.rows} dòng, khung chứa được ~${expected}`,
-  );
+  checkRowCount('sau khi hiện lại vẫn đủ dòng', again);
 };
 
 /* ------------------------------------------------- phép kiểm phụ đề (P3.4) */

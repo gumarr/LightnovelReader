@@ -45,7 +45,7 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
 | Màu ở **cả dark lẫn light**, gồm nhánh có alpha | biến CSS lưu hex thay vì kênh RGB (4.23) |
 | Hai theme cho màu **khác nhau** | lớp `.dark` không có tác dụng |
 | Ô cuộn cao gần bằng panel | thiếu `flex-1 min-h-0` — lỗi 1 của 4.43 |
-| Số dòng khớp chiều cao khung | `useEffect` đo sai lúc — lỗi 2 của 4.43 |
+| Số dòng khớp `min(sức chứa khung, số đoạn thật)` | `useEffect` đo sai lúc — lỗi 2 của 4.43. Mốc phải kẹp theo số đoạn thật: chương ngắn hơn khung thì render đủ chương đã là đúng |
 | Ẩn/hiện panel cho **cùng** số dòng | thứ tự khởi tạo còn quyết định kết quả |
 | Canvas PDF có pixel khác trắng | pdfjs hỏng ở bản đóng gói (4.19) |
 | Thanh dung lượng có chiều cao thật | Storage Manager hỏng bố cục |

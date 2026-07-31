@@ -317,7 +317,9 @@ export const ReaderScreen = ({
 
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-medium text-fg">{book.title}</h1>
-          <p className="truncate text-xs text-fg-muted">
+          {/* `data-testid`: ui-check đọc số đoạn ở đây để biết chương ngắn hơn
+              khung nhìn là bình thường, không phải danh sách bị cắt */}
+          <p data-testid="reader-subtitle" className="truncate text-xs text-fg-muted">
             {currentChapter?.title ?? 'Chưa chọn chương'} · {segments.length} đoạn
           </p>
         </div>

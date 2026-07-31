@@ -8,6 +8,7 @@ import {
   splitAt,
   toggleExcluded,
   validateDraft,
+  type BookLang,
   type ChapterDraft,
   type DraftIssue,
   type ImportPreview,
@@ -52,8 +53,14 @@ export type ImportState = {
   remove: (chapterId: string) => void;
   toggleExclude: (chapterId: string) => void;
   undo: () => void;
-  /** Lưu vào thư viện. Trả `null` khi thất bại — `error` mang lý do. */
-  save: (title: string) => Promise<SaveBookResponse | null>;
+  /**
+   * Lưu vào thư viện. Trả `null` khi thất bại — `error` mang lý do.
+   *
+   * `lang` quyết định giọng đọc cho **cả sách** (`voiceVi` hay `voiceEn`) và
+   * bộ chuẩn hoá text ở sidecar. Sai ngôn ngữ là sai suốt: giọng VI đọc văn
+   * bản Anh ra âm vô nghĩa. Bắt buộc truyền, không mặc định — xem mục 4.71.
+   */
+  save: (title: string, lang: BookLang) => Promise<SaveBookResponse | null>;
   reset: () => Promise<void>;
   canConfirm: () => boolean;
 };
@@ -240,7 +247,7 @@ export const useImportStore = create<ImportState>((set, get) => {
       });
     },
 
-    save: async (title) => {
+    save: async (title, lang) => {
       const state = get();
       if (state.preview === null || state.saving) return null;
 
@@ -249,8 +256,7 @@ export const useImportStore = create<ImportState>((set, get) => {
         const result = await window.api.library.saveBook({
           importId: state.preview.importId,
           title,
-          // Ngôn ngữ chưa cho user chọn — sẽ thêm cùng màn Library ở P1.6b
-          lang: 'vi',
+          lang,
           chapters: state.chapters,
         });
 

@@ -310,7 +310,7 @@ describe('undo', () => {
 describe('save', () => {
   it('gửi importId, tên và toàn bộ chương xuống main', async () => {
     await loaded();
-    await useImportStore.getState().save('Tên sách');
+    await useImportStore.getState().save('Tên sách', 'vi');
 
     expect(fake.api.library.saveBook).toHaveBeenCalledWith({
       importId: 'imp1',
@@ -320,9 +320,20 @@ describe('save', () => {
     });
   });
 
+  it('gửi đúng ngôn ngữ user chọn, không hardcode "vi"', async () => {
+    // Trước P5.3 giá trị này bị chốt cứng `'vi'` trong store: sách tiếng Anh
+    // nhận `voiceVi` và sinh audio bằng giọng Việt. Khoá lại đường truyền.
+    await loaded();
+    await useImportStore.getState().save('An English Novel', 'en');
+
+    expect(fake.api.library.saveBook).toHaveBeenCalledWith(
+      expect.objectContaining({ lang: 'en' }),
+    );
+  });
+
   it('xoá trạng thái sau khi lưu xong', async () => {
     await loaded();
-    await useImportStore.getState().save('Tên sách');
+    await useImportStore.getState().save('Tên sách', 'vi');
 
     const state = useImportStore.getState();
     expect(state.preview).toBeNull();
@@ -332,14 +343,14 @@ describe('save', () => {
 
   it('KHÔNG gọi import:cancel — main đã giải phóng phiên sau khi lưu', async () => {
     await loaded();
-    await useImportStore.getState().save('Tên sách');
+    await useImportStore.getState().save('Tên sách', 'vi');
 
     expect(fake.api.import.cancel).not.toHaveBeenCalled();
   });
 
   it('trả về kết quả để UI hiện số chương/segment', async () => {
     await loaded();
-    const result = await useImportStore.getState().save('Tên sách');
+    const result = await useImportStore.getState().save('Tên sách', 'vi');
 
     expect(result).toMatchObject({ bookId: 'book-1', segmentCount: 42 });
   });
@@ -348,7 +359,7 @@ describe('save', () => {
     await loaded();
     fake.api.library.saveBook.mockResolvedValueOnce(err('DB_ERROR', 'Không ghi được DB'));
 
-    const result = await useImportStore.getState().save('Tên sách');
+    const result = await useImportStore.getState().save('Tên sách', 'vi');
     const state = useImportStore.getState();
 
     expect(result).toBeNull();
@@ -361,7 +372,7 @@ describe('save', () => {
     await loaded();
     fake.api.library.saveBook.mockRejectedValueOnce(new Error('main chết'));
 
-    await useImportStore.getState().save('Tên sách');
+    await useImportStore.getState().save('Tên sách', 'vi');
     const state = useImportStore.getState();
 
     expect(state.saving).toBe(false);
@@ -369,15 +380,15 @@ describe('save', () => {
   });
 
   it('chưa nạp file thì không gọi IPC', async () => {
-    expect(await useImportStore.getState().save('Tên')).toBeNull();
+    expect(await useImportStore.getState().save('Tên', 'vi')).toBeNull();
     expect(fake.api.library.saveBook).not.toHaveBeenCalled();
   });
 
   it('bấm hai lần chỉ lưu một lần', async () => {
     await loaded();
     await Promise.all([
-      useImportStore.getState().save('Tên sách'),
-      useImportStore.getState().save('Tên sách'),
+      useImportStore.getState().save('Tên sách', 'vi'),
+      useImportStore.getState().save('Tên sách', 'vi'),
     ]);
 
     expect(fake.api.library.saveBook).toHaveBeenCalledTimes(1);

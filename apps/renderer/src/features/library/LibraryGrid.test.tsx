@@ -19,16 +19,29 @@ beforeEach(() => {
 
 const setup = async (
   library = [fakeLibraryEntry()],
-): Promise<{ onImport: ReturnType<typeof vi.fn>; onOpen: ReturnType<typeof vi.fn> }> => {
+): Promise<{
+  onImport: ReturnType<typeof vi.fn>;
+  onOpen: ReturnType<typeof vi.fn>;
+  onOpenSettings: ReturnType<typeof vi.fn>;
+}> => {
   fake = installFakeApi({ library });
   const onImport = vi.fn();
   const onOpen = vi.fn();
+  const onOpenSettings = vi.fn();
 
   await act(async () => {
-    render(<LibraryGrid onImport={onImport} onManageVoices={vi.fn()} onManageStorage={vi.fn()} onOpen={onOpen} />);
+    render(
+      <LibraryGrid
+        onImport={onImport}
+        onManageVoices={vi.fn()}
+        onManageStorage={vi.fn()}
+        onOpenSettings={onOpenSettings}
+        onOpen={onOpen}
+      />,
+    );
   });
 
-  return { onImport, onOpen };
+  return { onImport, onOpen, onOpenSettings };
 };
 
 const cards = (): HTMLElement[] => screen.queryAllByTestId('book-card');
@@ -88,10 +101,26 @@ describe('hiển thị', () => {
     fake.api.library.list.mockResolvedValueOnce(err('DB_ERROR', 'Không đọc được DB'));
 
     await act(async () => {
-      render(<LibraryGrid onImport={vi.fn()} onManageVoices={vi.fn()} onManageStorage={vi.fn()} onOpen={vi.fn()} />);
+      render(
+        <LibraryGrid
+          onImport={vi.fn()}
+          onManageVoices={vi.fn()}
+          onManageStorage={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpen={vi.fn()}
+        />,
+      );
     });
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Không đọc được DB'));
+  });
+
+  it('có đường vào màn Cài đặt', async () => {
+    const user = userEvent.setup();
+    const { onOpenSettings } = await setup();
+
+    await user.click(screen.getByTestId('open-settings'));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 });
 

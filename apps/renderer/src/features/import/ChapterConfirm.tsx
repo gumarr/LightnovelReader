@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { ChapterDraft, DraftIssue, ImportPreview, SaveBookResponse } from '@ln/shared';
+import type {
+  BookLang,
+  ChapterDraft,
+  DraftIssue,
+  ImportPreview,
+  SaveBookResponse,
+} from '@ln/shared';
 import { useImportStore } from '@/stores/import-store';
 import { ChapterRow } from './ChapterRow';
 import { rangeSize } from './confidence';
@@ -35,9 +41,13 @@ export const ChapterConfirm = ({
   const save = useImportStore((s) => s.save);
 
   const [title, setTitle] = useState(preview.suggestedTitle);
+  // Mặc định tiếng Việt: app là trình đọc LN dịch, sách EN là ca thiểu số.
+  // Không tự đoán từ nội dung — `ImportPreview` không mang theo text mẫu, và
+  // đoán sai một cách im lặng còn tệ hơn để user chọn.
+  const [lang, setLang] = useState<BookLang>('vi');
 
   const handleSave = async (): Promise<void> => {
-    const result = await save(title);
+    const result = await save(title, lang);
     if (result !== null) onSaved(result);
   };
 
@@ -67,6 +77,8 @@ export const ChapterConfirm = ({
         keptPages={keptPages}
         title={title}
         onTitleChange={setTitle}
+        lang={lang}
+        onLangChange={setLang}
       />
 
       {globalIssues.map((issue) => (
@@ -156,6 +168,8 @@ type HeaderProps = {
   keptPages: number;
   title: string;
   onTitleChange: (title: string) => void;
+  lang: BookLang;
+  onLangChange: (lang: BookLang) => void;
 };
 
 const Header = ({
@@ -164,6 +178,8 @@ const Header = ({
   keptPages,
   title,
   onTitleChange,
+  lang,
+  onLangChange,
 }: HeaderProps): JSX.Element => {
   const unit = preview.hasRealPages ? 'trang' : 'đoạn';
 
@@ -171,17 +187,40 @@ const Header = ({
     <header className="shrink-0 px-4 py-3">
       <h1 className="text-lg font-semibold text-fg">Xác nhận cấu trúc chương</h1>
 
-      <label className="mt-2 block">
-        <span className="text-xs text-fg-muted">Tên sách</span>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          aria-label="Tên sách"
-          placeholder="Đặt tên cho sách"
-          className="mt-0.5 w-full max-w-md rounded border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
-        />
-      </label>
+      <div className="mt-2 flex flex-wrap items-end gap-3">
+        <label className="block min-w-0 flex-1">
+          <span className="text-xs text-fg-muted">Tên sách</span>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            aria-label="Tên sách"
+            placeholder="Đặt tên cho sách"
+            className="mt-0.5 w-full max-w-md rounded border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
+          />
+        </label>
+
+        {/*
+          Ngôn ngữ quyết định giọng đọc của **cả sách** và bộ chuẩn hoá text ở
+          sidecar. Trước P5.3 giá trị này bị hardcode `'vi'`, nên sách tiếng Anh
+          sinh audio bằng giọng Việt — nghe ra âm vô nghĩa. Đặt cạnh tên sách vì
+          đây là hai thứ duy nhất user khai ở màn này, và đổi sau khi đã lưu thì
+          phải xoá sách nhập lại.
+        */}
+        <label className="block">
+          <span className="text-xs text-fg-muted">Ngôn ngữ</span>
+          <select
+            value={lang}
+            onChange={(e) => onLangChange(e.target.value as BookLang)}
+            aria-label="Ngôn ngữ sách"
+            data-testid="import-lang"
+            className="mt-0.5 block rounded border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
+          >
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">Tiếng Anh</option>
+          </select>
+        </label>
+      </div>
 
       <p className="mt-1.5 text-sm text-fg-muted">
         {preview.totalPages} {unit} · {preview.hasOutline ? 'có mục lục' : 'không có mục lục'} ·

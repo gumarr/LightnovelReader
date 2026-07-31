@@ -18,12 +18,19 @@ import { orphanSummary, usageLevel, warnPercent } from './format';
 
 /** Việc xoá đang chờ user xác nhận. `null` = không có hộp thoại nào mở */
 type PendingDelete = {
-  kind: 'chapter' | 'book';
+  kind: 'chapter' | 'book' | 'read';
   id: string;
   title: string;
   bytes: number;
   segments: number;
 };
+
+/**
+ * Câu mô tả phạm vi cho ca `read` — con số thật do main tính theo vị trí đọc dở,
+ * renderer không biết trước. Xem `DeleteAudioDialog.scopeNote`.
+ */
+const READ_SCOPE_NOTE =
+  'Xoá audio của các chương nằm trước chương bạn đang đọc. Chương đang đọc và các chương sau giữ nguyên.';
 
 export type StorageManagerProps = {
   onBack: () => void;
@@ -41,6 +48,7 @@ export const StorageManager = ({ onBack }: StorageManagerProps): JSX.Element => 
   const expandBook = useStorageStore((s) => s.expandBook);
   const deleteChapterAudio = useStorageStore((s) => s.deleteChapterAudio);
   const deleteBookAudio = useStorageStore((s) => s.deleteBookAudio);
+  const deleteReadAudio = useStorageStore((s) => s.deleteReadAudio);
   const deleteOrphans = useStorageStore((s) => s.deleteOrphans);
   const clearError = useStorageStore((s) => s.clearError);
 
@@ -67,6 +75,7 @@ export const StorageManager = ({ onBack }: StorageManagerProps): JSX.Element => 
     setPending(null);
 
     if (target.kind === 'chapter') await deleteChapterAudio(target.id);
+    else if (target.kind === 'read') await deleteReadAudio(target.id);
     else await deleteBookAudio(target.id);
 
     await loadLibrary();
@@ -239,6 +248,16 @@ export const StorageManager = ({ onBack }: StorageManagerProps): JSX.Element => 
                         .reduce((sum, c) => sum + c.readySegments, 0),
                     })
                   }
+                  onDeleteRead={() =>
+                    setPending({
+                      kind: 'read',
+                      id: book.bookId,
+                      title: book.title,
+                      // Không dùng tới ở ca này — `scopeNote` thay chỗ hai con số.
+                      bytes: 0,
+                      segments: 0,
+                    })
+                  }
                   onDeleteChapter={askDeleteChapter}
                 />
               ))}
@@ -252,6 +271,7 @@ export const StorageManager = ({ onBack }: StorageManagerProps): JSX.Element => 
           title={pending.title}
           bytes={pending.bytes}
           segments={pending.segments}
+          {...(pending.kind === 'read' ? { scopeNote: READ_SCOPE_NOTE } : {})}
           busy={deleting}
           onConfirm={() => void confirmDelete()}
           onCancel={() => setPending(null)}

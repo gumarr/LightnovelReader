@@ -881,6 +881,61 @@ const run = async (cdp) => {
     return;
   }
 
+  /* --- Màn cài đặt (P5.3) --------------------------------------------- */
+
+  const openedSettings = await cdp.evaluate(clickTestId('open-settings'));
+  if (openedSettings === true) {
+    const fontSetting = await waitFor('màn cài đặt nạp xong', async () =>
+      cdp.evaluate(`
+        (() => {
+          const range = document.querySelector('[data-testid="subtitle-font-range"]');
+          const preview = document.querySelector('[data-testid="subtitle-font-preview"]');
+          if (range === null || preview === null) return undefined;
+          return {
+            value: Number(range.value),
+            // Cỡ chữ TÍNH RA được, không phải thuộc tính style đã ghi: đây đúng
+            // là loại lỗi vitest không thấy (jsdom không tính CSS thật).
+            previewPx: parseFloat(getComputedStyle(preview).fontSize),
+            previewColor: getComputedStyle(preview).color,
+          };
+        })()
+      `),
+    );
+
+    log('Màn cài đặt:');
+    check(
+      'thanh cỡ chữ có giá trị thật',
+      fontSetting.value >= 10 && fontSetting.value <= 48,
+      `${fontSetting.value} px`,
+    );
+    // Preview phải khớp giá trị thanh trượt — lệch nghĩa là user nhìn thử một
+    // đằng, phụ đề thật một nẻo.
+    check(
+      'xem thử khớp cỡ chữ đang chọn',
+      Math.abs(fontSetting.previewPx - fontSetting.value) < 0.5,
+      `thanh ${fontSetting.value} px vs xem thử ${fontSetting.previewPx} px`,
+    );
+    // Bài học 4.23: màu trong suốt lọt qua mọi test cấu trúc.
+    check(
+      'chữ xem thử không trong suốt',
+      typeof fontSetting.previewColor === 'string' &&
+        !fontSetting.previewColor.includes('rgba(0, 0, 0, 0)'),
+      fontSetting.previewColor,
+    );
+    await cdp.screenshot(packaged ? 'packaged-settings-dark' : 'dev-settings-dark');
+
+    await waitFor('về được màn thư viện từ cài đặt', async () => {
+      const onLibrary = await cdp.evaluate(
+        `document.querySelector('[data-testid="book-card"]') !== null`,
+      );
+      if (onLibrary === true) return true;
+      await cdp.evaluate(clickTestId('settings-back'));
+      return undefined;
+    });
+  } else {
+    fail('mở màn cài đặt', 'không thấy nút [data-testid="open-settings"]');
+  }
+
   /* --- Màn dung lượng ------------------------------------------------- */
 
   const openedStorage = await cdp.evaluate(clickTestId('open-storage'));
@@ -902,6 +957,22 @@ const run = async (cdp) => {
     log('Màn dung lượng:');
     check('hiện tổng dung lượng', typeof usage.text === 'string' && usage.text !== '', usage.text);
     check('thanh dung lượng có chiều cao thật', usage.barHeight > 0, `${usage.barHeight} px`);
+
+    // Nút "Xoá phần đã đọc" (P5.3, nợ từ P2.7): handler có từ lâu, chỗ bấm thì
+    // mới. Chỉ kiểm nó **hiện ra và bấm được** — không bấm thật, vì đây là
+    // đường xoá file không lấy lại được.
+    const deleteRead = await cdp.evaluate(`
+      (() => {
+        const btn = document.querySelector('[data-testid^="storage-delete-read-"]');
+        if (btn === null) return null;
+        return { width: btn.clientWidth, height: btn.clientHeight, text: btn.textContent };
+      })()
+    `);
+    check(
+      'có nút xoá audio phần đã đọc',
+      deleteRead !== null && deleteRead.width > 0 && deleteRead.height > 0,
+      deleteRead === null ? 'không thấy nút' : `${deleteRead.width}×${deleteRead.height} px`,
+    );
     await cdp.screenshot(packaged ? 'packaged-storage-dark' : 'dev-storage-dark');
   } else {
     fail('mở màn dung lượng', 'không thấy nút [data-testid="open-storage"]');

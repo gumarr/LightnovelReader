@@ -77,7 +77,7 @@ afterEach(() => {
 describe('hiển thị', () => {
   it('hiện text gốc, không phải bản đọc đã phiên âm', () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     // `Tokyo` chứ không phải `Tô-ki-ô` — user đang nhìn sách.
     expect(screen.getByRole('button', { name: 'Tokyo.' })).toBeTruthy();
@@ -85,15 +85,24 @@ describe('hiển thị', () => {
   });
 
   it('chưa phát gì thì mời bấm phát', () => {
-    render(<SubtitlePane text="" />);
+    render(<SubtitlePane text="" fontSizePx={18} />);
     expect(screen.getByText('Bấm phát để xem phụ đề.')).toBeTruthy();
+  });
+
+  it('áp đúng cỡ chữ user đặt trong Cài đặt', () => {
+    // `subtitleFontSize` nằm trong settings từ Phase 0 nhưng tới P5.3 mới có
+    // component nào đọc. Khoá lại đường đó để nó không thành setting chết lần nữa.
+    usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
+    render(<SubtitlePane text={TEXT} fontSizePx={32} />);
+
+    expect(screen.getByTestId('subtitle-pane').style.fontSize).toBe('32px');
   });
 });
 
 describe('tô sáng theo audio', () => {
   it('tô đúng từ đang đọc', async () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     position = 500;
     await advanceFrames(2);
@@ -104,7 +113,7 @@ describe('tô sáng theo audio', () => {
     // Đây là hệ quả trực tiếp của P3.5. Sai chỗ này thì highlight tắt giữa tên
     // riêng — mà tên riêng thì trang nào cũng có.
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     for (const ms of [750, 950, 1150]) {
       position = ms;
@@ -115,7 +124,7 @@ describe('tô sáng theo audio', () => {
 
   it('chỉ một từ sáng tại một thời điểm', async () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     position = 200;
     await advanceFrames(2);
@@ -131,7 +140,7 @@ describe('tô sáng theo audio', () => {
     let renders = 0;
     const Counting = (): JSX.Element => {
       renders += 1;
-      return <SubtitlePane text={TEXT} />;
+      return <SubtitlePane text={TEXT} fontSizePx={18} />;
     };
     render(<Counting />);
 
@@ -151,7 +160,7 @@ describe('tô sáng theo audio', () => {
 describe('bấm để nhảy tới', () => {
   it('bấm một từ thì tua tới mốc của từ đó', async () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     await act(async () => {
       screen.getByRole('button', { name: 'tới' }).click();
@@ -162,7 +171,7 @@ describe('bấm để nhảy tới', () => {
 
   it('bấm vào tên riêng tua tới mảnh đọc đầu tiên', async () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     await act(async () => {
       screen.getByRole('button', { name: 'Tokyo.' }).click();
@@ -174,7 +183,7 @@ describe('bấm để nhảy tới', () => {
 
   it('đoạn chưa có timing thì bấm không tua bừa về đầu', async () => {
     usePlayerStore.setState({ state: 'idle', segmentId: 's1', timings: [] });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     await act(async () => {
       screen.getByRole('button', { name: 'tới' }).click();
@@ -187,7 +196,7 @@ describe('bấm để nhảy tới', () => {
 describe('đổi đoạn giữa chừng', () => {
   it('đổi đoạn thì highlight bám đoạn mới, không kẹt ở chỉ số cũ', async () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    const { rerender } = render(<SubtitlePane text={TEXT} />);
+    const { rerender } = render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     position = 1150;
     await advanceFrames(2);
@@ -200,7 +209,7 @@ describe('đổi đoạn giữa chừng', () => {
         segmentId: 's2',
         timings: [{ w: 'Ừ', startMs: 0, endMs: 300, charStart: 0, charEnd: 2 }],
       });
-      rerender(<SubtitlePane text="Ừ." />);
+      rerender(<SubtitlePane text="Ừ." fontSizePx={18} />);
     });
 
     position = 100;
@@ -210,7 +219,7 @@ describe('đổi đoạn giữa chừng', () => {
 
   it('audio chạy quá từ cuối thì tắt highlight, không kẹt sáng', async () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     position = 800;
     await advanceFrames(2);
@@ -224,7 +233,7 @@ describe('đổi đoạn giữa chừng', () => {
 
   it('tạm dừng vẫn giữ từ đang đọc sáng', async () => {
     usePlayerStore.setState({ state: 'playing', segmentId: 's1', timings: TIMINGS });
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
 
     position = 500;
     await advanceFrames(2);
@@ -242,7 +251,7 @@ describe('đổi đoạn giữa chừng', () => {
 describe('sửa cách đọc (P5.2)', () => {
   it('chuột phải vào một từ gọi callback với đúng từ đó', () => {
     const onEditPronunciation = vi.fn();
-    render(<SubtitlePane text={TEXT} onEditPronunciation={onEditPronunciation} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} onEditPronunciation={onEditPronunciation} />);
 
     const words = screen.getAllByRole('button');
     const tokyo = words.find((b) => b.textContent === 'Tokyo.');
@@ -256,7 +265,7 @@ describe('sửa cách đọc (P5.2)', () => {
   it('chuột phải chặn menu mặc định của Chromium', () => {
     // Không chặn thì menu hệ thống đè lên hộp thoại vừa mở.
     const onEditPronunciation = vi.fn();
-    render(<SubtitlePane text={TEXT} onEditPronunciation={onEditPronunciation} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} onEditPronunciation={onEditPronunciation} />);
 
     const word = screen.getAllByRole('button')[0]!;
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
@@ -266,7 +275,7 @@ describe('sửa cách đọc (P5.2)', () => {
 
   it('không truyền callback thì chuột phải không làm gì', () => {
     // P3.4 dựng pane này khi chưa có tính năng sửa cách đọc — vẫn phải chạy.
-    render(<SubtitlePane text={TEXT} />);
+    render(<SubtitlePane text={TEXT} fontSizePx={18} />);
     const word = screen.getAllByRole('button')[0]!;
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
     fireEvent(word, event);

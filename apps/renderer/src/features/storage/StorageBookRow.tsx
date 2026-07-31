@@ -16,6 +16,8 @@ export type StorageBookRowProps = {
   busy: boolean;
   onToggle: () => void;
   onDeleteBook: () => void;
+  /** Xoá audio các chương **trước** chương đang đọc (P5.3, nợ từ P2.7) */
+  onDeleteRead: () => void;
   onDeleteChapter: (chapter: ChapterUsageInfo) => void;
 };
 
@@ -26,6 +28,7 @@ export const StorageBookRow = ({
   busy,
   onToggle,
   onDeleteBook,
+  onDeleteRead,
   onDeleteChapter,
 }: StorageBookRowProps): JSX.Element => {
   const hasAudio = book.audioBytes > 0;
@@ -62,6 +65,26 @@ export const StorageBookRow = ({
         >
           {formatBytes(book.audioBytes)}
         </span>
+
+        {/*
+          Xoá phần đã nghe xong là cách dọn chỗ **ít mất mát nhất** — đây mới là
+          nút user nên bấm trước, nên đặt trước "Xoá audio". Nó chỉ đụng các
+          chương trước chương đang đọc; chương đang đọc giữ nguyên.
+        */}
+        <button
+          type="button"
+          onClick={onDeleteRead}
+          disabled={busy || !hasAudio}
+          data-testid={`storage-delete-read-${book.bookId}`}
+          title={
+            hasAudio
+              ? 'Xoá audio các chương nằm trước chương đang đọc'
+              : 'Sách này chưa có audio'
+          }
+          className="shrink-0 rounded border border-border px-2 py-1 text-xs text-fg transition-colors hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Xoá phần đã đọc
+        </button>
 
         <button
           type="button"

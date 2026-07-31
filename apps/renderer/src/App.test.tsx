@@ -68,6 +68,32 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Chọn file' })).toBeInTheDocument();
   });
 
+  it('bấm "Cài đặt" chuyển sang màn cài đặt, quay lại được', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Thư viện')).toBeInTheDocument());
+    await user.click(screen.getByTestId('open-settings'));
+
+    expect(await screen.findByTestId('settings-screen')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('settings-back'));
+    await waitFor(() => expect(screen.getByText('Thư viện')).toBeInTheDocument());
+  });
+
+  it('từ Cài đặt sang thẳng màn Dung lượng', async () => {
+    // Đường tắt này là lý do màn Cài đặt không dựng lại các ô dung lượng —
+    // đứt nó thì user vào Cài đặt rồi phải quay ra mới chỉnh được bitrate.
+    const user = userEvent.setup();
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Thư viện')).toBeInTheDocument());
+    await user.click(screen.getByTestId('open-settings'));
+    await user.click(await screen.findByTestId('settings-open-storage'));
+
+    expect(await screen.findByTestId('storage-back')).toBeInTheDocument();
+  });
+
   it('mở sách chuyển sang màn chi tiết', async () => {
     const user = userEvent.setup();
     fake = installFakeApi({ library: [fakeLibraryEntry()] });

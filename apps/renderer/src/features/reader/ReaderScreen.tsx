@@ -81,6 +81,12 @@ export const ReaderScreen = ({
   // Tỉ lệ viewer / phụ đề. Nhớ qua phiên nên nguồn thật là settings, nhưng lúc
   // **đang kéo** phải dùng state cục bộ: ghi SQLite mỗi khung hình là không
   // chấp nhận được (xem `PaneSplitter`). `null` = chưa kéo, lấy theo settings.
+  // Cỡ chữ phụ đề — cùng lối với `playbackRate`: settings là nguồn thật, còn
+  // `DEFAULT_SETTINGS` che khoảng thời gian settings chưa nạp xong.
+  const subtitleFontSize = useSettingsStore(
+    (s) => s.settings?.subtitleFontSize ?? DEFAULT_SETTINGS.subtitleFontSize,
+  );
+
   const storedPaneRatio = useSettingsStore((s) => s.settings?.viewerPaneRatio);
   const [draggingRatio, setDraggingRatio] = useState<number | null>(null);
   const paneRatio = draggingRatio ?? storedPaneRatio ?? DEFAULT_SETTINGS.viewerPaneRatio;
@@ -338,7 +344,11 @@ export const ReaderScreen = ({
                 className="min-h-0 bg-bg-elevated"
                 style={{ flex: `${String(1 - paneRatio)} 1 0%` }}
               >
-                <SubtitlePane text={subtitleText} onEditPronunciation={setEditingTerm} />
+                <SubtitlePane
+                  text={subtitleText}
+                  fontSizePx={subtitleFontSize}
+                  onEditPronunciation={setEditingTerm}
+                />
               </section>
             </>
           ) : null}

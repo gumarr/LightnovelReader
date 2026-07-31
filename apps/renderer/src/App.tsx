@@ -6,6 +6,7 @@ import { BookDetailView } from '@/features/library/BookDetailView';
 import { ReaderScreen } from '@/features/reader/ReaderScreen';
 import { VoiceManager } from '@/features/voices/VoiceManager';
 import { StorageManager } from '@/features/storage/StorageManager';
+import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useLibraryStore } from '@/stores/library-store';
 
@@ -15,7 +16,7 @@ import { useLibraryStore } from '@/stores/library-store';
  * Chưa dùng router: ít màn, không có URL cần chia sẻ, và Electron không có
  * thanh địa chỉ. Thêm router lúc này là thêm phụ thuộc mà chưa cần.
  */
-type Screen = 'library' | 'import' | 'voices' | 'storage';
+type Screen = 'library' | 'import' | 'voices' | 'storage' | 'settings';
 
 export const App = (): JSX.Element => {
   // Selector riêng từng field — tránh re-render khi field không dùng thay đổi
@@ -91,6 +92,15 @@ export const App = (): JSX.Element => {
       );
     }
 
+    if (screen === 'settings') {
+      return (
+        <SettingsScreen
+          onBack={() => setScreen('library')}
+          onManageStorage={() => setScreen('storage')}
+        />
+      );
+    }
+
     if (screen === 'import') {
       return (
         <ImportScreen
@@ -109,6 +119,7 @@ export const App = (): JSX.Element => {
         onImport={() => setScreen('import')}
         onManageVoices={() => setScreen('voices')}
         onManageStorage={() => setScreen('storage')}
+        onOpenSettings={() => setScreen('settings')}
         onOpen={(bookId) => {
           void openBook(bookId);
         }}

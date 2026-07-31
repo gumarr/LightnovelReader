@@ -203,6 +203,46 @@ describe('cửa xác nhận xoá', () => {
     expect(dialog).toHaveTextContent('tiến độ đọc');
   });
 
+  it('bấm xoá phần đã đọc cũng phải qua hộp xác nhận', async () => {
+    await renderView();
+
+    await userEvent.click(screen.getByTestId('storage-delete-read-book-1'));
+
+    expect(await screen.findByTestId('delete-audio-dialog')).toBeInTheDocument();
+    expect(fake.api.storage.deleteReadAudio).not.toHaveBeenCalled();
+  });
+
+  it('hộp xoá phần đã đọc nói rõ chương đang đọc được giữ lại', async () => {
+    // Không có câu này thì "xoá phần đã đọc" nghe như xoá cả chương đang nghe dở.
+    await renderView();
+    await userEvent.click(screen.getByTestId('storage-delete-read-book-1'));
+
+    const note = await screen.findByTestId('delete-scope-note');
+    expect(note).toHaveTextContent(/Chương đang đọc/);
+  });
+
+  it('xoá phần đã đọc KHÔNG hiện con số bịa', async () => {
+    // Số byte do main tính theo vị trí đọc dở — renderer không biết trước. Hiện
+    // "0 B" ở đây sẽ khiến user tưởng bấm cũng không xoá gì.
+    await renderView();
+    await userEvent.click(screen.getByTestId('storage-delete-read-book-1'));
+
+    await screen.findByTestId('delete-audio-dialog');
+    expect(screen.queryByTestId('delete-bytes')).not.toBeInTheDocument();
+  });
+
+  it('xác nhận rồi mới gọi IPC xoá phần đã đọc', async () => {
+    await renderView();
+    await userEvent.click(screen.getByTestId('storage-delete-read-book-1'));
+    await userEvent.click(await screen.findByTestId('delete-confirm'));
+
+    await waitFor(() => {
+      expect(fake.api.storage.deleteReadAudio).toHaveBeenCalledWith('book-1');
+    });
+    // Không được đụng nhầm sang đường xoá cả sách
+    expect(fake.api.storage.deleteBookAudio).not.toHaveBeenCalled();
+  });
+
   it('huỷ thì không xoá gì và hộp đóng lại', async () => {
     await renderView();
     await userEvent.click(screen.getByTestId('storage-delete-book-book-1'));

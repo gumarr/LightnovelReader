@@ -12,6 +12,8 @@ export type LibraryGridProps = {
   onManageVoices: () => void;
   /** Mở Storage Manager (P2.7) */
   onManageStorage: () => void;
+  /** Mở màn Cài đặt (P5.3) */
+  onOpenSettings: () => void;
   onOpen: (bookId: string) => void;
 };
 
@@ -19,6 +21,7 @@ export const LibraryGrid = ({
   onImport,
   onManageVoices,
   onManageStorage,
+  onOpenSettings,
   onOpen,
 }: LibraryGridProps): JSX.Element => {
   const entries = useLibraryStore((s) => s.entries);
@@ -78,6 +81,15 @@ export const LibraryGrid = ({
             className="rounded border border-border px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-subtle"
           >
             Dung lượng
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            data-testid="open-settings"
+            className="rounded border border-border px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-subtle"
+          >
+            Cài đặt
           </button>
 
           <button

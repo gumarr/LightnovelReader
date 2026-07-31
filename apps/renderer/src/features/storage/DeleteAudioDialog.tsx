@@ -17,6 +17,14 @@ export type DeleteAudioDialogProps = {
   bytes: number;
   /** Số đoạn sẽ phải tạo lại nếu muốn nghe tiếp */
   segments: number;
+  /**
+   * Câu mô tả phạm vi khi con số **chưa biết trước**.
+   *
+   * Ca "xoá phần đã đọc": chương nào tính là đã đọc do main quyết theo vị trí
+   * đọc dở, renderer không có đủ dữ liệu để tính bytes. Thà nói rõ phạm vi bằng
+   * lời còn hơn hiện một con số bịa hoặc một số 0 gây hiểu nhầm là không xoá gì.
+   */
+  scopeNote?: string;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -26,6 +34,7 @@ export const DeleteAudioDialog = ({
   title,
   bytes,
   segments,
+  scopeNote,
   busy,
   onConfirm,
   onCancel,
@@ -44,18 +53,24 @@ export const DeleteAudioDialog = ({
         {title}
       </p>
 
-      <dl className="mt-3 flex flex-col gap-1.5 text-sm">
-        <div className="flex justify-between gap-3">
-          <dt className="text-fg-muted">Giải phóng</dt>
-          <dd className="tabular-nums text-fg" data-testid="delete-bytes">
-            {formatBytes(bytes)}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-fg-muted">Số đoạn mất audio</dt>
-          <dd className="tabular-nums text-fg">{segments}</dd>
-        </div>
-      </dl>
+      {scopeNote === undefined ? (
+        <dl className="mt-3 flex flex-col gap-1.5 text-sm">
+          <div className="flex justify-between gap-3">
+            <dt className="text-fg-muted">Giải phóng</dt>
+            <dd className="tabular-nums text-fg" data-testid="delete-bytes">
+              {formatBytes(bytes)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-fg-muted">Số đoạn mất audio</dt>
+            <dd className="tabular-nums text-fg">{segments}</dd>
+          </div>
+        </dl>
+      ) : (
+        <p data-testid="delete-scope-note" className="mt-3 text-sm text-fg">
+          {scopeNote}
+        </p>
+      )}
 
       <p className="mt-3 text-xs text-fg-muted">
         Vẫn giữ <strong className="text-fg">tiến độ đọc, bookmark và cấu trúc chương</strong>. Chỉ

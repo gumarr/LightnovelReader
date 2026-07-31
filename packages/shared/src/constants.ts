@@ -111,6 +111,19 @@ export const PLAYBACK_LOOKAHEAD_SEGMENTS = 5;
 export const SUPPORTED_FORMATS = ['pdf', 'docx'] as const;
 
 /**
+ * Khoảng cỡ chữ phụ đề, khớp với `appSettingsSchema` (10–48).
+ *
+ * Trần 48 chứ không nới thêm: phụ đề nằm trong pane chia theo `viewerPaneRatio`,
+ * cỡ chữ lớn hơn nữa thì một đoạn 300 ký tự chiếm hết pane và mất luôn tác dụng
+ * của việc tự cuộn theo từ đang đọc.
+ *
+ * Bước 2px: 1px thì user phải bấm quá nhiều lần mới thấy khác biệt.
+ */
+export const SUBTITLE_FONT_SIZE_MIN = 10;
+export const SUBTITLE_FONT_SIZE_MAX = 48;
+export const SUBTITLE_FONT_SIZE_STEP = 2;
+
+/**
  * Câu mẫu để nghe thử giọng, chọn theo ngôn ngữ của voice.
  *
  * **Do main chọn, không phải renderer gửi lên.** Cho renderer gửi text tuỳ ý là

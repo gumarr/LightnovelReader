@@ -342,6 +342,24 @@ describe('lưu vào thư viện', () => {
     expect(fake.api.library.saveBook.mock.calls[0]![0].title).toBe('Tên tự đặt');
   });
 
+  it('mặc định tiếng Việt', async () => {
+    await setup();
+    expect(screen.getByTestId('import-lang')).toHaveValue('vi');
+  });
+
+  it('gửi ngôn ngữ user chọn xuống main', async () => {
+    // Sách EN nhận giọng VI thì đọc ra âm vô nghĩa, mà đổi sau khi lưu phải
+    // xoá sách nhập lại — nên đường này phải đúng ngay lượt đầu.
+    const user = userEvent.setup();
+    await setup();
+
+    await user.selectOptions(screen.getByTestId('import-lang'), 'en');
+    await user.click(screen.getByRole('button', { name: /Xác nhận/ }));
+
+    await waitFor(() => expect(fake.api.library.saveBook).toHaveBeenCalled());
+    expect(fake.api.library.saveBook.mock.calls[0]![0].lang).toBe('en');
+  });
+
   it('tên sách rỗng thì chặn lưu', async () => {
     const user = userEvent.setup();
     await setup();

@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-31 · commit `b85f79f`
+> **Cập nhật lần cuối:** 2026-07-31 · commit `<điền sau khi commit>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,14 +39,14 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P5.3 — xem mục 3.
+**Việc tiếp theo:** P5.4 — xem mục 3.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
 Xem mục 4.68 để biết lý do đầy đủ và **điều kiện mở lại**.
 
-**Phase 5 đang làm: P5.1 + P5.2 xong** (giọng VI thứ hai + nghe thử giọng;
-UI sửa cách đọc — trả nợ treo từ P3.5).
+**Phase 5 đang làm: P5.1 + P5.2 + P5.3 xong** (giọng VI thứ hai + nghe thử giọng;
+UI sửa cách đọc — trả nợ treo từ P3.5; màn Cài đặt + ba nợ mức TB).
 
 ---
 
@@ -967,14 +967,66 @@ hiện ước lượng trước khi generate hàng loạt). Hộp thoại **nói
 bấm chuột phải, và **chưa nghe** một đoạn generate lại sau khi sửa để xác nhận
 cách đọc mới thật sự tới được Piper. Xem mục 8.
 
+### Phase 5 — P5.3 Màn Cài đặt + trả 3 nợ mức TB ✅
+
+Phần này **một nửa là trả nợ**. Ba nợ mức TB trong mục 8 đều có chung một hình
+dạng: *code đã xong và có test, nhưng không có đường nào chạm tới*.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `renderer/features/settings/SettingsScreen.tsx` | Màn Cài đặt (mới) | 9 |
+| `renderer/features/settings/SubtitleFontSetting.tsx` | Cỡ chữ + **xem thử tại chỗ** | ↑ |
+| `renderer/features/settings/AppInfoPanel.tsx` | Phiên bản + thư mục dữ liệu | ↑ |
+| `renderer/features/player/SubtitlePane.tsx` | Nhận `fontSizePx` — thôi hardcode `text-lg` | +1 |
+| `renderer/features/storage/StorageBookRow.tsx` | Nút **"Xoá phần đã đọc"** | +4 |
+| `renderer/features/storage/DeleteAudioDialog.tsx` | `scopeNote` cho ca không biết trước số byte | ↑ |
+| `renderer/features/import/ChapterConfirm.tsx` | Ô **chọn ngôn ngữ sách** | +2 |
+| `renderer/stores/import-store.ts` | `save(title, lang)` — bỏ `lang: 'vi'` hardcode | +1 |
+| `renderer/App.tsx` + `LibraryGrid.tsx` | Điều hướng + nút vào Cài đặt | +3 |
+| `apps/main/tsconfig.probe.json` | **Typecheck cho `probe/`** (mới) | — |
+| `scripts/ui-check.mjs` | 5 phép kiểm mới | — |
+
+**Ba nợ TB đã trả:**
+
+| Nợ | Vì sao nó nguy hiểm | Cách trả |
+|---|---|---|
+| `subtitleFontSize` **không component nào đọc** | Setting chết từ Phase 0: có trong schema, có trong DB, user không đổi được. Cùng hình dạng với `playbackRate` (trả ở P3.3) và `viewerPaneRatio` (P3.4) | `SubtitlePane` nhận `fontSizePx`; thanh trượt 10–48 bước 2px kèm **xem thử** |
+| `lang` hardcode `'vi'` | Sách EN nhận `voiceVi` → Piper đọc văn bản Anh bằng ánh xạ chữ cái tiếng Việt, ra âm vô nghĩa. Đổi sau khi lưu thì phải **xoá sách nhập lại** | Ô chọn ở màn xác nhận chương, cạnh ô tên sách |
+| `deleteReadAudio` không có nút | Handler + service + store + 5 test có từ P2.7. plan.md nhắc đích danh. Thiếu chỗ bấm thì **tính năng không tồn tại với user** | Nút "Xoá phần đã đọc" cạnh "Xoá audio", qua cùng hộp xác nhận |
+
+**Ba quyết định đáng nhớ:**
+
+- **KHÔNG gom hết thiết lập về màn Cài đặt.** Thư mục audio, bitrate và ngưỡng
+  cảnh báo vẫn ở Storage Manager — đó là chỗ user đang nhìn con số dung lượng và
+  muốn đổi nó ngay. Dựng lại các ô đó ở đây là **hai chỗ chỉnh cùng một thứ mà
+  chỉ một chỗ hiện hậu quả**. Màn Cài đặt chỉ trỏ sang, có test khoá lại.
+- **Cỡ chữ có xem thử ngay tại chỗ.** Con số px không nói lên gì cho tới khi nhìn
+  thấy; không có preview thì user phải vào trình đọc → quay ra chỉnh → vào lại,
+  ba lần chuyển màn cho một lần thử. Preview dùng đúng biến màu của phụ đề thật
+  (`--subtitle-past`), vì nhìn thử khác màu thì kết luận rút ra cũng sai.
+- **Hộp xoá "phần đã đọc" KHÔNG hiện con số.** Chương nào tính là đã đọc do main
+  quyết theo vị trí đọc dở — renderer không đủ dữ liệu để tính bytes. Hiện `0 B`
+  sẽ khiến user tưởng bấm cũng không xoá gì, nên thay hai con số bằng một câu mô
+  tả phạm vi (`scopeNote`). Có test khoá lại rằng `delete-bytes` **không** xuất hiện.
+
+**`apps/main/probe/` nay có lưới.** Đây là nợ nguy hiểm nhất trong ba cái: probe
+nằm ngoài `pnpm test`, ngoài CI, **và** ngoài `tsconfig` — không lưới nào cả, và
+đó chính là lý do lỗi 4.50 nằm im qua hai commit. Không gộp được vào
+`tsconfig.json` vì đó là config *build* (`rootDir: ./src`); nới `include` sẽ đẩy
+mọi thứ trong `dist/` đổi chỗ. Nên tách `tsconfig.probe.json`, nối vào `typecheck`
+của `@ln/main`. **Đã kiểm chứng bằng cách phá thật**: đổi `segment?.audioBytes`
+thành `segment?.XXaudioBytes` → `error TS2551` đúng như mong đợi, rồi khôi phục.
+
+⚠️ **Chưa chạy trên app thật** — cùng nợ với P5.1 và P5.2, nay đã dồn ba phần.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1971 passed** (+36 ở P5.2 — handler, store, dialog, context menu) |
-| Unit test sidecar (pytest) | **646 passed** (+8 ở P5.1 — biên HTTP `/preview`) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (không đổi ở P5.1) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **58 phép kiểm**, ⚠️ 11 phép kiểm của P3.4 và toàn bộ P5.1 **chưa chạy** — xem mục 8 |
+| Unit test TypeScript | **1991 passed** (+20 ở P5.3 — settings, ngôn ngữ sách, xoá phần đã đọc, cỡ chữ, điều hướng) |
+| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.3 — phần này thuần renderer) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, nay **có typecheck** (P5.3) |
+| **Kiểm UI thật (`pnpm ui-check`)** | **63 phép kiểm** (+5 ở P5.3), ⚠️ 11 phép kiểm của P3.4 và toàn bộ P5.1/P5.2/P5.3 **chưa chạy** — xem mục 8 |
 | Giọng đọc trong catalog | **3** (2 VI + 1 EN) — xem mục 8 về giọng nhiều người nói |
 | Schema DB | **v3** (v3 thêm `pronunciation_overrides` — mục 4.59) |
 | Typecheck | Sạch (5 package) |
@@ -997,13 +1049,14 @@ Phase 5 chia **năm phần** (thống nhất với user — mỗi phần một c
 |---|---|---|
 | P5.1 | Thêm giọng VI thứ hai vào catalog + nghe thử giọng sau khi tải | ✅ Xong |
 | P5.2 | UI tầng 3 phiên âm: sửa cách đọc từ menu chuột phải trên phụ đề (nợ mục 8) | ✅ Xong |
-| P5.3 | Settings đầy đủ: font phụ đề, xoá cache, và **trả nợ mức TB** trong mục 8 | ⬅️ **tiếp theo** |
-| P5.4 | Bookmark + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ⬜ |
+| P5.3 | Màn Cài đặt (cỡ chữ phụ đề) + trả 3 nợ mức TB | ✅ Xong |
+| P5.4 | Bookmark + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ⬅️ **tiếp theo** |
 | P5.5 | Đóng gói: icon app, auto-update, README qua SmartScreen, log rotate | ⬜ |
 
 ⚠️ **Chạy `pnpm ui-check` trước khi làm tiếp** — 11 phép kiểm của P3.4, phần nghe
-thử của P5.1 và hộp sửa cách đọc của P5.2 đều **chưa chạy lần nào** trên app
-thật. Đây là loại lỗi vitest không thấy (chiều cao, màu, lớp phủ hộp thoại).
+thử của P5.1, hộp sửa cách đọc của P5.2 và 5 phép kiểm mới của P5.3 đều **chưa
+chạy lần nào** trên app thật. Đây là loại lỗi vitest không thấy (chiều cao, màu,
+lớp phủ hộp thoại). Nợ này đã dồn qua **ba phần liên tiếp** — xem mục 8.
 
 **DoD Phase 5** (`plan.md`): installer `.exe` cài trên máy sạch chạy được, không
 cần cài Python.
@@ -2831,6 +2884,36 @@ số đó làm bằng chứng chê model nào.
 (`plan.md` đã ghi kiến trúc `TTSEngine` cho phép cắm engine khác mà không đụng
 core). Không phải việc của Phase 5.
 
+### 4.71 "Setting chết": ba lần cùng một hình dạng, và cách nhận ra lần thứ tư
+
+`subtitleFontSize` có trong `AppSettings`, trong zod schema, trong
+`DEFAULT_SETTINGS`, được ghi xuống `electron-store` — và **không component nào
+đọc nó** suốt từ Phase 0 tới P5.3. Đây là lần **thứ ba** cùng một chuyện:
+
+| Setting | Khai từ | Thật sự dùng từ | Nằm chết |
+|---|---|---|---|
+| `playbackRate` | Phase 0 | P3.3 | ~3 phase |
+| `viewerPaneRatio` | Phase 0 | P3.4 | ~3 phase |
+| `subtitleFontSize` | Phase 0 | **P5.3** | ~5 phase |
+| `alignmentEnabled` | Phase 0 | **chưa bao giờ** | Phase 4 đã bỏ (4.68) |
+
+Vì sao nguy hiểm: cả bốn đều **typecheck sạch, test xanh, và có mặt trong DB**.
+Không có lưới nào bắt được "field này không ai đọc" — `noUnusedLocals` chỉ xét
+trong một file, còn đọc từ store bằng selector thì tsc không truy ngược được.
+
+**Cách nhận ra:** một field trong `AppSettings` mà `grep` cả repo chỉ thấy nó ở
+`types.ts` / `schemas.ts` / `constants.ts` / file test — không có ở `.tsx` nào —
+là setting chết. Lệnh này đủ dùng:
+
+```bash
+grep -rn "tênField" --include=*.tsx apps/renderer/src
+```
+
+Rỗng nghĩa là user không đổi được thứ đó dù DB vẫn lưu.
+
+`alignmentEnabled` là ca **cố ý giữ**: Phase 4 đã bỏ nên không có gì để bật/tắt,
+mà gỡ khỏi schema thì tốn một migration đổi lấy hư không. Đừng dựng UI cho nó.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -3037,7 +3120,8 @@ apps/main/src/
   services/sidecar-supervisor.ts Health check + chính sách restart (mục 4.27)
   services/sidecar-spawn.ts      Nối child_process thật (chỗ DUY NHẤT chạm nó)
   probe/                   Chạy thật với sidecar Python (KHÔNG trong pnpm test
-                           — xem apps/main/probe/README.md)
+                           — xem apps/main/probe/README.md). Có typecheck riêng
+                           qua tsconfig.probe.json từ P5.3 (mục 8)
   services/storage.ts      CHỖ DUY NHẤT xoá file của user (audio, timing, bản copy
                            sách). Xoá file trước, DB sau — mục 4.39
   services/settings.ts     electron-store, file hỏng → rơi về mặc định từng field
@@ -3048,7 +3132,7 @@ apps/preload/src/
 
 apps/renderer/src/
   App.tsx                  Điều hướng: thư viện / nhập sách / chi tiết / đọc /
-                           giọng đọc / dung lượng
+                           giọng đọc / dung lượng / cài đặt
   lib/theme.ts             Logic theme thuần
   features/theme/          use-theme + ThemeToggle
   features/titlebar/       TitleBar + WindowControls
@@ -3057,6 +3141,13 @@ apps/renderer/src/
     ChapterConfirm.tsx     Danh sách chương + nút xác nhận
     ChapterRow.tsx         Một hàng: tên, khoảng trang, preview, tách/gộp/xoá
     confidence.ts          Điểm detector → nhãn; "trang" vs "đoạn"
+  features/settings/       Màn Cài đặt (P5.3) — CHỈ phần đọc. Thư mục audio,
+                           bitrate, ngưỡng vẫn ở Storage Manager; đây chỉ trỏ
+                           sang, không dựng lại (mục P5.3)
+    SettingsScreen.tsx     Khung màn + nạp app:getInfo
+    SubtitleFontSetting.tsx  Thanh cỡ chữ + xem thử tại chỗ
+    AppInfoPanel.tsx       Phiên bản + thư mục dữ liệu (app:getInfo, kênh có từ
+                           Phase 0 mà tới P5.3 mới có UI gọi)
   features/library/
     LibraryGrid.tsx        Grid sách, nút đọc tiếp
     BookCard.tsx           Thẻ sách + bìa tạm suy từ tên
@@ -3179,7 +3270,7 @@ scripts/
 | HTML DOCX cache một sách trong RAM | Thấp | `reader.ts` giữ đúng một `BookHtml`; mở sách khác là convert lại (~200ms). Đổi lại là không phình `.db`, không migrate schema |
 | Ảnh trong DOCX bị bỏ khi render | Thấp | `sanitizeDocxHtml` bỏ `<img>` (danh sách trắng không có). LN có minh hoạ sẽ mất ảnh ở viewer DOCX — PDF không bị vì vẽ cả trang |
 | `import:*` chưa chặn đường dẫn tuỳ ý | TB | Renderer gọi `parseFile` với path bất kỳ và main sẽ đọc. Hiện chưa lộ ra ngoài (chỉ dialog gọi tới), nhưng khi thêm kéo-thả thì phải kiểm path qua `services/paths.ts` |
-| Ngôn ngữ sách hardcode `'vi'` | **TB** | `import-store.save()` luôn gửi `lang: 'vi'`. Sách EN sẽ nhận voice sai ở Phase 2. Cần cho user chọn ở màn xác nhận — xem ghi chú P1.6b |
+| ~~Ngôn ngữ sách hardcode `'vi'`~~ | ✅ Xong | P5.3: ô chọn ngôn ngữ ở màn xác nhận chương, cạnh ô tên sách. `save(title, lang)` bắt buộc truyền — không còn giá trị mặc định lẩn trong store. Mặc định UI là `vi` (app là trình đọc LN dịch) nhưng user đổi được trước khi lưu, và đó là **lúc duy nhất** đổi được: sau khi lưu thì phải xoá sách nhập lại |
 | ~~Xoá sách không xoá file đã copy~~ | ✅ Xong | P2.7: `library:removeBook` gọi `storage.removeBookFiles()` — xoá bản copy trong `libraryDir` **và** cả thư mục audio. Xoá DB trước, file sau (mục 4.39). Lỗi xoá file không làm hỏng lượt xoá sách |
 | Chưa sinh ảnh bìa | Thấp | `Book.coverPath` có trong schema nhưng chưa ai ghi. Grid đang dùng bìa tạm (chữ cái đầu + sắc độ suy từ tên) |
 | Segment dựng đồng bộ trong main | Thấp | 4817 segment mất ~400ms, chấp nhận được. Sách lớn hơn nhiều lần thì sẽ thấy đơ — lúc đó chuyển sang worker thread |
@@ -3194,7 +3285,7 @@ scripts/
 | ~~Chỉ có 2 voice trong catalog~~ | ✅ Xong (một phần) | P5.1 thêm `vi_VN-25hours_single-low` (16 kHz, sha256 **tải thật rồi tính**, md5 đối chiếu khớp `voices.json` của HF). Nay **3 giọng**: 2 VI + 1 EN. Piper chỉ có đúng 3 giọng VI và giọng thứ ba (`vivos`) là nhiều người nói — xem hàng dưới. Giọng EN thì Piper có 38 cái, chưa thêm vì app là LN tiếng Việt; thêm = sửa JSON, không sửa code |
 | ~~UI tầng 3 phiên âm chưa có~~ | ✅ Xong | P5.2: 3 kênh `pronunciations:*` + hộp sửa cách đọc mở bằng **chuột phải** trên từ ở phụ đề. Mặc định lưu theo sách, tích ô để áp toàn cục. `term` tự hạ chữ thường ở biên, cấm khoảng trắng trong cách đọc kèm câu giải thích. 33 test mới. **Chưa chạy trên app thật** — xem hàng dưới |
 | ~~Phiên âm Nhật chưa nghe thật lần nào~~ | ✅ Xong | User đã nghe hết một chương và xác nhận cả hai vế của DoD Phase 3: nghe liên tục được, chữ sáng đúng nhịp. Đây cũng là căn cứ **bỏ Phase 4** (mục 4.68). P5.1 thêm nút nghe thử với câu mẫu **có sẵn tên riêng Nhật** nên từ nay kiểm lại được bất cứ lúc nào mà không phải generate cả chương |
-| **11 phép kiểm UI của P3.4 chưa chạy lần nào** | **Cao** | `ui-check` đã thêm 3 nhóm (chiều cao 2 pane, tỉ lệ splitter thật, ẩn/hiện, màu `data-active`) nhưng **chưa chạy được trong phiên làm P3.4**. Đây đúng là loại lỗi vitest không thấy: lỗi 4.43 (chiều cao 0) và 4.23 (màu trong suốt) đều thuộc nhóm này, và P3.4 đụng vào **cả hai** — chia flex theo tỉ lệ, và 3 biến màu vừa đổi từ hex sang kênh RGB. Chạy `pnpm ui-check` là việc đầu tiên của phiên sau |
+| **`ui-check` chưa chạy suốt P3.4 → P5.3** | **Cao** | Đã dồn qua **bốn phần liên tiếp**: 11 phép kiểm của P3.4 (chiều cao 2 pane, tỉ lệ splitter, ẩn/hiện, màu `data-active`), nghe thử giọng của P5.1, hộp sửa cách đọc của P5.2, và 5 phép kiểm mới của P5.3 (cỡ chữ, xem thử khớp thanh trượt, màu không trong suốt, nút xoá phần đã đọc). Đây đúng là loại lỗi vitest không thấy: lỗi 4.43 (chiều cao 0) và 4.23 (màu trong suốt) đều thuộc nhóm này. **Mỗi phần dồn thêm càng khó quy trách nhiệm khi đỏ** — chạy `pnpm ui-check` là việc đầu tiên của phiên sau |
 | Phụ đề chưa giới hạn 3 dòng như plan.md | Thấp | plan.md ghi "subtitle pane 3 dòng". Bản này cho pane cuộn tự do theo tỉ lệ splitter thay vì chốt cứng 3 dòng — user kéo được nên tự chọn được số dòng, và chốt cứng thì đoạn dài bị cắt mất chữ. Nếu thấy vướng thì thêm chế độ "gọn" sau |
 | Không tô màu "đã đọc" cho từ phía trước | Thấp | Chỉ từ **đang đọc** đổi màu. Tô cả phần đã đọc thì mỗi khung hình phải duyệt toàn bộ `<span>` đứng trước (mục 4.66). Làm được nếu cần: đặt một class ở container rồi dùng CSS sibling selector, nhưng chưa ai thấy thiếu |
 | Từ điển Nhật mới 193 mục | Thấp | Phủ địa danh, xưng hô, thuật ngữ LN phổ biến. Tên nhân vật lạ do luật romaji lo (đo được 65/65 nhận đúng), nên thiếu mục không làm hỏng gì — chỉ là cách đọc kém tự nhiên hơn ở vài tên. Thêm mục = sửa `sidecar/app/text/data/lexicon_jp.json`, có cảnh báo sẵn về việc tránh âm tiết trùng tiếng Việt |
@@ -3212,7 +3303,7 @@ scripts/
 | `pnpm ui-check` chưa vào CI | **TB** | Chạy tay được rồi, nhưng runner sạch thiếu hai thứ: venv Python (để sidecar lên `ready`) và **ít nhất một sách trong thư viện** — phần reader/storage tự bỏ qua nếu thư viện rỗng, nên nối vào CI lúc này chỉ kiểm được nửa đầu. Cần một sách mẫu nhỏ commit được (`samples/` hiện không commit) hoặc bước import qua IPC trước khi kiểm |
 | Ảnh chụp trong `ui-check` hay bị bỏ qua | Thấp | `Page.captureScreenshot` treo khi cửa sổ bị che (chạy nền là ca thường gặp), nên script bỏ ảnh sau 15s thay vì đỏ. Số đo vẫn đủ để kết luận, chỉ mất bằng chứng nhìn bằng mắt. Muốn chắc có ảnh thì chạy với cửa sổ hiện lên trước |
 | Xoá 1 chương huỷ job của CẢ sách | Thấp | Hàng đợi không có `cancelByChapter` nên `storage:deleteChapterAudio` gọi `cancelBook` (mục 4.41). Quá tay: job của chương khác bị huỷ oan rồi phải xếp lại. Đổi được nếu thêm `cancelByChapter` vào `jobs.ts` |
-| `deleteReadAudio` chưa có nút trong UI | TB | Handler + service + 5 test đã có (xoá chương **trước** chương đang đọc), nhưng `StorageManager` chưa gọi. plan.md có nhắc nút "Xoá audio các chương đã đọc xong" — thiếu chỗ bấm thì tính năng không tồn tại với user |
+| ~~`deleteReadAudio` chưa có nút trong UI~~ | ✅ Xong | P5.3: nút "Xoá phần đã đọc" ở mỗi hàng sách trong Storage Manager, đặt **trước** nút "Xoá audio" vì đây là cách dọn chỗ ít mất mát nhất. Qua cùng hộp xác nhận, nhưng dùng `scopeNote` thay vì hai con số — số byte do main tính theo vị trí đọc dở, renderer không biết trước (4 test mới) |
 | Ngưỡng cảnh báo nhỏ nhất là 2 GB | Thấp | Nhánh `near`/`over` chỉ tới được khi user có >1.6 GB audio. Đúng với app này (1 vol ≈ 97 MB → cảnh báo ở ~16 vol) nhưng nghĩa là đường cảnh báo hiếm khi chạy thật. Đã kiểm bằng cách hạ ngưỡng qua IPC: thanh 100%, fill đổi đỏ, câu cảnh báo đúng |
 | Lớp phủ hộp thoại chỉ mờ 70% | Thấp | `bg/0.7` nên chữ dưới vẫn lộ quanh mép hộp, hơi nhiễu mắt — thấy rõ trên ảnh chụp dark. Cả `GenerateEstimateDialog` (P2.6) lẫn `DeleteAudioDialog` dùng cùng mẫu nên ít nhất là nhất quán |
 | `getUsage` quét cả thư mục audio mỗi lần gọi | Thấp | Một vol có ~9600 file; `stat` từng file để so DB với đĩa. Với 1–2 sách thì tức thời, nhưng thư viện 50 vol sẽ thấy chậm khi mở màn Dung lượng. Lúc đó nên cache theo `mtime` của thư mục hoặc chỉ quét khi user bấm "dọn rác" |
@@ -3230,7 +3321,7 @@ scripts/
 | ~~`SYNTHESIS_RTF_ESTIMATE` chưa hiệu chỉnh~~ | ✅ Xong | Đã đối chiếu với số đo thật ở P2.6: ước 1680 ms vs thật 2045 ms (**RTF thật 0.24** gồm nạp model). Lệch +22% → giữ nguyên 0.15. Dung lượng lệch −15%, thời lượng −24%. Probe khoá lại ngưỡng 0.25–4× để hằng số không âm thầm sai bản chất |
 | Normalize chưa kiểm trên sách EN gốc | Thấp | 2429 segment thật đã chạy qua, nhưng phần EN lấy từ **LN dịch** (`A2`), không phải văn bản Anh bản ngữ. Số thứ tự, `Mr./Mrs.`, năm kiểu Anh mới chỉ có unit test |
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
-| **`apps/main/probe/` nằm ngoài typecheck** | **TB** | `apps/main/tsconfig.json` chỉ `include` `src/**/*.ts`. Đã kiểm chứng: đổi `errorCount` thành `XXerrorCount` mà `tsc --noEmit` vẫn xanh. Cộng với việc probe không ở `pnpm test` lẫn CI thì nó **không có lưới nào** — chính vì thế lỗi 4.50 nằm im qua hai commit. Sửa: nới `include` (kèm `rootDir`) hoặc thêm `tsconfig.probe.json` nối vào `pnpm typecheck` |
+| ~~**`apps/main/probe/` nằm ngoài typecheck**~~ | ✅ Xong | P5.3: `apps/main/tsconfig.probe.json` nối vào `typecheck` của `@ln/main`. Tách riêng chứ không nới `include` của `tsconfig.json` — đó là config *build* (`rootDir: ./src`), nới ra sẽ đẩy mọi thứ trong `dist/` đổi chỗ. **Đã kiểm chứng bằng cách phá thật**: `segment?.XXaudioBytes` → `error TS2551`, rồi khôi phục. Probe vẫn ngoài `pnpm test` và ngoài CI (cần venv) — nhưng nay lệch kiểu không còn lọt |
 | ~~Renderer phải tự `revokeObjectURL` cho audio~~ | ✅ Xong | P3.2: việc tạo và thu hồi gom vào `audio-element.ts`, không có đường nào tạo url mà không đi qua chỗ thu hồi. `setup.ts` **đếm** url chưa nhả và xuất `countOpenObjectUrls()` — test khoá lại: phát 3 đoạn liên tiếp còn đúng 1 url mở, rời trình đọc về 0 (mục 4.54) |
 | ~~`PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa đo trên sách thật~~ | ✅ Xong | Lượt nghe cả chương của user không báo đứt tiếng giữa các câu → 5 là đủ với RTF 0.24. Giữ nguyên hằng số |
 | ~~Chưa nghe thử bằng tai~~ | ✅ Xong | User nghe hết một chương ở P3.4: audio liên tục, highlight bám đúng từng chữ. `ui-check` vẫn không thay được lượt nghe này (CDP không đọc được đầu ra âm thanh) nên mọi thay đổi đụng tới timing sau này vẫn phải nghe lại tay |
@@ -3244,4 +3335,7 @@ scripts/
 | **Nghe thử giọng chưa chạy trên app thật** | **TB** | P5.1 mới có unit test: nút, ba trạng thái (`Nghe thử`/`Đang tạo…`/`Dừng`), và kỷ luật thu hồi Blob URL đều xanh ở jsdom — nhưng **jsdom không phát được audio** (`HTMLMediaElement.play` là bản giả trong `setup.ts`). Nghĩa là chưa có gì chứng minh câu mẫu thật sự kêu thành tiếng, hay `/preview` trả về file `.ogg` Chromium giải mã được. Chạy `pnpm ui-check` + bấm thử bằng tay là việc đầu tiên của phiên sau |
 | Không hỗ trợ voice nhiều người nói | Thấp | 8 giọng VI/EN của Piper có `num_speakers > 1` (`vivos` 65, `libritts_r` 904). Cần `speakerId` xuyên 4 tầng + UI chọn người nói. **Mức hạ từ TB xuống Thấp** sau khi đo `vivos`: nó là đường duy nhất thêm giọng VI, nhưng thanh điệu bị ép phẳng (xem 4.70) nên không đáng làm chỉ vì nó. Còn giá trị cho giọng EN nhiều người nói nếu sau này cần |
 | Câu nghe thử cố định, user không tự gõ được | Thấp | `VOICE_PREVIEW_TEXT` chọn sẵn theo `lang`, có tên riêng Nhật + chữ số để phủ đúng hai đường chuẩn hoá dễ sai. Cho user gõ câu riêng sẽ hữu ích để thử tên nhân vật cụ thể trong sách họ đang đọc — nhưng phải giới hạn độ dài và chặn đường dùng nó thay hàng đợi generate |
+| **Màn Cài đặt chưa chạy trên app thật** | **TB** | P5.3 mới ở mức unit test. jsdom không tính CSS thật nên **chưa xác nhận** cỡ chữ preview khớp thanh trượt trong Chromium, hay màn Cài đặt có hiện đúng ở cả dark lẫn light. 5 phép kiểm `ui-check` đã viết sẵn cho đúng ba thứ này — chỉ còn chạy |
+| Chọn ngôn ngữ sách chỉ đổi được lúc nhập | Thấp | Lưu xong thì `lang` cố định; chọn nhầm phải xoá sách nhập lại (mất luôn cấu trúc chương đã sửa tay). Sửa được: thêm `library:setLang` + ô chọn ở màn chi tiết sách, nhưng phải xoá audio đã sinh vì chúng theo giọng cũ. Chưa làm vì chọn nhầm ngay ở màn xác nhận là ca hiếm — ô nằm cạnh ô tên sách, khó bỏ sót |
+| Không có UI cho `alignmentEnabled` | Thấp | **Cố ý**, xem 4.71. Phase 4 đã bỏ nên không có gì để bật/tắt; giữ field vì gỡ khỏi schema tốn một migration đổi lấy hư không. Đừng dựng UI cho nó |
 | Giọng `25hours` chưa nghe thử lần nào | TB | sha256/size đã đối chiếu thật với HF, và đường 16 kHz đã lần theo code (`target_rate_for_opus` trả 16000 → **bỏ qua resample**), nhưng **chưa tải model 63 MB về để nghe**. Chất lượng `low` + 16 kHz nghe ra sao so với `vais1000` (`medium`, 22 kHz) thì chưa ai biết. Nếu tệ hơn hẳn thì nên ghi chú vào catalog để user khỏi mất công tải |

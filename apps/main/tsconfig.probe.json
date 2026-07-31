@@ -1,0 +1,22 @@
+{
+  // Typecheck cho `probe/` — KHÔNG gộp vào `tsconfig.json` được.
+  //
+  // `tsconfig.json` là config **build** (`noEmit: false`, `rootDir: ./src`,
+  // `outDir: ./dist`). Nới `include` của nó để ôm `probe/` sẽ đẩy `rootDir`
+  // lên một cấp và làm mọi file trong `dist/` đổi chỗ — hỏng `main` của
+  // package.json. Nên tách hẳn một config chỉ để soi kiểu.
+  //
+  // Vì sao phải có: probe nằm ngoài `pnpm test` (config gốc loại `**/probe/**`)
+  // và ngoài CI, nên trước file này nó **không có lưới nào**. Đã kiểm chứng:
+  // đổi `errorCount` thành `XXerrorCount` mà `tsc --noEmit` vẫn xanh. Chính vì
+  // thế lỗi 4.50 nằm im qua hai commit — xem PROGRESS.md mục 8.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  // Kèm `src/` vì probe import xuyên vào đó; thiếu thì tsc suy kiểu từ file lẻ
+  // và bỏ sót đúng loại lệch mà file này sinh ra để bắt.
+  "include": ["probe/**/*.ts", "src/**/*.ts"]
+}

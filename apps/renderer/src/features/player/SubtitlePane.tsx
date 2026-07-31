@@ -20,6 +20,14 @@ export type SubtitlePaneProps = {
   /** Text gốc của đoạn đang phát. Rỗng = chưa phát gì. */
   text: string;
   /**
+   * Cỡ chữ phụ đề (px), user chỉnh ở màn Cài đặt và nhớ qua phiên.
+   *
+   * Đặt qua `style` chứ không phải class Tailwind: khoảng 10–48 là liên tục nên
+   * dựng sẵn 20 class chỉ để chọn một là thừa, mà Tailwind cũng không sinh được
+   * class từ giá trị chạy (`text-[${n}px]` bị JIT bỏ qua).
+   */
+  fontSizePx: number;
+  /**
    * Bấm chuột phải vào một từ → mở hộp sửa cách đọc (P5.2, tầng 3).
    *
    * Không bắt buộc: phụ đề vẫn dùng được khi màn hình chứa nó chưa nối tính
@@ -28,7 +36,11 @@ export type SubtitlePaneProps = {
   onEditPronunciation?: (term: string) => void;
 };
 
-export const SubtitlePane = ({ text, onEditPronunciation }: SubtitlePaneProps): JSX.Element => {
+export const SubtitlePane = ({
+  text,
+  fontSizePx,
+  onEditPronunciation,
+}: SubtitlePaneProps): JSX.Element => {
   const timings = usePlayerStore((s) => s.timings);
   const seek = usePlayerStore((s) => s.seek);
   const state = usePlayerStore((s) => s.state);
@@ -88,7 +100,8 @@ export const SubtitlePane = ({ text, onEditPronunciation }: SubtitlePaneProps): 
           if (state !== 'playing') setAutoScroll(false);
         }}
         onWheel={() => setAutoScroll(false)}
-        className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-lg leading-relaxed text-subtitle-past"
+        style={{ fontSize: `${String(fontSizePx)}px` }}
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4 leading-relaxed text-subtitle-past"
       >
         {words.map((word, index) => (
           <span key={`${String(word.charStart)}-${word.text}`}>

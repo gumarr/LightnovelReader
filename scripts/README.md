@@ -49,6 +49,10 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
 | Ẩn/hiện panel cho **cùng** số dòng | thứ tự khởi tạo còn quyết định kết quả |
 | Canvas PDF có pixel khác trắng | pdfjs hỏng ở bản đóng gói (4.19) |
 | Thanh dung lượng có chiều cao thật | Storage Manager hỏng bố cục |
+| Có nút xoá audio phần đã đọc | P5.3 nối `deleteReadAudio` — handler có từ P2.7 mà thiếu chỗ bấm |
+| Thanh cỡ chữ phụ đề có giá trị thật | màn Cài đặt (P5.3) không nạp được settings |
+| **Xem thử khớp cỡ chữ đang chọn** | preview lệch thanh trượt → user chỉnh theo thứ mình nhìn rồi phụ đề ra khác |
+| Chữ xem thử không trong suốt | lại rơi vào bẫy 4.23 ở component mới |
 | Thanh player hiện ra, màu không trong suốt | `PlayerBar` hỏng bố cục hoặc mất màu |
 | Icon điều khiển vẽ ra hình thật, ăn màu chữ | icon SVG hỏng path, hoặc lỡ quay lại dùng emoji (P3.3) |
 | Thanh tiến độ có bề ngang & chiều cao thật | `SegmentProgress` hỏng bố cục — đúng loại lỗi 4.43 |

@@ -4,6 +4,8 @@ import {
   PLAYBACK_RATE_MAX,
   PLAYBACK_RATE_MIN,
   SEGMENT_MAX_CHARS,
+  SUBTITLE_FONT_SIZE_MAX,
+  SUBTITLE_FONT_SIZE_MIN,
   VIEWER_PANE_RATIO_MAX,
   VIEWER_PANE_RATIO_MIN,
 } from './constants.js';
@@ -106,7 +108,7 @@ export const appSettingsSchema = z.object({
   storageWarnBytes: z.number().int().nonnegative(),
   alignmentEnabled: z.boolean(),
   viewerPaneRatio: z.number().min(VIEWER_PANE_RATIO_MIN).max(VIEWER_PANE_RATIO_MAX),
-  subtitleFontSize: z.number().int().min(10).max(48),
+  subtitleFontSize: z.number().int().min(SUBTITLE_FONT_SIZE_MIN).max(SUBTITLE_FONT_SIZE_MAX),
   playbackRate: z.number().min(PLAYBACK_RATE_MIN).max(PLAYBACK_RATE_MAX),
 });
 

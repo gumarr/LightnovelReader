@@ -414,9 +414,18 @@ const measureColors = `
     probe.style.left = '-9999px';
     document.body.appendChild(probe);
 
-    const read = (className) => {
+    // variantAttr cho các class chỉ tồn tại dưới dạng **variant**.
+    //
+    // Tailwind sinh selector kèm luôn thuộc tính: class data-[active]:bg-x ra
+    // rule ".data-\\[active\\]\\:bg-x[data-active]{…}" — cái [data-active] là MỘT
+    // PHẦN của selector. Probe không mang thuộc tính đó thì không rule nào khớp,
+    // và ta đo ra rgba(0,0,0,0) y hệt triệu chứng 4.23 dù màu hoàn toàn lành lặn.
+    // Đây là **đỏ giả**, đã mất một lượt chạy vì nó.
+    const read = (className, variantAttr) => {
       probe.className = className;
+      if (variantAttr !== undefined) probe.setAttribute(variantAttr, '');
       const value = getComputedStyle(probe).backgroundColor;
+      if (variantAttr !== undefined) probe.removeAttribute(variantAttr);
       return value;
     };
 
@@ -429,9 +438,12 @@ const measureColors = `
     //
     // bg-accent/10 là class thật, dùng ở SegmentList (dòng segment đang chọn) và ở
     // StorageBookRow. Đây chính là chỗ lỗi 4.23 làm mất màu.
-    const readColor = (className) => {
+    const readColor = (className, variantAttr) => {
       probe.className = className;
-      return getComputedStyle(probe).color;
+      if (variantAttr !== undefined) probe.setAttribute(variantAttr, '');
+      const value = getComputedStyle(probe).color;
+      if (variantAttr !== undefined) probe.removeAttribute(variantAttr);
+      return value;
     };
 
     const result = {
@@ -443,8 +455,12 @@ const measureColors = `
       // P3.4: ba biến phụ đề từng lưu dạng hex — đúng hình thái lỗi 4.23. Đổi
       // sang kênh RGB rời ở P3.4 thì nhánh alpha mới ra màu thật; đo lại ở đây
       // để không ai lỡ tay đổi ngược.
-      subtitleCurrent: readColor('text-subtitle-current'),
-      subtitleCurrentAlpha15: read('bg-subtitle-current/15'),
+      //
+      // Cả hai class này trong SubtitlePane đều là **variant** data-[active]:
+      // — phải viết đúng tên đầy đủ VÀ đặt thuộc tính, nếu không đo ra trong suốt
+      // dù màu vẫn đúng. Xem ghi chú ở hàm read.
+      subtitleCurrent: readColor('data-[active]:text-subtitle-current', 'data-active'),
+      subtitleCurrentAlpha15: read('data-[active]:bg-subtitle-current/15', 'data-active'),
       subtitlePast: readColor('text-subtitle-past'),
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
     };

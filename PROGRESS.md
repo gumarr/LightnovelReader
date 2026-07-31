@@ -1017,7 +1017,22 @@ mọi thứ trong `dist/` đổi chỗ. Nên tách `tsconfig.probe.json`, nối 
 của `@ln/main`. **Đã kiểm chứng bằng cách phá thật**: đổi `segment?.audioBytes`
 thành `segment?.XXaudioBytes` → `error TS2551` đúng như mong đợi, rồi khôi phục.
 
-⚠️ **Chưa chạy trên app thật** — cùng nợ với P5.1 và P5.2, nay đã dồn ba phần.
+**Đã chạy thật trên app** (`pnpm ui-check`, user chạy ngay sau commit):
+
+| Phép kiểm | Kết quả |
+|---|---|
+| Thanh cỡ chữ có giá trị thật | ✅ 18 px |
+| **Xem thử khớp cỡ chữ đang chọn** | ✅ thanh 18 px = xem thử 18 px |
+| Chữ xem thử không trong suốt | ✅ `rgb(113, 113, 122)` |
+| Có nút xoá audio phần đã đọc | ✅ 106×24 px |
+| Màn dung lượng vẫn nguyên vẹn | ✅ tổng + thanh 6 px |
+
+Lượt chạy đó cũng xác nhận **toàn bộ P3.4** (nợ treo từ lâu): 2 pane chia đúng
+80% đo được, kéo thanh thì phụ đề cao lên **thật** 147→162 px, ẩn phụ đề thì
+viewer lấy hết chỗ 588→864 px, hiện lại về đúng 147 px.
+
+⚠️ Nhưng **hai phép kiểm màu phụ đề đỏ giả** ở lượt này — lỗi của chính phép
+kiểm, không phải app. Xem mục 4.72.
 
 ### Số liệu hiện tại
 
@@ -1026,7 +1041,7 @@ thành `segment?.XXaudioBytes` → `error TS2551` đúng như mong đợi, rồi
 | Unit test TypeScript | **1991 passed** (+20 ở P5.3 — settings, ngôn ngữ sách, xoá phần đã đọc, cỡ chữ, điều hướng) |
 | Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.3 — phần này thuần renderer) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, nay **có typecheck** (P5.3) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **63 phép kiểm** (+5 ở P5.3), ⚠️ 11 phép kiểm của P3.4 và toàn bộ P5.1/P5.2/P5.3 **chưa chạy** — xem mục 8 |
+| **Kiểm UI thật (`pnpm ui-check`)** | **63 phép kiểm** (+5 ở P5.3) — **đã chạy thật, 59 đạt**. 2 đỏ giả đã sửa (4.72), 2 đỏ thật là nợ virtualizer có sẵn từ trước P3.3. P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Giọng đọc trong catalog | **3** (2 VI + 1 EN) — xem mục 8 về giọng nhiều người nói |
 | Schema DB | **v3** (v3 thêm `pronunciation_overrides` — mục 4.59) |
 | Typecheck | Sạch (5 package) |
@@ -1053,10 +1068,12 @@ Phase 5 chia **năm phần** (thống nhất với user — mỗi phần một c
 | P5.4 | Bookmark + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ⬅️ **tiếp theo** |
 | P5.5 | Đóng gói: icon app, auto-update, README qua SmartScreen, log rotate | ⬜ |
 
-⚠️ **Chạy `pnpm ui-check` trước khi làm tiếp** — 11 phép kiểm của P3.4, phần nghe
-thử của P5.1, hộp sửa cách đọc của P5.2 và 5 phép kiểm mới của P5.3 đều **chưa
-chạy lần nào** trên app thật. Đây là loại lỗi vitest không thấy (chiều cao, màu,
-lớp phủ hộp thoại). Nợ này đã dồn qua **ba phần liên tiếp** — xem mục 8.
+✅ **`pnpm ui-check` đã chạy sau P5.3 — 59/63 đạt.** Toàn bộ P3.4 và P5.3 xanh.
+4 phép đỏ: 2 là **đỏ giả của chính phép kiểm** (mục 4.72, đã sửa), 2 là nợ
+virtualizer có sẵn từ trước P3.3 (mục 8).
+
+⚠️ **Còn lại phải bấm tay** — `ui-check` không thay được: nút "Nghe thử" giọng
+(P5.1) và chuột phải sửa cách đọc (P5.2). CDP không đọc được đầu ra âm thanh.
 
 **DoD Phase 5** (`plan.md`): installer `.exe` cài trên máy sạch chạy được, không
 cần cài Python.
@@ -2884,6 +2901,45 @@ số đó làm bằng chứng chê model nào.
 (`plan.md` đã ghi kiến trúc `TTSEngine` cho phép cắm engine khác mà không đụng
 core). Không phải việc của Phase 5.
 
+### 4.72 `ui-check` đỏ giả: class **variant** cần cả thuộc tính mới khớp
+
+Lượt chạy `ui-check` đầu tiên sau P5.3 đỏ 4 phép kiểm. **Hai trong bốn là lỗi của
+chính phép kiểm**, không phải lỗi app — user chạy `pnpm dev` không thấy vấn đề gì,
+và user đúng.
+
+Triệu chứng: `subtitleCurrentAlpha15` đo ra `rgba(0, 0, 0, 0)` ở **cả hai** theme,
+tức trông y hệt lỗi 4.23 (biến màu lưu hex nên nhánh alpha mất màu).
+
+Nguyên nhân thật: trong `SubtitlePane` class đó là **variant**
+`data-[active]:bg-subtitle-current/15`. Tailwind sinh ra:
+
+```css
+.data-\[active\]\:bg-subtitle-current\/15[data-active]{background-color:rgb(var(--subtitle-current) / .15)}
+```
+
+`[data-active]` là **một phần của selector**. Probe `<div>` không mang thuộc tính
+đó → không rule nào khớp → `rgba(0,0,0,0)`. Màu hoàn toàn lành lặn:
+`--subtitle-current: 79 70 229` vẫn đúng dạng kênh RGB.
+
+Sửa: `read`/`readColor` nhận thêm `variantAttr`, đặt thuộc tính trước khi đo.
+
+**Đây là biến thể của cái bẫy đã ghi sẵn ngay phía trên hàm đó** ("CHỈ dùng class
+CÓ THẬT trong mã nguồn"). Lần trước là class *không tồn tại*; lần này class có
+tồn tại nhưng **chỉ dưới dạng variant**. Quy tắc đầy đủ hơn:
+
+> Class đo được phải khớp **nguyên văn** thứ có trong `src/**`, kèm **mọi điều
+> kiện** mà variant của nó đòi (thuộc tính, class cha, trạng thái).
+
+**Bài học lặp lại lần thứ hai:** `ui-check` đỏ **không** đồng nghĩa app hỏng. Cả
+hai lần đỏ giả đều tốn một lượt chạy. Trước khi sửa app, hãy hỏi: *phép kiểm này
+có đang đo đúng thứ nó tưởng không?*
+
+⚠️ **jsdom không thay được lượt chạy này.** Đã thử dựng lại phép đo bằng jsdom để
+tự xác nhận: nó **không parse nổi** bundle CSS thật ("Could not parse CSS
+stylesheet") và **không tính** `rgb(var(--x) / .15)` — cho `rgba(0,0,0,0)` ở cả
+hai nhánh, tức không phân biệt được đúng/sai. Đó chính là lý do `ui-check` tồn
+tại. Xác nhận cuối cùng phải là một lượt `pnpm ui-check` thật.
+
 ### 4.71 "Setting chết": ba lần cùng một hình dạng, và cách nhận ra lần thứ tư
 
 `subtitleFontSize` có trong `AppSettings`, trong zod schema, trong
@@ -3285,7 +3341,7 @@ scripts/
 | ~~Chỉ có 2 voice trong catalog~~ | ✅ Xong (một phần) | P5.1 thêm `vi_VN-25hours_single-low` (16 kHz, sha256 **tải thật rồi tính**, md5 đối chiếu khớp `voices.json` của HF). Nay **3 giọng**: 2 VI + 1 EN. Piper chỉ có đúng 3 giọng VI và giọng thứ ba (`vivos`) là nhiều người nói — xem hàng dưới. Giọng EN thì Piper có 38 cái, chưa thêm vì app là LN tiếng Việt; thêm = sửa JSON, không sửa code |
 | ~~UI tầng 3 phiên âm chưa có~~ | ✅ Xong | P5.2: 3 kênh `pronunciations:*` + hộp sửa cách đọc mở bằng **chuột phải** trên từ ở phụ đề. Mặc định lưu theo sách, tích ô để áp toàn cục. `term` tự hạ chữ thường ở biên, cấm khoảng trắng trong cách đọc kèm câu giải thích. 33 test mới. **Chưa chạy trên app thật** — xem hàng dưới |
 | ~~Phiên âm Nhật chưa nghe thật lần nào~~ | ✅ Xong | User đã nghe hết một chương và xác nhận cả hai vế của DoD Phase 3: nghe liên tục được, chữ sáng đúng nhịp. Đây cũng là căn cứ **bỏ Phase 4** (mục 4.68). P5.1 thêm nút nghe thử với câu mẫu **có sẵn tên riêng Nhật** nên từ nay kiểm lại được bất cứ lúc nào mà không phải generate cả chương |
-| **`ui-check` chưa chạy suốt P3.4 → P5.3** | **Cao** | Đã dồn qua **bốn phần liên tiếp**: 11 phép kiểm của P3.4 (chiều cao 2 pane, tỉ lệ splitter, ẩn/hiện, màu `data-active`), nghe thử giọng của P5.1, hộp sửa cách đọc của P5.2, và 5 phép kiểm mới của P5.3 (cỡ chữ, xem thử khớp thanh trượt, màu không trong suốt, nút xoá phần đã đọc). Đây đúng là loại lỗi vitest không thấy: lỗi 4.43 (chiều cao 0) và 4.23 (màu trong suốt) đều thuộc nhóm này. **Mỗi phần dồn thêm càng khó quy trách nhiệm khi đỏ** — chạy `pnpm ui-check` là việc đầu tiên của phiên sau |
+| ~~**`ui-check` chưa chạy suốt P3.4 → P5.3**~~ | ✅ Xong | User đã chạy sau P5.3. **59/63 đạt.** Toàn bộ P3.4 xanh (2 pane chia đúng 80% đo được, kéo thanh thì phụ đề cao lên **thật** 147→162 px, ẩn/hiện về đúng chiều cao cũ) và toàn bộ P5.3 xanh (cỡ chữ 18 px, xem thử **khớp** thanh trượt, chữ không trong suốt, nút xoá phần đã đọc 106×24 px). 4 phép đỏ: **2 là đỏ giả của chính phép kiểm** (mục 4.72, đã sửa) và 2 là nợ virtualizer có sẵn từ trước P3.3 — xem hàng dưới |
 | Phụ đề chưa giới hạn 3 dòng như plan.md | Thấp | plan.md ghi "subtitle pane 3 dòng". Bản này cho pane cuộn tự do theo tỉ lệ splitter thay vì chốt cứng 3 dòng — user kéo được nên tự chọn được số dòng, và chốt cứng thì đoạn dài bị cắt mất chữ. Nếu thấy vướng thì thêm chế độ "gọn" sau |
 | Không tô màu "đã đọc" cho từ phía trước | Thấp | Chỉ từ **đang đọc** đổi màu. Tô cả phần đã đọc thì mỗi khung hình phải duyệt toàn bộ `<span>` đứng trước (mục 4.66). Làm được nếu cần: đặt một class ở container rồi dùng CSS sibling selector, nhưng chưa ai thấy thiếu |
 | Từ điển Nhật mới 193 mục | Thấp | Phủ địa danh, xưng hô, thuật ngữ LN phổ biến. Tên nhân vật lạ do luật romaji lo (đo được 65/65 nhận đúng), nên thiếu mục không làm hỏng gì — chỉ là cách đọc kém tự nhiên hơn ở vài tên. Thêm mục = sửa `sidecar/app/text/data/lexicon_jp.json`, có cảnh báo sẵn về việc tránh âm tiết trùng tiếng Việt |

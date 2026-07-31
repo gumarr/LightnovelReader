@@ -4,10 +4,12 @@ import type {
   Book,
   BookFormat,
   BookLang,
+  BookmarkEntry,
   Chapter,
   InstalledVoice,
   Job,
   PronunciationOverride,
+  ReadingStats,
   Segment,
   SidecarStatus,
   ThemeMode,
@@ -126,6 +128,19 @@ export type BookDetail = {
 export type ReadingProgress = {
   bookId: string;
   segmentId: string;
+};
+
+export type AddBookmarkRequest = {
+  bookId: string;
+  segmentId: string;
+  /** Bỏ trống = dấu trang trơn. Chuỗi toàn khoảng trắng cũng quy về bỏ trống */
+  note?: string;
+};
+
+export type UpdateBookmarkNoteRequest = {
+  id: string;
+  /** Chuỗi rỗng = xoá ghi chú, giữ lại dấu trang */
+  note: string;
 };
 
 /**
@@ -373,6 +388,32 @@ export type IpcContract = {
   'library:setProgress': { in: ReadingProgress; out: Result<void> };
   /** Xoá sách khỏi thư viện, kèm chương và segment */
   'library:removeBook': { in: string; out: Result<void> };
+  /**
+   * Thống kê đọc của một sách (P5.4).
+   *
+   * Mọi con số **suy ra từ dữ liệu đã có** — không có bảng theo dõi hành vi.
+   * Xem `ReadingStats` để biết vì sao không đo "thời gian đọc mỗi ngày".
+   */
+  'library:getStats': { in: string; out: Result<ReadingStats> };
+
+  /**
+   * Dấu trang (P5.4). Bảng `bookmarks` có từ schema v1 nhưng tới P5.4 mới có
+   * đường gọi tới — trước đó user không đánh dấu được chỗ nào.
+   *
+   * Danh sách trả về xếp theo **mạch đọc** (chương rồi segment), không theo lúc
+   * tạo: user tìm dấu trang bằng cách nhớ "khoảng giữa sách", không phải nhớ
+   * mình đặt nó hôm nào.
+   */
+  'bookmarks:list': { in: string; out: Result<BookmarkEntry[]> };
+  /**
+   * Thêm dấu trang. Đánh dấu lại đúng segment đã có thì **cập nhật ghi chú**
+   * thay vì tạo bản trùng — hai dấu trang cùng một chỗ không nói thêm gì.
+   */
+  'bookmarks:add': { in: AddBookmarkRequest; out: Result<BookmarkEntry> };
+  /** Sửa ghi chú. Không cho đổi `segmentId` — xem `updateBookmarkNoteSchema` */
+  'bookmarks:updateNote': { in: UpdateBookmarkNoteRequest; out: Result<BookmarkEntry> };
+  /** Xoá. Dấu trang không tồn tại vẫn trả `ok` — kết quả user muốn đã đúng sẵn */
+  'bookmarks:remove': { in: string; out: Result<void> };
 
   /** Bytes file sách để pdfjs dựng trang ở renderer */
   'reader:getBookFile': { in: string; out: Result<BookFileBytes> };
@@ -532,6 +573,11 @@ export const IPC_CHANNELS = [
   'library:openBook',
   'library:setProgress',
   'library:removeBook',
+  'library:getStats',
+  'bookmarks:list',
+  'bookmarks:add',
+  'bookmarks:updateNote',
+  'bookmarks:remove',
   'reader:getBookFile',
   'reader:getBookHtml',
   'reader:listSegments',

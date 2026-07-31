@@ -804,6 +804,114 @@ const checkSubtitleToggle = async (cdp, first) => {
   );
 };
 
+/**
+ * Panel phải ba tab: Đoạn / Dấu trang / Hàng đợi (P5.4).
+ *
+ * Ba thứ jsdom không kiểm được, và cả ba đều đã cắn dự án này ít nhất một lần:
+ *
+ * 1. **Chiều cao thật của từng tab.** Mỗi tab một khối `flex-1 min-h-0` riêng.
+ *    Gộp chung một khối bọc rồi rẽ nhánh bên trong sẽ chèn thêm một lớp `div`
+ *    giữa ô cuộn và khối co giãn — đúng lỗi 4.43, và vitest chỉ thấy chuỗi class.
+ * 2. **Màu thanh tiến độ.** `bg-success` là token KHÔNG có trong
+ *    `tailwind.config.js`; viết nhầm thì thanh trong suốt chứ không đỏ ở đâu cả
+ *    (lỗi 4.23). Đo màu tính ra được là cách duy nhất bắt được.
+ * 3. **Bảng hàng đợi có nạp thật không** — `queue:listPending` chưa từng được
+ *    gọi từ UI trước P5.4.
+ */
+const checkPanelTabs = async (cdp) => {
+  log('Panel phải (P5.4):');
+
+  const clickTab = (id) => clickTestId(`panel-tab-${id}`);
+
+  /* --- Tab Dấu trang --- */
+  if ((await cdp.evaluate(clickTab('bookmarks'))) !== true) {
+    fail('mở tab Dấu trang', 'không thấy [data-testid="panel-tab-bookmarks"]');
+    return;
+  }
+  await sleep(400);
+
+  const bookmarks = await cdp.evaluate(`
+    (() => {
+      const stats = document.querySelector('[data-testid="reading-stats"]');
+      const readBar = document.querySelector('[data-testid="reading-progress-bar"]');
+      const audioBar = document.querySelector('[data-testid="audio-progress-bar"]');
+      const empty = document.querySelector('[data-testid="bookmark-empty"]');
+      const list = document.querySelector('[data-testid="bookmark-list"]');
+      const panel = stats?.parentElement ?? null;
+      return {
+        hasStats: stats !== null,
+        // Khối bọc phải có chiều cao THẬT — đây là chỗ lỗi 4.43 hay nấp
+        panelHeight: panel === null ? 0 : panel.clientHeight,
+        readBarColor: readBar === null ? null : getComputedStyle(readBar).backgroundColor,
+        audioBarColor: audioBar === null ? null : getComputedStyle(audioBar).backgroundColor,
+        // Danh sách rỗng hay có mục đều hợp lệ; im lặng cả hai mới là hỏng
+        hasContent: empty !== null || list !== null,
+        segmentsGone: document.querySelector('[data-testid="segment-scroll"]') === null,
+      };
+    })()
+  `);
+
+  check('tab Dấu trang hiện khối thống kê', bookmarks.hasStats === true, String(bookmarks.hasStats));
+  check(
+    'khối dấu trang có chiều cao thật',
+    bookmarks.panelHeight > 50,
+    `${bookmarks.panelHeight} px`,
+  );
+  check(
+    'danh sách dấu trang hiện gì đó (rỗng hoặc có mục)',
+    bookmarks.hasContent === true,
+    String(bookmarks.hasContent),
+  );
+  check(
+    'đổi tab thì danh sách đoạn nhường chỗ',
+    bookmarks.segmentsGone === true,
+    String(bookmarks.segmentsGone),
+  );
+  // Hai thanh phải có màu THẬT. `bg-success` không tồn tại trong config nên nếu
+  // ai đó quay lại dùng token đó, phép kiểm này là chỗ duy nhất thấy được.
+  for (const [name, value] of [
+    ['thanh tiến độ đọc', bookmarks.readBarColor],
+    ['thanh tiến độ audio', bookmarks.audioBarColor],
+  ]) {
+    check(`${name} không trong suốt`, typeof value === 'string' && !isTransparent(value), value);
+  }
+
+  /* --- Tab Hàng đợi --- */
+  if ((await cdp.evaluate(clickTab('queue'))) !== true) {
+    fail('mở tab Hàng đợi', 'không thấy [data-testid="panel-tab-queue"]');
+    return;
+  }
+
+  const queue = await waitFor('bảng hàng đợi nạp xong', async () =>
+    cdp.evaluate(`
+      (() => {
+        const table = document.querySelector('[data-testid="queue-table"]');
+        if (table === null) return undefined;
+        const empty = document.querySelector('[data-testid="queue-table-empty"]');
+        const rows = document.querySelectorAll('[data-testid="queue-job-row"]');
+        // "Đang tải…" nghĩa là chưa nạp xong — chờ tiếp thay vì kết luận sớm
+        if (empty === null && rows.length === 0) return undefined;
+        return { height: table.clientHeight, empty: empty !== null, rows: rows.length };
+      })()
+    `),
+  );
+
+  check('bảng hàng đợi có chiều cao thật', queue.height > 30, `${queue.height} px`);
+  check(
+    'listPending trả lời được (rỗng hoặc có job)',
+    queue.empty === true || queue.rows > 0,
+    queue.empty ? 'hàng đợi rỗng' : `${queue.rows} job`,
+  );
+
+  /* --- Về lại tab Đoạn để phần sau đo đúng như trước --- */
+  await cdp.evaluate(clickTab('segments'));
+  await sleep(400);
+  const back = await cdp.evaluate(
+    `document.querySelector('[data-testid="segment-scroll"]') !== null`,
+  );
+  check('quay lại tab Đoạn được', back === true, String(back));
+};
+
 /* ------------------------------------------------------- phép kiểm viewer PDF */
 
 /**
@@ -1036,6 +1144,37 @@ const run = async (cdp) => {
   const subtitle = await checkSubtitle(cdp);
   await checkSplitterDrag(cdp, subtitle);
   await checkSubtitleToggle(cdp, subtitle);
+
+  // Nút đánh dấu (P5.4). Chỉ kiểm nó **hiện ra và ở đúng trạng thái** — không
+  // bấm lưu thật, vì đó là ghi vào DB của user.
+  const bookmarkButton = await cdp.evaluate(`
+    (() => {
+      const btn = document.querySelector('[data-testid="bookmark-toggle"]');
+      if (btn === null) return null;
+      return {
+        width: btn.clientWidth,
+        height: btn.clientHeight,
+        disabled: btn.disabled === true,
+        color: getComputedStyle(btn).color,
+      };
+    })()
+  `);
+  check(
+    'có nút đánh dấu ở thanh đầu trình đọc',
+    bookmarkButton !== null && bookmarkButton.width > 0 && bookmarkButton.height > 0,
+    bookmarkButton === null
+      ? 'không thấy nút'
+      : `${bookmarkButton.width}×${bookmarkButton.height} px, ${
+          bookmarkButton.disabled ? 'chưa chọn đoạn' : 'bấm được'
+        }`,
+  );
+  check(
+    'chữ trên nút đánh dấu không trong suốt',
+    bookmarkButton !== null && !isTransparent(bookmarkButton.color),
+    bookmarkButton?.color ?? 'không có',
+  );
+
+  await checkPanelTabs(cdp);
 
   await cdp.screenshot(packaged ? 'packaged-reader-dark' : 'dev-reader-dark');
 

@@ -64,6 +64,21 @@ export type PendingStats = {
   totalChars: number;
 };
 
+/**
+ * Số liệu tổng của cả sách cho màn thống kê đọc (P5.4).
+ *
+ * Gộp bốn phép đếm vào **một** truy vấn: màn thống kê hiện chúng cùng lúc, mà
+ * gọi bốn lượt trên bảng ~5000 hàng là bốn lần quét cho một màn hình.
+ */
+export type BookSegmentStats = {
+  segmentCount: number;
+  /** Segment đã có audio (`status = 'ready'`) */
+  readyCount: number;
+  /** Tổng thời lượng audio đã sinh. `0` khi chưa generate gì */
+  totalDurationMs: number;
+  totalAudioBytes: number;
+};
+
 /** Kết quả một lượt generate, ghi lại sau khi sidecar trả về */
 export type SegmentAudioResult = {
   audioPath: string;
@@ -105,6 +120,16 @@ export type SegmentRepository = {
   /** Số liệu ước lượng cho một chương — chỉ tính segment chưa có audio */
   pendingStatsByChapter(chapterId: string): PendingStats;
   pendingStatsByBook(bookId: string): PendingStats;
+  /** Tổng của cả sách cho màn thống kê đọc — ngược với `pendingStats*` */
+  bookStats(bookId: string): BookSegmentStats;
+  /**
+   * Số segment nằm **trước** một segment, tính xuyên chương theo mạch đọc.
+   *
+   * Cơ sở của thanh phần trăm ở màn thống kê. Đếm bằng SQL chứ không nạp cả
+   * danh sách về rồi tìm chỉ số: một sách là ~5000 segment, mà con số này chỉ
+   * cần cho một dòng chữ.
+   */
+  countBefore(segmentId: string): number;
   /** Segment ĐÃ có audio của một chương — nguồn để xoá file. Ngược với `listPending*` */
   listReadyByChapter(chapterId: string): Segment[];
   listReadyByBook(bookId: string): Segment[];
@@ -212,6 +237,39 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
     FROM segments s
     JOIN chapters c ON c.id = s.chapter_id
     WHERE c.book_id = ? AND s.status != 'ready'
+  `);
+
+  // `duration_ms`/`audio_bytes` chỉ có giá trị ở segment `ready`, nên không cần
+  // lọc thêm — nhưng vẫn `COALESCE` vì sách chưa generate gì cho `SUM` = NULL.
+  const bookStatsStmt = db.prepare(`
+    SELECT COUNT(*) AS total,
+           SUM(CASE WHEN s.status = 'ready' THEN 1 ELSE 0 END) AS ready,
+           COALESCE(SUM(s.duration_ms), 0) AS duration,
+           COALESCE(SUM(s.audio_bytes), 0) AS bytes
+    FROM segments s
+    JOIN chapters c ON c.id = s.chapter_id
+    WHERE c.book_id = ?
+  `);
+
+  /**
+   * Đếm segment đứng trước, so theo cặp `(chương, thứ tự trong chương)`.
+   *
+   * So `s.idx < current.idx` không đủ: chỉ số segment đếm lại từ 0 ở mỗi
+   * chương, nên đoạn 0 của chương 5 sẽ ra "0 đoạn đứng trước". Phải so chương
+   * trước đã, cùng chương mới xét tới thứ tự đoạn.
+   */
+  const countBeforeStmt = db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM segments s
+    JOIN chapters c ON c.id = s.chapter_id
+    JOIN (
+      SELECT s2.idx AS seg_idx, c2.idx AS chap_idx, c2.book_id AS book_id
+      FROM segments s2
+      JOIN chapters c2 ON c2.id = s2.chapter_id
+      WHERE s2.id = ?
+    ) cur
+    WHERE c.book_id = cur.book_id
+      AND (c.idx < cur.chap_idx OR (c.idx = cur.chap_idx AND s.idx < cur.seg_idx))
   `);
 
   /**
@@ -376,6 +434,27 @@ export const createSegmentRepository = (db: Database): SegmentRepository => {
     pendingStatsByBook(bookId) {
       const row = statsByBook.get(bookId) as { n: number; chars: number };
       return { segmentCount: row.n, totalChars: row.chars };
+    },
+
+    bookStats(bookId) {
+      const row = bookStatsStmt.get(bookId) as {
+        total: number;
+        // `SUM` trên bảng rỗng trả NULL — sách chưa có segment nào rơi vào đây
+        ready: number | null;
+        duration: number;
+        bytes: number;
+      };
+      return {
+        segmentCount: row.total,
+        readyCount: row.ready ?? 0,
+        totalDurationMs: row.duration,
+        totalAudioBytes: row.bytes,
+      };
+    },
+
+    countBefore(segmentId) {
+      // Segment không tồn tại thì mệnh đề JOIN không có hàng nào → COUNT = 0.
+      return (countBeforeStmt.get(segmentId) as { n: number }).n;
     },
 
     listReadyByChapter(chapterId) {

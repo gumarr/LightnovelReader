@@ -5,9 +5,11 @@ import {
   type AppInfo,
   type AppSettings,
   type AppSettingsPatch,
+  type AddBookmarkRequest,
   type BookDetail,
   type BookFileBytes,
   type BookHtml,
+  type BookmarkEntry,
   type ChapterPreview,
   type ChapterPreviewRequest,
   type ChapterUsageInfo,
@@ -23,6 +25,7 @@ import {
   type LibraryEntry,
   type QueueStatusInfo,
   type ReadingProgress,
+  type ReadingStats,
   type SaveBookRequest,
   type SaveBookResponse,
   type Segment,
@@ -39,6 +42,7 @@ import {
   type VoiceDownloadProgress,
   type PronunciationOverride,
   type SavePronunciationRequest,
+  type UpdateBookmarkNoteRequest,
   type VoicePreview,
   type WindowState,
 } from '@ln/shared';
@@ -113,6 +117,20 @@ export const api = {
     setProgress: (progress: ReadingProgress): Promise<Result<void>> =>
       invoke('library:setProgress', progress),
     removeBook: (bookId: string): Promise<Result<void>> => invoke('library:removeBook', bookId),
+    /** Thống kê đọc — mọi con số suy từ dữ liệu đã có, không theo dõi hành vi */
+    getStats: (bookId: string): Promise<Result<ReadingStats>> =>
+      invoke('library:getStats', bookId),
+  },
+
+  bookmarks: {
+    /** Xếp theo mạch đọc (chương rồi đoạn), không theo lúc tạo */
+    list: (bookId: string): Promise<Result<BookmarkEntry[]>> => invoke('bookmarks:list', bookId),
+    /** Đánh dấu lại đúng đoạn đã có thì cập nhật ghi chú thay vì tạo bản trùng */
+    add: (request: AddBookmarkRequest): Promise<Result<BookmarkEntry>> =>
+      invoke('bookmarks:add', request),
+    updateNote: (request: UpdateBookmarkNoteRequest): Promise<Result<BookmarkEntry>> =>
+      invoke('bookmarks:updateNote', request),
+    remove: (id: string): Promise<Result<void>> => invoke('bookmarks:remove', id),
   },
 
   reader: {

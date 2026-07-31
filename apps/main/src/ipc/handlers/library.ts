@@ -7,10 +7,12 @@ import {
   type Book,
   type BookDetail,
   type LibraryEntry,
+  type ReadingStats,
   type Result,
   type SaveBookResponse,
 } from '@ln/shared';
 import type { BookRepository } from '../../db/repositories/books.js';
+import type { BookmarkRepository } from '../../db/repositories/bookmarks.js';
 import type { ChapterRepository } from '../../db/repositories/chapters.js';
 import type { SegmentRepository } from '../../db/repositories/segments.js';
 import type { LibraryService } from '../../services/library.js';
@@ -27,12 +29,14 @@ export type LibraryHandlers = {
   openBook: (input: unknown) => Result<BookDetail>;
   setProgress: (input: unknown) => Result<void>;
   removeBook: (input: unknown) => Promise<Result<void>>;
+  getStats: (input: unknown) => Result<ReadingStats>;
 };
 
 export type LibraryHandlerDeps = {
   library: LibraryService;
   sessions: ImportSessionStore;
   books: BookRepository;
+  bookmarks: BookmarkRepository;
   chapters: ChapterRepository;
   segments: SegmentRepository;
   /**
@@ -96,6 +100,55 @@ export const createLibraryHandlers = (deps: LibraryHandlerDeps): LibraryHandlers
 
     deps.books.markOpened(bookId, (deps.now ?? Date.now)(), segmentId);
     return ok(undefined);
+  },
+
+  /**
+   * Thống kê đọc của một sách (P5.4).
+   *
+   * **Không có bảng theo dõi hành vi.** Mọi con số suy từ thứ DB đã lưu vì công
+   * việc khác: `last_segment_id` cho vị trí đọc, `segments.status` cho tiến độ
+   * generate. Muốn biết "đọc bao lâu mỗi ngày" thì phải ghi mốc từng phiên —
+   * đó là telemetry cục bộ, mà CLAUDE.md cấm thu thập. Xem `ReadingStats`.
+   */
+  getStats: (input) => {
+    const parsed = bookIdSchema.safeParse(input);
+    if (!parsed.success) throw new InvalidInputError('bookId không hợp lệ');
+
+    const bookId = parsed.data;
+    const book = deps.books.findById(bookId);
+    if (book === undefined) {
+      return err('NOT_FOUND', 'Không tìm thấy sách này trong thư viện.', `bookId=${bookId}`);
+    }
+
+    const chapters = deps.chapters.listByBook(bookId);
+    const segmentStats = deps.segments.bookStats(bookId);
+
+    // Vị trí đọc dở có thể trỏ vào segment đã mất (sách nhập lại sinh ID mới).
+    // Khi đó coi như chưa đọc: thà báo 0% còn hơn hiện con số suy từ dữ liệu rác.
+    const lastSegment =
+      book.lastSegmentId === undefined ? undefined : deps.segments.findById(book.lastSegmentId);
+    const currentChapter =
+      lastSegment === undefined ? undefined : deps.chapters.findById(lastSegment.chapterId);
+
+    return ok({
+      bookId,
+      chapterCount: chapters.length,
+      // Chương **trước** chương đang đọc mới tính là đọc xong — user còn đang ở
+      // giữa chương hiện tại. Cùng định nghĩa với `storage.deleteReadAudio`,
+      // nên hai chỗ không nói hai con số khác nhau về cùng một thứ.
+      chaptersRead: currentChapter === undefined ? 0 : currentChapter.index,
+      segmentCount: segmentStats.segmentCount,
+      segmentsRead:
+        book.lastSegmentId === undefined || lastSegment === undefined
+          ? 0
+          : deps.segments.countBefore(book.lastSegmentId),
+      segmentsWithAudio: segmentStats.readyCount,
+      audioDurationMs: segmentStats.totalDurationMs,
+      audioBytes: segmentStats.totalAudioBytes,
+      ...(currentChapter === undefined ? {} : { currentChapterTitle: currentChapter.title }),
+      ...(book.lastOpenedAt === undefined ? {} : { lastOpenedAt: book.lastOpenedAt }),
+      bookmarkCount: deps.bookmarks.countByBook(bookId),
+    });
   },
 
   removeBook: async (input) => {

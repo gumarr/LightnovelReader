@@ -135,6 +135,76 @@ export type PronunciationOverride = {
   createdAt: number;
 };
 
+/**
+ * Một dấu trang do user đặt (P5.4). Bảng `bookmarks` có từ schema v1 nhưng
+ * không có repository nào đọc tới cho tới P5.4.
+ *
+ * **Neo theo `segmentId`, không theo trang hay ký tự.** Segment là đơn vị seek
+ * của cả app (CLAUDE.md), nên "nhảy tới dấu trang" dùng đúng đường mà player đã
+ * có sẵn. Neo theo trang thì DOCX không có trang; neo theo ký tự thì phải tra
+ * ngược ra segment mới phát được.
+ */
+export type Bookmark = {
+  id: string;
+  bookId: string;
+  segmentId: string;
+  /** Ghi chú của user. Bỏ trống = dấu trang trơn, chỉ để nhớ chỗ */
+  note?: string;
+  createdAt: number;
+};
+
+/**
+ * Dấu trang kèm ngữ cảnh để hiện thành danh sách bấm được.
+ *
+ * Bảng `bookmarks` chỉ có `segment_id`; danh sách mà chỉ hiện id thì user không
+ * nhận ra chỗ nào là chỗ nào. Main ghép sẵn tiêu đề chương và trích đoạn text ở
+ * một lượt truy vấn thay vì bắt renderer gọi thêm cho từng mục.
+ */
+export type BookmarkEntry = {
+  bookmark: Bookmark;
+  /** Chương chứa segment — nhãn chính của mỗi hàng */
+  chapterTitle: string;
+  /** Thứ tự chương, để danh sách xếp theo mạch đọc chứ không theo lúc tạo */
+  chapterIndex: number;
+  /** Thứ tự segment trong chương */
+  segmentIndex: number;
+  /** Trích đoạn đầu của segment — cắt ở main, xem `BOOKMARK_EXCERPT_MAX` */
+  excerpt: string;
+};
+
+/**
+ * Thống kê đọc của một sách (P5.4).
+ *
+ * **Mọi con số ở đây đều suy ra từ dữ liệu đã có** — không có bảng theo dõi
+ * hành vi, không ghi mốc thời gian mỗi phiên đọc. Quyết định có ý thức: app này
+ * không thu thập gì về thói quen user (CLAUDE.md cấm telemetry), nên "thống kê
+ * đọc" ở đây là *đọc tới đâu rồi* chứ không phải *đọc bao lâu mỗi ngày*.
+ */
+export type ReadingStats = {
+  bookId: string;
+  chapterCount: number;
+  /** Số chương nằm **trước** chương đang đọc — đã đọc xong trọn vẹn */
+  chaptersRead: number;
+  segmentCount: number;
+  /**
+   * Số segment nằm trước vị trí đang đọc, tính xuyên chương.
+   *
+   * Đây là cơ sở của thanh phần trăm: đếm theo chương thì sách 8 chương nhảy
+   * 12,5% một nấc, chẳng nói lên gì khi user đang ở giữa chương.
+   */
+  segmentsRead: number;
+  /** Số segment đã có audio (`status = 'ready'`) */
+  segmentsWithAudio: number;
+  /** Tổng thời lượng audio đã sinh. `0` khi chưa generate gì */
+  audioDurationMs: number;
+  audioBytes: number;
+  /** Chương đang đọc dở. Bỏ trống khi chưa mở sách lần nào */
+  currentChapterTitle?: string;
+  /** Lần mở gần nhất. Bỏ trống khi chưa mở lần nào */
+  lastOpenedAt?: number;
+  bookmarkCount: number;
+};
+
 export type JobType = 'synthesize' | 'align';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 

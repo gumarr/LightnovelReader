@@ -5,7 +5,8 @@ import type { ImportSession, ImportSessionStore } from '../../services/import-se
 import type { LibraryService, SaveBookInput } from '../../services/library.js';
 import type { BookRepository } from '../../db/repositories/books.js';
 import type { ChapterRepository } from '../../db/repositories/chapters.js';
-import type { SegmentRepository } from '../../db/repositories/segments.js';
+import type { BookSegmentStats, SegmentRepository } from '../../db/repositories/segments.js';
+import type { BookmarkRepository } from '../../db/repositories/bookmarks.js';
 import { InvalidInputError } from '../wrap.js';
 
 const book = (id = 'book-1'): Book => ({
@@ -45,6 +46,13 @@ const setup = (options: {
   removeResult?: boolean;
   /** Lỗi khi dọn file — dùng để kiểm xoá sách không bị chặn bởi lỗi đĩa */
   removeFilesError?: Error;
+  /** Số liệu tổng của sách — chỉ dùng cho `getStats` */
+  bookStats?: BookSegmentStats;
+  /** Số segment đứng trước vị trí đọc dở */
+  countBefore?: number;
+  bookmarkCount?: number;
+  /** Chương tra theo id — `getStats` cần để biết đang đọc chương nào */
+  findChapter?: (id: string) => { id: string; index: number; title: string } | undefined;
 } = {}) => {
   const saved: SaveBookInput[] = [];
   const discarded: string[] = [];
@@ -88,9 +96,24 @@ const setup = (options: {
     findById:
       options.findSegment ??
       ((id: string) => (id === 'seg-42' ? { id, chapterId: 'c2' } : undefined)),
+    bookStats: () =>
+      options.bookStats ?? {
+        segmentCount: 42,
+        readyCount: 10,
+        totalDurationMs: 60000,
+        totalAudioBytes: 180000,
+      },
+    countBefore: () => options.countBefore ?? 0,
   } as unknown as SegmentRepository;
 
+  const bookmarks = {
+    countByBook: () => options.bookmarkCount ?? 0,
+  } as unknown as BookmarkRepository;
+
   const chapters = {
+    findById:
+      options.findChapter ??
+      ((id: string) => (id === 'c2' ? { id, index: 1, title: 'B' } : undefined)),
     listByBook: () => [
       { id: 'c1', bookId: 'book-1', index: 0, title: 'A', segmentCount: 10, audioBytes: 0, generateStatus: 'none' as const },
       { id: 'c2', bookId: 'book-1', index: 1, title: 'B', segmentCount: 32, audioBytes: 0, generateStatus: 'none' as const },
@@ -102,6 +125,7 @@ const setup = (options: {
       library,
       sessions,
       books,
+      bookmarks,
       chapters,
       segments,
       removeFiles: async (b: Book) => {
@@ -397,5 +421,106 @@ describe('library:list', () => {
     const result = handlers.list();
 
     expect(result).toEqual({ ok: true, data: [] });
+  });
+});
+
+describe('library:getStats (P5.4)', () => {
+  it('gộp số chương, số đoạn, audio và dấu trang', () => {
+    const { handlers } = setup({
+      findBook: () => ({ ...book(), lastSegmentId: 'seg-42', lastOpenedAt: 7000 }),
+      bookStats: {
+        segmentCount: 42,
+        readyCount: 10,
+        totalDurationMs: 60000,
+        totalAudioBytes: 180000,
+      },
+      countBefore: 25,
+      bookmarkCount: 3,
+    });
+
+    const result = handlers.getStats('book-1');
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        bookId: 'book-1',
+        chapterCount: 2,
+        // `seg-42` nằm ở chương index 1 → đúng 1 chương đã đọc xong
+        chaptersRead: 1,
+        segmentCount: 42,
+        segmentsRead: 25,
+        segmentsWithAudio: 10,
+        audioDurationMs: 60000,
+        audioBytes: 180000,
+        currentChapterTitle: 'B',
+        lastOpenedAt: 7000,
+        bookmarkCount: 3,
+      },
+    });
+  });
+
+  it('sách chưa mở lần nào: 0 đoạn đã đọc, không có chương hiện tại', () => {
+    const { handlers } = setup({ findBook: () => book() });
+    const result = handlers.getStats('book-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.segmentsRead).toBe(0);
+      expect(result.data.chaptersRead).toBe(0);
+      expect(result.data).not.toHaveProperty('currentChapterTitle');
+      expect(result.data).not.toHaveProperty('lastOpenedAt');
+    }
+  });
+
+  it('vị trí đọc trỏ vào đoạn đã mất thì coi như chưa đọc', () => {
+    // Nhập lại sách sinh ID segment mới; `last_segment_id` cũ thành rác. Suy số
+    // liệu từ đó sẽ cho phần trăm bịa ra.
+    const { handlers } = setup({
+      findBook: () => ({ ...book(), lastSegmentId: 'seg-cũ' }),
+      findSegment: () => undefined,
+      countBefore: 999,
+    });
+
+    const result = handlers.getStats('book-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.segmentsRead).toBe(0);
+      expect(result.data.chaptersRead).toBe(0);
+      expect(result.data).not.toHaveProperty('currentChapterTitle');
+    }
+  });
+
+  it('sách chưa generate gì vẫn trả số 0, không phải lỗi', () => {
+    const { handlers } = setup({
+      findBook: () => book(),
+      bookStats: {
+        segmentCount: 42,
+        readyCount: 0,
+        totalDurationMs: 0,
+        totalAudioBytes: 0,
+      },
+    });
+
+    const result = handlers.getStats('book-1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.segmentsWithAudio).toBe(0);
+      expect(result.data.audioDurationMs).toBe(0);
+    }
+  });
+
+  it('sách không tồn tại trả NOT_FOUND', () => {
+    const { handlers } = setup({ findBook: () => undefined });
+    const result = handlers.getStats('không-có');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('bookId rỗng bị chặn ở biên', () => {
+    const { handlers } = setup();
+    expect(() => handlers.getStats('')).toThrow(InvalidInputError);
   });
 });

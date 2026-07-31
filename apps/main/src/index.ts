@@ -29,6 +29,8 @@ import { createBookRepository } from './db/repositories/books.js';
 import { createChapterRepository } from './db/repositories/chapters.js';
 import { createSegmentRepository } from './db/repositories/segments.js';
 import { createPronunciationRepository } from './db/repositories/pronunciations.js';
+import { createBookmarkRepository } from './db/repositories/bookmarks.js';
+import { createBookmarkHandlers } from './ipc/handlers/bookmarks.js';
 import { createJobRepository } from './db/repositories/jobs.js';
 import { createGenerateQueue } from './services/queue.js';
 import { createTimingsStore } from './services/timings-store.js';
@@ -127,6 +129,7 @@ const start = (): void => {
   const segmentRepo = createSegmentRepository(db);
   const jobRepo = createJobRepository(db);
   const pronunciationRepo = createPronunciationRepository(db);
+  const bookmarkRepo = createBookmarkRepository(db);
 
   // Một instance dùng chung cho cả hàng đợi (ghi) lẫn trình đọc (đọc): store
   // không giữ trạng thái nào, nhưng dựng hai bản thì lần sau sửa cách ghi mà
@@ -151,6 +154,7 @@ const start = (): void => {
     }),
     sessions: importSessions,
     books: bookRepo,
+    bookmarks: bookmarkRepo,
     chapters: chapterRepo,
     segments: segmentRepo,
     // Xoá sách phải xoá cả file đã copy và audio, nếu không thư mục cứ phình
@@ -274,6 +278,13 @@ const start = (): void => {
     now: () => Date.now(),
   });
 
+  const bookmarkHandlers = createBookmarkHandlers({
+    bookmarks: bookmarkRepo,
+    segments: segmentRepo,
+    newId: randomUUID,
+    now: () => Date.now(),
+  });
+
   registerHandler('app:getInfo', getAppInfo, logger);
   registerHandler('settings:getAll', settingsHandlers.getAll, logger);
   registerHandler('settings:update', settingsHandlers.update, logger);
@@ -288,6 +299,11 @@ const start = (): void => {
   registerHandler('library:openBook', libraryHandlers.openBook, logger);
   registerHandler('library:setProgress', libraryHandlers.setProgress, logger);
   registerHandler('library:removeBook', libraryHandlers.removeBook, logger);
+  registerHandler('library:getStats', libraryHandlers.getStats, logger);
+  registerHandler('bookmarks:list', bookmarkHandlers.list, logger);
+  registerHandler('bookmarks:add', bookmarkHandlers.add, logger);
+  registerHandler('bookmarks:updateNote', bookmarkHandlers.updateNote, logger);
+  registerHandler('bookmarks:remove', bookmarkHandlers.remove, logger);
   registerHandler('reader:getBookFile', readerHandlers.getBookFile, logger);
   registerHandler('reader:getBookHtml', readerHandlers.getBookHtml, logger);
   registerHandler('reader:listSegments', readerHandlers.listSegments, logger);

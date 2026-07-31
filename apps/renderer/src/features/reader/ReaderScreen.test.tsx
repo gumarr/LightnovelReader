@@ -724,3 +724,122 @@ describe('phụ đề + splitter (P3.4)', () => {
     expect(pane.textContent).toContain('Bấm phát');
   });
 });
+
+describe('panel phải: ba tab (P5.4)', () => {
+  it('mở mặc định ở tab Đoạn', async () => {
+    await setup();
+
+    expect(await screen.findByTestId('segment-scroll')).toBeInTheDocument();
+    expect(screen.getByTestId('panel-tab-segments')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('chuyển sang tab Dấu trang', async () => {
+    await setup();
+
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('panel-tab-bookmarks'));
+    });
+
+    expect(screen.getByTestId('bookmark-empty')).toBeInTheDocument();
+    // Danh sách đoạn nhường chỗ, không chồng lên nhau
+    expect(screen.queryByTestId('segment-scroll')).toBeNull();
+  });
+
+  it('chuyển sang tab Hàng đợi và nạp danh sách job', async () => {
+    await setup();
+
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('panel-tab-queue'));
+    });
+
+    expect(screen.getByTestId('queue-table')).toBeInTheDocument();
+    expect(fake.api.queue.listPending).toHaveBeenCalled();
+  });
+
+  it('KHÔNG gọi listPending khi chưa mở tab hàng đợi', async () => {
+    // Danh sách tới 200 job — kéo về cho một bảng đang đóng là phí
+    await setup();
+
+    expect(fake.api.queue.listPending).not.toHaveBeenCalled();
+  });
+
+  it('đóng bảng hàng đợi thì quay về tab Đoạn', async () => {
+    await setup();
+
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('panel-tab-queue'));
+    });
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('queue-table-close'));
+    });
+
+    expect(await screen.findByTestId('segment-scroll')).toBeInTheDocument();
+  });
+});
+
+describe('dấu trang trong trình đọc (P5.4)', () => {
+  it('nạp dấu trang và thống kê khi mở sách', async () => {
+    await setup();
+
+    await waitFor(() => {
+      expect(fake.api.bookmarks.list).toHaveBeenCalledWith('book-1');
+    });
+    expect(fake.api.library.getStats).toHaveBeenCalledWith('book-1');
+  });
+
+  it('nút đánh dấu bị vô hiệu hoá khi chưa chọn đoạn nào', async () => {
+    await setup();
+
+    expect(screen.getByTestId('bookmark-toggle')).toBeDisabled();
+  });
+
+  it('chọn một đoạn rồi đánh dấu được đúng đoạn đó', async () => {
+    await setup();
+
+    const items = await screen.findAllByTestId('segment-row');
+    await act(async () => {
+      await userEvent.click(items[1]!);
+    });
+
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('bookmark-toggle'));
+    });
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('bookmark-save'));
+    });
+
+    // Neo vào đoạn ĐANG CHỌN, không phải đoạn đang phát
+    expect(fake.api.bookmarks.add).toHaveBeenCalledWith(
+      expect.objectContaining({ bookId: 'book-1', segmentId: 'ch-1-s2' }),
+    );
+  });
+
+  it('bấm dấu trang ở chương khác thì đổi chương trước khi chọn đoạn', async () => {
+    // Không đổi chương thì `segments` vẫn là chương cũ và không có gì xảy ra —
+    // trông như nút hỏng.
+    fake.api.bookmarks.list.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          bookmark: { id: 'bm-9', bookId: 'book-1', segmentId: 'ch-3-s1', createdAt: 1 },
+          chapterTitle: 'Chương 3',
+          chapterIndex: 2,
+          segmentIndex: 0,
+          excerpt: 'Đoạn ở chương ba.',
+        },
+      ],
+    });
+    await setup();
+
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('panel-tab-bookmarks'));
+    });
+    await act(async () => {
+      await userEvent.click(await screen.findByTestId('bookmark-item'));
+    });
+
+    await waitFor(() => {
+      expect(fake.api.reader.listSegments).toHaveBeenCalledWith('ch-3');
+    });
+  });
+});

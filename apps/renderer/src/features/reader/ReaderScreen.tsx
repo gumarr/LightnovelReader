@@ -14,6 +14,11 @@ import { usePlayerStore } from '@/stores/player-store';
 import { SubtitlePane } from '@/features/player/SubtitlePane';
 import { PronunciationDialog } from '@/features/player/PronunciationDialog';
 import { usePronunciationStore } from '@/stores/pronunciation-store';
+import { useBookmarkStore } from '@/stores/bookmark-store';
+import { BookmarkButton } from '@/features/bookmarks/BookmarkButton';
+import { BookmarkList } from '@/features/bookmarks/BookmarkList';
+import { ReadingStatsPanel } from '@/features/bookmarks/ReadingStatsPanel';
+import { QueueTable } from '@/features/generate/QueueTable';
 import { loadPdf } from './pdf-document';
 import { PdfViewer } from './PdfViewer';
 import { DocxViewer } from './DocxViewer';
@@ -27,6 +32,21 @@ import { PaneSplitter } from './PaneSplitter';
  * Khung 2/3–1/3 như mockup plan.md, dựng ở P3.4 khi đã có timing từng từ. Tỉ lệ
  * user kéo được và nhớ qua phiên (`viewerPaneRatio`).
  */
+
+/**
+ * Tab của panel bên phải.
+ *
+ * Dồn ba thứ vào **một** panel thay vì mở thêm cột: cửa sổ đã chia làm viewer +
+ * phụ đề + panel, thêm cột thứ tư thì trang sách hẹp lại tới mức khó đọc. Ba
+ * nội dung này cũng không cần nhìn cùng lúc.
+ */
+type PanelTab = 'segments' | 'bookmarks' | 'queue';
+
+const PANEL_TABS: readonly { id: PanelTab; label: string }[] = [
+  { id: 'segments', label: 'Đoạn' },
+  { id: 'bookmarks', label: 'Dấu trang' },
+  { id: 'queue', label: 'Hàng đợi' },
+];
 
 export type ReaderScreenProps = {
   detail: BookDetail;
@@ -98,7 +118,11 @@ export const ReaderScreen = ({
   const [editingTerm, setEditingTerm] = useState<string | null>(null);
 
   const loadPronunciations = usePronunciationStore((s) => s.load);
+  const loadBookmarks = useBookmarkStore((s) => s.load);
+  const resetBookmarks = useBookmarkStore((s) => s.reset);
   const [showSubtitle, setShowSubtitle] = useState(true);
+  /** Tab đang mở ở panel phải. `queue` chỉ mở khi user chủ động xem hàng đợi */
+  const [panelTab, setPanelTab] = useState<PanelTab>('segments');
 
   const activeSegment = useReaderStore(activeSegmentOf);
 
@@ -132,6 +156,16 @@ export const ReaderScreen = ({
   useEffect(() => {
     void loadPronunciations(book.id);
   }, [book.id, loadPronunciations]);
+
+  // Dấu trang + thống kê của sách đang mở. `reset` khi rời trình đọc, nếu không
+  // dấu trang sách này còn nằm đó lúc mở sách khác — nút "Đánh dấu" sẽ sáng cho
+  // một đoạn thuộc sách cũ.
+  useEffect(() => {
+    void loadBookmarks(book.id);
+    return () => {
+      resetBookmarks();
+    };
+  }, [book.id, loadBookmarks, resetBookmarks]);
 
   // Hàng đợi generate: nạp trạng thái một lần rồi nghe event. Hai nguồn đẩy —
   // số đếm cho thanh tiến độ, và segment vừa xong để đổi trạng thái trong danh
@@ -247,6 +281,27 @@ export const ReaderScreen = ({
     }
   };
 
+  /**
+   * Nhảy tới một dấu trang.
+   *
+   * Dấu trang có thể nằm ở **chương khác** chương đang mở — khi đó phải nạp
+   * chương trước rồi mới chọn được đoạn, vì `segments` trong store chỉ chứa
+   * chương hiện tại. Bấm chọn ngay mà không đổi chương thì không có gì xảy ra
+   * và trông như nút hỏng.
+   */
+  const handleSelectBookmark = (segmentId: string, chapterIndex: number): void => {
+    const target = chapters.find((c) => c.index === chapterIndex);
+
+    if (target !== undefined && target.id !== chapterId) {
+      void loadChapter(target.id).then(() => {
+        handleSelectSegment(segmentId);
+      });
+      return;
+    }
+
+    handleSelectSegment(segmentId);
+  };
+
   const message = pdfError ?? error;
 
   return (
@@ -272,6 +327,13 @@ export const ReaderScreen = ({
           currentChapterId={chapterId}
           onSelect={(id) => void loadChapter(id)}
         />
+
+        {/*
+          Neo vào đoạn **đang chọn**, không phải đoạn đang phát: khi user bấm một
+          đoạn để xem nó ở trang nào trong lúc đang nghe chỗ khác, thứ họ muốn
+          đánh dấu là đoạn vừa bấm.
+        */}
+        <BookmarkButton segmentId={activeSegmentId} />
 
         <button
           type="button"
@@ -369,6 +431,26 @@ export const ReaderScreen = ({
               />
             </div>
 
+            <div role="tablist" className="flex shrink-0 border-b border-border">
+              {PANEL_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={panelTab === tab.id}
+                  data-testid={`panel-tab-${tab.id}`}
+                  onClick={() => setPanelTab(tab.id)}
+                  className={`flex-1 border-b-2 px-2 py-1.5 text-xs transition-colors ${
+                    panelTab === tab.id
+                      ? 'border-accent text-fg'
+                      : 'border-transparent text-fg-muted hover:bg-bg-subtle hover:text-fg'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             {/*
               `flex-1 min-h-0` là bắt buộc, không phải trang trí. Thiếu nó thì ô
               cuộn bên trong `SegmentList` (`h-full`) lấy chiều cao theo **nội
@@ -378,13 +460,34 @@ export const ReaderScreen = ({
               như hết lỗi. `min-h-0` để flex item được phép co dưới chiều cao nội
               dung, nếu không nó đẩy tràn cả `aside`.
             */}
-            <div className="min-h-0 flex-1">
-              <SegmentList
-                segments={segments}
-                activeSegmentId={activeSegmentId}
-                onSelect={handleSelectSegment}
-              />
-            </div>
+            {/*
+              Mỗi tab một khối `flex-1 min-h-0` RIÊNG, không dùng chung một khối
+              bọc rồi nhánh bên trong. Ô cuộn của `SegmentList` là `h-full` nên
+              nó phải là **con trực tiếp** của khối co giãn được — chèn thêm một
+              lớp `div` vào giữa là dựng lại đúng lỗi 4.43 (danh sách bị cắt mất
+              nửa dưới lúc mở chương). Test ở `ReaderScreen.test.tsx` khoá đúng
+              ràng buộc này.
+            */}
+            {panelTab === 'segments' ? (
+              <div className="min-h-0 flex-1">
+                <SegmentList
+                  segments={segments}
+                  activeSegmentId={activeSegmentId}
+                  onSelect={handleSelectSegment}
+                />
+              </div>
+            ) : panelTab === 'bookmarks' ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <ReadingStatsPanel />
+                <div className="border-t border-border">
+                  <BookmarkList onSelect={handleSelectBookmark} />
+                </div>
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                <QueueTable onClose={() => setPanelTab('segments')} />
+              </div>
+            )}
           </aside>
         ) : null}
       </div>

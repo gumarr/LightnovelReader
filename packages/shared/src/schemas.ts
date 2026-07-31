@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   AUDIO_BITRATES,
+  BOOKMARK_NOTE_MAX,
   PLAYBACK_RATE_MAX,
   PLAYBACK_RATE_MIN,
   SEGMENT_MAX_CHARS,
@@ -262,3 +263,34 @@ export const savePronunciationSchema = z.object({
 });
 
 export const pronunciationIdSchema = z.string().min(1).max(64);
+
+/**
+ * Dấu trang (P5.4).
+ *
+ * `note` **bỏ trống được**, và chuỗi chỉ toàn khoảng trắng phải quy về "không
+ * có ghi chú" chứ không lưu thành `" "`: bảng `bookmarks` cho `note` NULL, mà
+ * hai cách biểu diễn cùng một thứ thì UI phải xử lý cả hai. Chuẩn hoá ở biên.
+ */
+export const bookmarkNoteSchema = z
+  .string()
+  .max(BOOKMARK_NOTE_MAX)
+  .transform((value) => value.trim());
+
+export const addBookmarkSchema = z.object({
+  bookId: bookIdSchema,
+  segmentId: z.string().min(1).max(64),
+  note: bookmarkNoteSchema.optional(),
+});
+
+export const bookmarkIdSchema = z.string().min(1).max(64);
+
+/**
+ * Sửa ghi chú của dấu trang đã có.
+ *
+ * Chỉ cho sửa `note`: đổi `segmentId` nghĩa là một dấu trang khác hẳn, mà giữ
+ * nguyên id thì lịch sử `createdAt` nói dối về thời điểm user đánh dấu chỗ đó.
+ */
+export const updateBookmarkNoteSchema = z.object({
+  id: bookmarkIdSchema,
+  note: bookmarkNoteSchema,
+});

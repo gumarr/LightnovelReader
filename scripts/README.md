@@ -53,6 +53,10 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
 | Thanh cỡ chữ phụ đề có giá trị thật | màn Cài đặt (P5.3) không nạp được settings |
 | **Xem thử khớp cỡ chữ đang chọn** | preview lệch thanh trượt → user chỉnh theo thứ mình nhìn rồi phụ đề ra khác |
 | Chữ xem thử không trong suốt | lại rơi vào bẫy 4.23 ở component mới |
+| Nút đánh dấu hiện ra, chữ không trong suốt | P5.4 nối `bookmarks:*` — bảng có từ schema v1 mà thiếu chỗ bấm |
+| **Mỗi tab panel có chiều cao thật** | mỗi tab một khối `flex-1 min-h-0` riêng; chèn thêm lớp `div` là dựng lại lỗi 4.43 |
+| Hai thanh tiến độ đọc/audio không trong suốt | lỡ dùng token màu **không tồn tại** (`bg-success`) → trong suốt, không đỏ ở đâu cả |
+| Bảng hàng đợi nạp được (rỗng hoặc có job) | `queue:listPending` chưa từng gọi từ UI trước P5.4 |
 | Thanh player hiện ra, màu không trong suốt | `PlayerBar` hỏng bố cục hoặc mất màu |
 | Icon điều khiển vẽ ra hình thật, ăn màu chữ | icon SVG hỏng path, hoặc lỡ quay lại dùng emoji (P3.3) |
 | Thanh tiến độ có bề ngang & chiều cao thật | `SegmentProgress` hỏng bố cục — đúng loại lỗi 4.43 |

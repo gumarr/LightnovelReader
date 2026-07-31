@@ -59,6 +59,11 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.library.openBook('book-1'),
     () => api.library.setProgress({ bookId: 'book-1', segmentId: 'seg-1' }),
     () => api.library.removeBook('book-1'),
+    () => api.library.getStats('book-1'),
+    () => api.bookmarks.list('book-1'),
+    () => api.bookmarks.add({ bookId: 'book-1', segmentId: 'seg-1' }),
+    () => api.bookmarks.updateNote({ id: 'bm-1', note: 'ghi chú' }),
+    () => api.bookmarks.remove('bm-1'),
     () => api.reader.getBookFile('book-1'),
     () => api.reader.getBookHtml('book-1'),
     () => api.reader.listSegments('ch-1'),
@@ -126,6 +131,7 @@ describe('bề mặt window.api', () => {
     expect(surface).not.toContain('ipcRenderer');
     expect(Object.keys(api).sort()).toEqual([
       'app',
+      'bookmarks',
       'import',
       'library',
       'pronunciations',

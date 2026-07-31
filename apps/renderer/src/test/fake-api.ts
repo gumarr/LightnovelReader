@@ -8,6 +8,7 @@ import {
   type BookDetail,
   type BookFileBytes,
   type BookHtml,
+  type BookmarkEntry,
   type Chapter,
   type ChapterPreviewRequest,
   type ChapterUsageInfo,
@@ -21,7 +22,10 @@ import {
   type QueueStatusInfo,
   type PronunciationOverride,
   type ReadingProgress,
+  type ReadingStats,
   type SavePronunciationRequest,
+  type AddBookmarkRequest,
+  type UpdateBookmarkNoteRequest,
   type Result,
   type InstalledVoice,
   type SaveBookRequest,
@@ -74,6 +78,10 @@ export type FakeApiOptions = {
   chapterUsage?: ChapterUsageInfo[];
   /** Phiên âm user đã lưu. Mặc định rỗng */
   pronunciations?: PronunciationOverride[];
+  /** Dấu trang đã lưu. Mặc định rỗng */
+  bookmarks?: BookmarkEntry[];
+  /** Thống kê đọc trả cho `library.getStats`. Mặc định một sách đọc dở */
+  stats?: Partial<ReadingStats>;
 };
 
 /** Voice mẫu cho test voice manager */
@@ -104,6 +112,22 @@ export const fakeSegments = (chapterId: string, count = 3): Segment[] =>
     status: 'pending' as const,
     alignStatus: 'none' as const,
   }));
+
+/** Dấu trang mẫu — ngữ cảnh do main ghép sẵn, renderer chỉ hiện */
+export const fakeBookmark = (overrides: Partial<BookmarkEntry> = {}): BookmarkEntry => ({
+  bookmark: {
+    id: 'bm-1',
+    bookId: 'book-1',
+    segmentId: 'book-1-c1-s1',
+    note: 'Chỗ đáng nhớ',
+    createdAt: 1000,
+  },
+  chapterTitle: 'Chương 1',
+  chapterIndex: 0,
+  segmentIndex: 0,
+  excerpt: 'Câu thứ 1 của đoạn văn.',
+  ...overrides,
+});
 
 /** Sách mẫu để test Library grid */
 export const fakeBook = (overrides: Partial<Book> = {}): Book => ({
@@ -228,6 +252,7 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
   const chapterUsage: ChapterUsageInfo[] = options.chapterUsage ?? [];
 
   const pronunciations: PronunciationOverride[] = [...(options.pronunciations ?? [])];
+  const bookmarks: BookmarkEntry[] = [...(options.bookmarks ?? [])];
 
   /**
    * Trừ dung lượng đã xoá khỏi tổng.
@@ -313,6 +338,82 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       }),
       setProgress: vi.fn(async (_progress: ReadingProgress) => ok(undefined)),
       removeBook: vi.fn(async (_bookId: string) => ok(undefined)),
+      getStats: vi.fn(
+        async (bookId: string): Promise<Result<ReadingStats>> =>
+          ok({
+            bookId,
+            chapterCount: 3,
+            chaptersRead: 1,
+            segmentCount: 120,
+            segmentsRead: 45,
+            segmentsWithAudio: 60,
+            audioDurationMs: 600000,
+            audioBytes: 1800000,
+            currentChapterTitle: 'Chương 2',
+            lastOpenedAt: 1000,
+            bookmarkCount: bookmarks.length,
+            ...options.stats,
+          }),
+      ),
+    },
+
+    bookmarks: {
+      list: vi.fn(async (_bookId: string): Promise<Result<BookmarkEntry[]>> => ok([...bookmarks])),
+      add: vi.fn(async (request: AddBookmarkRequest): Promise<Result<BookmarkEntry>> => {
+        // Đánh dấu lại đúng đoạn thì cập nhật ghi chú, giống `upsert` thật —
+        // bản giả tạo bản trùng sẽ cho test xanh ở ca DB thật không bao giờ có.
+        const at = bookmarks.findIndex((e) => e.bookmark.segmentId === request.segmentId);
+        const note = request.note?.trim() ?? '';
+        if (at >= 0) {
+          const found = bookmarks[at]!;
+          // Bỏ `note` cũ ra trước khi ghép — xem chú thích ở `updateNote`
+          const { note: _dropped, ...rest } = found.bookmark;
+          const updated: BookmarkEntry = {
+            ...found,
+            bookmark: {
+              ...rest,
+              ...(note === '' ? {} : { note }),
+            },
+          };
+          bookmarks[at] = updated;
+          return ok(updated);
+        }
+        const created = fakeBookmark({
+          bookmark: {
+            id: `bm-${String(bookmarks.length + 1)}`,
+            bookId: request.bookId,
+            segmentId: request.segmentId,
+            ...(note === '' ? {} : { note }),
+            createdAt: 2000,
+          },
+        });
+        bookmarks.push(created);
+        return ok(created);
+      }),
+      updateNote: vi.fn(
+        async (request: UpdateBookmarkNoteRequest): Promise<Result<BookmarkEntry>> => {
+          const at = bookmarks.findIndex((e) => e.bookmark.id === request.id);
+          if (at < 0) return err('NOT_FOUND', 'Dấu trang này đã bị xoá.');
+          const found = bookmarks[at]!;
+          // Bỏ `note` cũ ra TRƯỚC khi ghép: trải `...found.bookmark` rồi ghép
+          // nhánh rỗng vẫn giữ nguyên ghi chú cũ, trong khi DB thật ghi NULL.
+          const { note: _dropped, ...rest } = found.bookmark;
+          const updated: BookmarkEntry = {
+            ...found,
+            bookmark: {
+              ...rest,
+              ...(request.note === '' ? {} : { note: request.note }),
+            },
+          };
+          bookmarks[at] = updated;
+          return ok(updated);
+        },
+      ),
+      remove: vi.fn(async (id: string): Promise<Result<void>> => {
+        const at = bookmarks.findIndex((e) => e.bookmark.id === id);
+        if (at >= 0) bookmarks.splice(at, 1);
+        return ok(undefined);
+      }),
     },
 
     reader: {

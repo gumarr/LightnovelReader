@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-31 · commit `fb2c264`
+> **Cập nhật lần cuối:** 2026-07-31 · commit `<điền sau khi commit>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,14 +39,15 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P5.4 — xem mục 3.
+**Việc tiếp theo:** P5.5 — xem mục 3.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
 Xem mục 4.68 để biết lý do đầy đủ và **điều kiện mở lại**.
 
-**Phase 5 đang làm: P5.1 + P5.2 + P5.3 xong** (giọng VI thứ hai + nghe thử giọng;
-UI sửa cách đọc — trả nợ treo từ P3.5; màn Cài đặt + ba nợ mức TB).
+**Phase 5 đang làm: P5.1 → P5.4 xong** (giọng VI thứ hai + nghe thử giọng; UI sửa
+cách đọc — trả nợ treo từ P3.5; màn Cài đặt + ba nợ mức TB; dấu trang + thống kê
+đọc + bảng hàng đợi — nối ba thứ hạ tầng đã dựng sẵn mà chưa ai gọi tới).
 
 ---
 
@@ -1034,16 +1035,84 @@ viewer lấy hết chỗ 588→864 px, hiện lại về đúng 147 px.
 ⚠️ Nhưng **hai phép kiểm màu phụ đề đỏ giả** ở lượt này — lỗi của chính phép
 kiểm, không phải app. Xem mục 4.72.
 
+### Phase 5 — P5.4 Dấu trang + thống kê đọc + bảng hàng đợi ✅
+
+Cả ba phần đều cùng một hình dạng với P5.3: **hạ tầng đã có sẵn, thiếu đường
+gọi**. Bảng `bookmarks` nằm trong schema **v1** — bốn phase liền user không đánh
+dấu được chỗ nào dù DB đã sẵn sàng. `queue:listPending` + `queue:cancelJob` có
+handler, có zod schema, có test từ **P2.6** mà chưa lần nào được gọi từ UI.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `main/db/repositories/bookmarks.ts` | Repository đầu tiên cho bảng schema v1 (mới) | 20 |
+| `main/ipc/handlers/bookmarks.ts` | 4 kênh `bookmarks:*` (mới) | 22 |
+| `main/ipc/handlers/library.ts` | `getStats` — suy số từ dữ liệu đã có | +6 |
+| `main/db/repositories/segments.ts` | `bookStats` + `countBefore` | +7 |
+| `renderer/stores/bookmark-store.ts` | Dấu trang **và** thống kê chung một store (mới) | 18 |
+| `renderer/features/bookmarks/BookmarkButton.tsx` | Nút đánh dấu + ô ghi chú (mới) | 13 |
+| `renderer/features/bookmarks/BookmarkList.tsx` | Danh sách theo mạch đọc (mới) | 11 |
+| `renderer/features/bookmarks/ReadingStatsPanel.tsx` | Hai thanh tiến độ (mới) | ↑ |
+| `renderer/features/bookmarks/stats-format.ts` | Hàm thuần: %, nhãn vị trí (mới) | 13 |
+| `renderer/features/generate/QueueTable.tsx` | Bảng hàng đợi + huỷ từng job (mới) | 10 |
+| `renderer/features/generate/job-format.ts` | Nhãn ưu tiên/trạng thái job (mới) | 10 |
+| `renderer/stores/queue-store.ts` | `loadPending` + `cancelJob` | +6 |
+| `renderer/features/reader/ReaderScreen.tsx` | Panel phải thành **3 tab** | +10 |
+| `scripts/ui-check.mjs` | 10 phép kiểm mới | — |
+
+**Năm quyết định đáng nhớ:**
+
+- **Thống kê KHÔNG có bảng theo dõi hành vi.** Đây là lựa chọn có ý thức, không
+  phải cắt gọt: mọi con số suy từ thứ DB đã lưu vì việc khác (`last_segment_id`,
+  `segments.status`). Muốn biết "đọc bao lâu mỗi ngày" thì phải ghi mốc từng
+  phiên — đó là telemetry cục bộ, mà CLAUDE.md cấm thu thập. "Thống kê đọc" ở
+  đây nghĩa là *đọc tới đâu rồi*, không phải *đọc thế nào*.
+- **Hai thanh tiến độ riêng, không gộp.** Tiến độ *đọc* và tiến độ *generate*
+  thường lệch nhau rất nhiều (đọc chương 2 mà đã generate cả sách, hoặc ngược
+  lại). Gộp một thanh là nói dối về cả hai.
+- **Phần trăm tính theo segment, không theo chương.** Sách 8 chương thì đếm theo
+  chương nhảy 12,5% một nấc rồi đứng im suốt cả chương — vô dụng đúng lúc user
+  cần nhất. `countBefore` đếm xuyên chương bằng SQL (`c.idx < ? OR (c.idx = ? AND
+  s.idx < ?)`); so `s.idx` đơn thuần thì đoạn đầu chương 5 ra "0 đoạn đứng trước"
+  vì chỉ số segment đếm lại từ 0 ở mỗi chương.
+- **Dấu trang và thống kê chung MỘT store.** Chúng luôn đổi cùng nhau — thêm hay
+  xoá dấu trang là `bookmarkCount` lệch ngay. Tách hai store thì mỗi thao tác
+  phải nhớ gọi hai lượt nạp, quên một chỗ là con số sai âm thầm. Cũng **không tự
+  cộng trừ** `bookmarkCount` ở renderer: `add` có thể là *cập nhật* một mục đã
+  có, đoán sai chiều thì con số trôi dần mà không lượt nạp nào sửa lại.
+- **Đánh dấu neo vào đoạn ĐANG CHỌN, không phải đoạn đang phát.** Hai thứ này
+  lệch nhau khi user bấm một đoạn để xem nó ở trang nào trong lúc đang nghe chỗ
+  khác — và lúc đó thứ họ muốn đánh dấu là đoạn vừa bấm, thứ đang nhìn.
+
+**Bảng hàng đợi không hỏi vòng.** Danh sách tới 200 job và **không có event nào
+đẩy nó xuống** (khác `status` vốn tự cập nhật qua `queue:statusChanged`). Nạp một
+lần khi mở tab, thêm nút "Nạp lại". Có test khoá lại rằng `listPending` **không**
+được gọi khi tab hàng đợi chưa mở.
+
+**Không thêm migration cho `bookmarks`.** Bảng schema v1 không có
+`UNIQUE(book_id, segment_id)`, nhưng "đánh dấu lại đúng đoạn thì cập nhật ghi
+chú" làm được bằng `upsert` tự tra trong một transaction. Đổi một migration lấy
+một ràng buộc mà cú bấm của người vốn không chạy song song là không đáng.
+
+**Một lỗi thật bắt được trong lúc viết test:** `cancelJob` gọi `loadPending` ngay
+sau đó, mà `call()` mặc định **xoá lỗi khi thành công** — nên thông báo "job này
+đã xong rồi" biến mất trong cùng một nhịp, trước khi user kịp đọc. Store đã có
+sẵn quy ước `clearOnSuccess: false` cho đúng ca này (lượt gọi *phụ* sau một hành
+động); thêm tham số `keepError` cho `loadPending`. Test khoá lại cả hai chiều:
+huỷ hỏng thì **giữ** lỗi, huỷ được thì **xoá** lỗi cũ.
+
+⚠️ **Chưa chạy trên app thật.** Toàn bộ P5.4 mới ở mức unit test. 10 phép kiểm
+`ui-check` đã viết sẵn — chỉ còn chạy. Xem mục 8.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1991 passed** (+20 ở P5.3 — settings, ngôn ngữ sách, xoá phần đã đọc, cỡ chữ, điều hướng) |
-| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.3 — phần này thuần renderer) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, nay **có typecheck** (P5.3) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **63 phép kiểm** (+5 ở P5.3) — **đã chạy thật, 59 đạt**. 2 đỏ giả đã sửa (4.72), 2 đỏ thật là nợ virtualizer có sẵn từ trước P3.3. P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| Unit test TypeScript | **2131 passed** (+140 ở P5.4 — dấu trang 4 tầng, thống kê, bảng hàng đợi, 3 tab) |
+| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.4 — phần này không đụng sidecar) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
+| **Kiểm UI thật (`pnpm ui-check`)** | **73 phép kiểm** (+10 ở P5.4) — lần chạy gần nhất là sau P5.3: **59/63 đạt**. Phần P5.4 **chưa chạy lần nào**. P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Giọng đọc trong catalog | **3** (2 VI + 1 EN) — xem mục 8 về giọng nhiều người nói |
-| Schema DB | **v3** (v3 thêm `pronunciation_overrides` — mục 4.59) |
+| Schema DB | **v3** — P5.4 **không** thêm migration, xem lý do ở mục 4.73 |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
@@ -1065,12 +1134,16 @@ Phase 5 chia **năm phần** (thống nhất với user — mỗi phần một c
 | P5.1 | Thêm giọng VI thứ hai vào catalog + nghe thử giọng sau khi tải | ✅ Xong |
 | P5.2 | UI tầng 3 phiên âm: sửa cách đọc từ menu chuột phải trên phụ đề (nợ mục 8) | ✅ Xong |
 | P5.3 | Màn Cài đặt (cỡ chữ phụ đề) + trả 3 nợ mức TB | ✅ Xong |
-| P5.4 | Bookmark + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ⬅️ **tiếp theo** |
-| P5.5 | Đóng gói: icon app, auto-update, README qua SmartScreen, log rotate | ⬜ |
+| P5.4 | Dấu trang + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ✅ Xong |
+| P5.5 | Đóng gói: icon app, auto-update, README qua SmartScreen, log rotate | ⬅️ **tiếp theo** |
 
 ✅ **`pnpm ui-check` đã chạy sau P5.3 — 59/63 đạt.** Toàn bộ P3.4 và P5.3 xanh.
 4 phép đỏ: 2 là **đỏ giả của chính phép kiểm** (mục 4.72, đã sửa), 2 là nợ
 virtualizer có sẵn từ trước P3.3 (mục 8).
+
+⚠️ **P5.4 thêm 10 phép kiểm nhưng CHƯA chạy lần nào** (73 phép tổng). Hai thứ
+đáng ngờ nhất ở đó: chiều cao thật của từng tab panel (đúng loại lỗi 4.43) và
+màu hai thanh tiến độ (đúng loại lỗi 4.23 — jsdom không thấy được cả hai).
 
 ⚠️ **Còn lại phải bấm tay** — `ui-check` không thay được: nút "Nghe thử" giọng
 (P5.1) và chuột phải sửa cách đọc (P5.2). CDP không đọc được đầu ra âm thanh.
@@ -2970,6 +3043,42 @@ Rỗng nghĩa là user không đổi được thứ đó dù DB vẫn lưu.
 `alignmentEnabled` là ca **cố ý giữ**: Phase 4 đã bỏ nên không có gì để bật/tắt,
 mà gỡ khỏi schema thì tốn một migration đổi lấy hư không. Đừng dựng UI cho nó.
 
+### 4.73 "Hạ tầng chết" — cùng bệnh với 4.71 nhưng ở tầng IPC
+
+P5.4 nối **ba** thứ đã dựng sẵn mà chưa có đường gọi. Đây là cùng một bệnh với
+mục 4.71, chỉ khác chỗ nó nằm: không phải một field trong `AppSettings` mà là cả
+một bảng DB hoặc cả một kênh IPC.
+
+| Thứ chết | Dựng từ | Nối ở | Nằm chết |
+|---|---|---|---|
+| Bảng `bookmarks` | **schema v1** | P5.4 | ~5 phase |
+| `queue:listPending` | P2.6 | P5.4 | ~3 phase |
+| `queue:cancelJob` | P2.6 | P5.4 | ~3 phase |
+| `pronunciations:*` | P3.5 | P5.2 | ~2 phase |
+| `app:getInfo` | Phase 0 | P5.3 | ~5 phase |
+
+Nguy hiểm hơn setting chết ở một điểm: chúng **có test riêng và test đều xanh**.
+`queue:cancelJob` có 4 test ở `queue.test.ts`, bảng `bookmarks` có ràng buộc
+CASCADE đúng — nhưng không ai gọi tới thì với user chúng không tồn tại.
+
+**Cách nhận ra**, tương tự 4.71 nhưng grep ở tầng khác:
+
+```bash
+# Kênh IPC khai trong hợp đồng mà renderer không gọi
+grep -rn "queue.listPending" --include=*.tsx --include=*.ts apps/renderer/src
+
+# Bảng DB không có repository nào đọc
+grep -rn "bookmarks" --include=*.ts apps/main/src
+```
+
+Chỉ thấy ở `ipc.ts` / `api.ts` / `migrations.ts` / file test = chưa nối.
+
+⚠️ Có một lưới đã bắt được ca này nhưng **chỉ ở nửa đường**: test "phủ hết mọi
+channel đã khai báo — không có channel chết" ở `apps/preload/src/api.test.ts`
+buộc mọi kênh phải có mặt trong `api.ts`. Nó bắt được kênh thiếu hàm bọc, **nhưng
+không bắt được hàm bọc mà không component nào gọi** — đó chính là chỗ
+`listPending` nằm im ba phase.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -3156,8 +3265,11 @@ apps/main/src/
   db/migrator.ts           Runner theo PRAGMA user_version
   db/connection.ts         Instance dùng chung, WAL
   db/repositories/         MỌI SQL nằm ở đây — books / chapters / segments / jobs
+                           / bookmarks (P5.4 — bảng có từ schema v1, tới đây mới
+                           có repository)
                            segments: pendingStats* đếm ký tự bằng SQL, không kéo
-                           text lên (một vol ~4800 segment)
+                           text lên (một vol ~4800 segment). bookStats +
+                           countBefore cho thống kê đọc (P5.4)
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
   ipc/handlers/            app / settings / window / import / library / sidecar
@@ -3165,6 +3277,8 @@ apps/main/src/
                            / queue (9 channel, handler mỏng — policy ở service)
                            / reader (nội dung sách + getSegmentAudio cho player)
                            / pronunciations (tầng 3 phiên âm — P5.2)
+                           / bookmarks (dấu trang — P5.4). Thống kê đọc nằm
+                           trong library:getStats, không có handler riêng
   services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
   services/library.ts      Copy file + hash + dựng segment + lưu DB
   services/queue.ts        Hàng đợi generate: MỘT worker tuần tự, persist SQLite
@@ -3204,6 +3318,12 @@ apps/renderer/src/
     SubtitleFontSetting.tsx  Thanh cỡ chữ + xem thử tại chỗ
     AppInfoPanel.tsx       Phiên bản + thư mục dữ liệu (app:getInfo, kênh có từ
                            Phase 0 mà tới P5.3 mới có UI gọi)
+  features/bookmarks/      Dấu trang + thống kê đọc (P5.4). Thống kê **suy từ
+                           dữ liệu đã có**, không có bảng theo dõi hành vi
+    BookmarkButton.tsx     Nút đánh dấu + ô ghi chú (neo vào đoạn ĐANG CHỌN)
+    BookmarkList.tsx       Danh sách xếp theo mạch đọc, không theo lúc tạo
+    ReadingStatsPanel.tsx  Hai thanh riêng: tiến độ đọc vs tiến độ generate
+    stats-format.ts        Hàm thuần: %, nhãn vị trí, ngày mở gần nhất
   features/library/
     LibraryGrid.tsx        Grid sách, nút đọc tiếp
     BookCard.tsx           Thẻ sách + bìa tạm suy từ tên
@@ -3214,7 +3334,10 @@ apps/renderer/src/
   stores/library-store.ts  Danh sách sách + sách đang mở
   stores/voice-store.ts    Catalog + tiến độ tải theo voiceId + nghe thử
   stores/pronunciation-store.ts  Phiên âm user sửa + cờ dirty (audio cũ chưa đổi)
-  stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng
+  stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng.
+                           loadPending/cancelJob cho bảng hàng đợi (P5.4)
+  stores/bookmark-store.ts Dấu trang VÀ thống kê chung một store — chúng luôn
+                           đổi cùng nhau (P5.4)
   stores/storage-store.ts  Dung lượng + xoá; giữ lỗi qua lượt nạp lại
   stores/player-store.ts   Máy trạng thái phát: idle/playing/paused/waiting.
                            KHÔNG giữ vị trí ms (đổi 60 lần/giây) — đọc qua
@@ -3363,7 +3486,7 @@ scripts/
 | Ngưỡng cảnh báo nhỏ nhất là 2 GB | Thấp | Nhánh `near`/`over` chỉ tới được khi user có >1.6 GB audio. Đúng với app này (1 vol ≈ 97 MB → cảnh báo ở ~16 vol) nhưng nghĩa là đường cảnh báo hiếm khi chạy thật. Đã kiểm bằng cách hạ ngưỡng qua IPC: thanh 100%, fill đổi đỏ, câu cảnh báo đúng |
 | Lớp phủ hộp thoại chỉ mờ 70% | Thấp | `bg/0.7` nên chữ dưới vẫn lộ quanh mép hộp, hơi nhiễu mắt — thấy rõ trên ảnh chụp dark. Cả `GenerateEstimateDialog` (P2.6) lẫn `DeleteAudioDialog` dùng cùng mẫu nên ít nhất là nhất quán |
 | `getUsage` quét cả thư mục audio mỗi lần gọi | Thấp | Một vol có ~9600 file; `stat` từng file để so DB với đĩa. Với 1–2 sách thì tức thời, nhưng thư viện 50 vol sẽ thấy chậm khi mở màn Dung lượng. Lúc đó nên cache theo `mtime` của thư mục hoặc chỉ quét khi user bấm "dọn rác" |
-| Không có UI cho bảng hàng đợi | TB | `queue:listPending` (trần 200 job) và `queue:cancelJob` (huỷ **một** job) vẫn chưa ai gọi. Hiện chỉ huỷ được cả sách hoặc tất cả. Đủ dùng cho P2.6 nhưng user không thấy được job nào đang hỏng |
+| ~~Không có UI cho bảng hàng đợi~~ | ✅ Xong | P5.4: tab **Hàng đợi** ở panel phải trình đọc. Hiện trạng thái + mức ưu tiên + số lần đã thử + lỗi của từng job, huỷ được **từng job**. Nạp một lần khi mở tab (có nút nạp lại), **không hỏi vòng** — danh sách tới 200 job và không có event nào đẩy nó xuống. Có test khoá lại rằng `listPending` không bị gọi khi tab chưa mở |
 | Prefetch không huỷ khi rời sách | Thấp | Đọc tới 80% chương 3 rồi đóng sách thì chương 4 vẫn generate xong trong nền. Không sai — audio đó vẫn dùng được sau này — nhưng tốn CPU cho việc user không còn cần. `queue:cancelBook` đã có sẵn nếu muốn đổi |
 | `prefetched` mất khi reload renderer | Thấp | Danh sách chương đã prefetch giữ trong store, không persist. Reload thì prefetch lại chương đó — nhưng `enqueueChapter` tự lọc segment đã `ready` nên chỉ tốn một lượt IPC, không sinh job trùng |
 | ~~Bitrate trong settings chưa ai đọc~~ | ✅ Xong | Hàng đợi truyền `AppSettings.bitrate` xuống mỗi job. **Đo trên file thật**: 16 kbps → 6797 B, 32 kbps → 12574 B cho cùng một câu |
@@ -3391,6 +3514,10 @@ scripts/
 | **Nghe thử giọng chưa chạy trên app thật** | **TB** | P5.1 mới có unit test: nút, ba trạng thái (`Nghe thử`/`Đang tạo…`/`Dừng`), và kỷ luật thu hồi Blob URL đều xanh ở jsdom — nhưng **jsdom không phát được audio** (`HTMLMediaElement.play` là bản giả trong `setup.ts`). Nghĩa là chưa có gì chứng minh câu mẫu thật sự kêu thành tiếng, hay `/preview` trả về file `.ogg` Chromium giải mã được. Chạy `pnpm ui-check` + bấm thử bằng tay là việc đầu tiên của phiên sau |
 | Không hỗ trợ voice nhiều người nói | Thấp | 8 giọng VI/EN của Piper có `num_speakers > 1` (`vivos` 65, `libritts_r` 904). Cần `speakerId` xuyên 4 tầng + UI chọn người nói. **Mức hạ từ TB xuống Thấp** sau khi đo `vivos`: nó là đường duy nhất thêm giọng VI, nhưng thanh điệu bị ép phẳng (xem 4.70) nên không đáng làm chỉ vì nó. Còn giá trị cho giọng EN nhiều người nói nếu sau này cần |
 | Câu nghe thử cố định, user không tự gõ được | Thấp | `VOICE_PREVIEW_TEXT` chọn sẵn theo `lang`, có tên riêng Nhật + chữ số để phủ đúng hai đường chuẩn hoá dễ sai. Cho user gõ câu riêng sẽ hữu ích để thử tên nhân vật cụ thể trong sách họ đang đọc — nhưng phải giới hạn độ dài và chặn đường dùng nó thay hàng đợi generate |
+| Dấu trang không sửa được từ ngoài trình đọc | Thấp | Chỉ xem/sửa được khi đang mở sách. Màn chi tiết sách không có tab dấu trang — muốn xem lại chỗ đã đánh dấu phải vào đọc trước. Đủ dùng vì dấu trang vốn để **quay lại chỗ đọc**, mà quay lại thì đằng nào cũng phải mở sách |
+| Đánh dấu lại đoạn cũ mà bỏ trống ghi chú thì **xoá** ghi chú | Thấp | `upsert` ghi `note = NULL` khi không truyền. Đúng với đường UI hiện tại (`BookmarkButton` luôn điền sẵn ghi chú cũ vào ô nên user thấy trước khi lưu), nhưng nếu sau này có đường gọi `bookmarks:add` không qua ô đó thì nó xoá ghi chú lặng lẽ. Cả bản thật lẫn bản giả trong test đều hành xử giống nhau — đã khoá lại |
+| Bảng hàng đợi hiện `segmentId` chứ không hiện text đoạn | Thấp | Job chỉ mang id; tra text cho tới 200 hàng là 200 lượt truy vấn cho một bảng chẩn đoán. Id đủ để đối chiếu với danh sách đoạn, nhưng không đọc được bằng mắt. Sửa được bằng một truy vấn JOIN trả kèm text nếu thấy cần |
+| **P5.4 chưa chạy trên app thật** | **TB** | Dấu trang, thống kê và bảng hàng đợi mới ở mức unit test. Hai thứ jsdom **không thể** kiểm: (1) mỗi tab panel có chiều cao thật không — mỗi tab một khối `flex-1 min-h-0` riêng, chèn thêm một lớp `div` là dựng lại lỗi 4.43; (2) màu hai thanh tiến độ — token `bg-success` **không tồn tại** trong `tailwind.config.js`, viết nhầm thì trong suốt chứ không đỏ ở đâu cả (lỗi 4.23). 10 phép kiểm `ui-check` đã viết sẵn cho đúng những thứ này |
 | **Màn Cài đặt chưa chạy trên app thật** | **TB** | P5.3 mới ở mức unit test. jsdom không tính CSS thật nên **chưa xác nhận** cỡ chữ preview khớp thanh trượt trong Chromium, hay màn Cài đặt có hiện đúng ở cả dark lẫn light. 5 phép kiểm `ui-check` đã viết sẵn cho đúng ba thứ này — chỉ còn chạy |
 | Chọn ngôn ngữ sách chỉ đổi được lúc nhập | Thấp | Lưu xong thì `lang` cố định; chọn nhầm phải xoá sách nhập lại (mất luôn cấu trúc chương đã sửa tay). Sửa được: thêm `library:setLang` + ô chọn ở màn chi tiết sách, nhưng phải xoá audio đã sinh vì chúng theo giọng cũ. Chưa làm vì chọn nhầm ngay ở màn xác nhận là ca hiếm — ô nằm cạnh ô tên sách, khó bỏ sót |
 | Không có UI cho `alignmentEnabled` | Thấp | **Cố ý**, xem 4.71. Phase 4 đã bỏ nên không có gì để bật/tắt; giữ field vì gỡ khỏi schema tốn một migration đổi lấy hư không. Đừng dựng UI cho nó |

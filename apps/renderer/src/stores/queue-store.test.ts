@@ -13,7 +13,13 @@ import { isBusyOf, pendingCountOf, useQueueStore } from './queue-store';
 let fake: FakeApi;
 
 const reset = (): void => {
-  useQueueStore.setState({ status: null, error: null, prefetched: [] });
+  useQueueStore.setState({
+    status: null,
+    pending: [],
+    pendingLoaded: false,
+    error: null,
+    prefetched: [],
+  });
 };
 
 beforeEach(() => {
@@ -281,5 +287,70 @@ describe('pendingCountOf / isBusyOf', () => {
     };
 
     expect(isBusyOf(status)).toBe(false);
+  });
+});
+
+describe('loadPending (P5.4)', () => {
+  it('nạp danh sách job và đánh dấu đã hỏi', async () => {
+    const job = {
+      id: 'job-1',
+      type: 'synthesize' as const,
+      segmentId: 'seg-1',
+      priority: 0,
+      status: 'queued' as const,
+      attempts: 0,
+      createdAt: 1000,
+    };
+    fake.api.queue.listPending.mockResolvedValueOnce({ ok: true, data: [job] });
+
+    await useQueueStore.getState().loadPending();
+
+    expect(useQueueStore.getState().pending).toEqual([job]);
+    expect(useQueueStore.getState().pendingLoaded).toBe(true);
+  });
+
+  it('hàng đợi rỗng vẫn đánh dấu đã hỏi — phân biệt với "chưa nạp"', async () => {
+    fake.api.queue.listPending.mockResolvedValueOnce({ ok: true, data: [] });
+
+    await useQueueStore.getState().loadPending();
+
+    expect(useQueueStore.getState().pendingLoaded).toBe(true);
+  });
+
+  it('IPC reject không làm sập store', async () => {
+    fake.api.queue.listPending.mockRejectedValueOnce(new Error('No handler'));
+
+    await useQueueStore.getState().loadPending();
+
+    expect(useQueueStore.getState().error).toContain('Không kết nối được');
+    expect(useQueueStore.getState().pendingLoaded).toBe(false);
+  });
+});
+
+describe('cancelJob (P5.4)', () => {
+  it('huỷ rồi nạp lại danh sách', async () => {
+    await useQueueStore.getState().cancelJob('job-1');
+
+    expect(fake.api.queue.cancelJob).toHaveBeenCalledWith('job-1');
+    expect(fake.api.queue.listPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('job đã xong: GIỮ lỗi dù lượt nạp lại thành công', async () => {
+    // Lượt nạp lại thành công không có nghĩa việc user yêu cầu đã thành công.
+    // Xoá lỗi ở đó thì thông báo biến mất trước khi user kịp đọc.
+    fake.api.queue.cancelJob.mockResolvedValueOnce(err('NOT_FOUND', 'Job này đã xong'));
+
+    await useQueueStore.getState().cancelJob('job-1');
+
+    expect(useQueueStore.getState().error).toBe('Job này đã xong');
+    expect(fake.api.queue.listPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('huỷ thành công thì xoá lỗi cũ', async () => {
+    useQueueStore.setState({ error: 'lỗi từ lượt trước' });
+
+    await useQueueStore.getState().cancelJob('job-1');
+
+    expect(useQueueStore.getState().error).toBeNull();
   });
 });

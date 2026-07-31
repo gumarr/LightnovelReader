@@ -489,6 +489,110 @@ describe('SegmentRepository — số liệu ước lượng (P2.6)', () => {
   });
 });
 
+describe('SegmentRepository — số liệu thống kê đọc (P5.4)', () => {
+  beforeEach(() => {
+    books.insert(book());
+    chapters.insertMany([
+      chapter({ id: 'chap-1', index: 0 }),
+      chapter({ id: 'chap-2', index: 1 }),
+    ]);
+  });
+
+  it('bookStats gộp bốn con số trong một lượt', () => {
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0 }),
+      segment({ id: 'seg-2', chapterId: 'chap-1', index: 1 }),
+      segment({ id: 'seg-3', chapterId: 'chap-2', index: 0 }),
+    ]);
+    segments.markReady('seg-1', {
+      audioPath: 'D:/audio/book-1/seg-1.ogg',
+      durationMs: 3000,
+      audioBytes: 9000,
+      alignStatus: 'estimated',
+    });
+    segments.markReady('seg-2', {
+      audioPath: 'D:/audio/book-1/seg-2.ogg',
+      durationMs: 2000,
+      audioBytes: 6000,
+      alignStatus: 'estimated',
+    });
+
+    expect(segments.bookStats('book-1')).toEqual({
+      segmentCount: 3,
+      readyCount: 2,
+      totalDurationMs: 5000,
+      totalAudioBytes: 15000,
+    });
+  });
+
+  it('bookStats trên sách chưa generate gì trả 0, không phải NULL', () => {
+    // `SUM` trên tập rỗng cho NULL; để lọt thì UI hiện "NaN phút"
+    segments.insertMany([segment({ id: 'seg-1', chapterId: 'chap-1' })]);
+
+    expect(segments.bookStats('book-1')).toEqual({
+      segmentCount: 1,
+      readyCount: 0,
+      totalDurationMs: 0,
+      totalAudioBytes: 0,
+    });
+  });
+
+  it('bookStats trên sách không có segment nào trả 0 hết', () => {
+    expect(segments.bookStats('book-1')).toEqual({
+      segmentCount: 0,
+      readyCount: 0,
+      totalDurationMs: 0,
+      totalAudioBytes: 0,
+    });
+  });
+
+  it('bookStats không lẫn sách khác', () => {
+    books.insert(book({ id: 'book-2', fileHash: 'hash-2' }));
+    chapters.insertMany([chapter({ id: 'chap-x', bookId: 'book-2' })]);
+    segments.insertMany([
+      segment({ id: 'seg-1', chapterId: 'chap-1' }),
+      segment({ id: 'seg-9', chapterId: 'chap-x' }),
+    ]);
+
+    expect(segments.bookStats('book-1').segmentCount).toBe(1);
+  });
+
+  it('countBefore đếm xuyên chương, không đếm lại từ 0 mỗi chương', () => {
+    // Chính là lỗi mà truy vấn này sinh ra để tránh: `s.idx < ?` đơn thuần sẽ
+    // trả 0 cho đoạn đầu chương 2 dù trước nó còn cả chương 1.
+    segments.insertMany([
+      segment({ id: 'seg-c1-0', chapterId: 'chap-1', index: 0 }),
+      segment({ id: 'seg-c1-1', chapterId: 'chap-1', index: 1 }),
+      segment({ id: 'seg-c2-0', chapterId: 'chap-2', index: 0 }),
+      segment({ id: 'seg-c2-1', chapterId: 'chap-2', index: 1 }),
+    ]);
+
+    expect(segments.countBefore('seg-c1-0')).toBe(0);
+    expect(segments.countBefore('seg-c1-1')).toBe(1);
+    expect(segments.countBefore('seg-c2-0')).toBe(2);
+    expect(segments.countBefore('seg-c2-1')).toBe(3);
+  });
+
+  it('countBefore không đếm segment của sách khác', () => {
+    books.insert(book({ id: 'book-2', fileHash: 'hash-2' }));
+    chapters.insertMany([chapter({ id: 'chap-x', bookId: 'book-2', index: 0 })]);
+    segments.insertMany([
+      segment({ id: 'seg-x', chapterId: 'chap-x', index: 0 }),
+      segment({ id: 'seg-1', chapterId: 'chap-1', index: 0 }),
+      segment({ id: 'seg-2', chapterId: 'chap-1', index: 1 }),
+    ]);
+
+    expect(segments.countBefore('seg-2')).toBe(1);
+  });
+
+  it('countBefore trên segment không tồn tại trả 0', () => {
+    // Sách nhập lại thì `last_segment_id` trỏ vào segment đã mất — không được ném
+    segments.insertMany([segment({ id: 'seg-1', chapterId: 'chap-1' })]);
+
+    expect(segments.countBefore('không-có')).toBe(0);
+  });
+});
+
 describe('ChapterRepository — dung lượng audio cả sách (P2.6)', () => {
   it('cộng audio_bytes của mọi chương', () => {
     books.insert(book());

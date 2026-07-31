@@ -3,6 +3,7 @@ import {
   errorMessage,
   JOB_PRIORITY_PREFETCH,
   type GenerateEstimateInfo,
+  type Job,
   type QueueStatusInfo,
   type Result,
 } from '@ln/shared';
@@ -23,6 +24,15 @@ const IPC_FAILED = 'Không kết nối được tiến trình chính. Hãy khở
 export type QueueStoreState = {
   /** `null` khi chưa nạp lần nào */
   status: QueueStatusInfo | null;
+  /**
+   * Job đang chờ/chạy — chỉ có dữ liệu sau khi user mở bảng hàng đợi.
+   *
+   * Rỗng **không** đồng nghĩa hàng đợi rỗi: nó cũng là trạng thái "chưa nạp lần
+   * nào". Bảng hàng đợi tự phân biệt bằng `pendingLoaded`.
+   */
+  pending: Job[];
+  /** Đã nạp `pending` ít nhất một lần — phân biệt "rỗng" với "chưa hỏi" */
+  pendingLoaded: boolean;
   /** Lỗi gần nhất, hiện cho user thay vì nuốt im lặng */
   error: string | null;
   /**
@@ -45,6 +55,16 @@ export type QueueStoreState = {
   resume: () => Promise<void>;
   cancelAll: () => Promise<void>;
   cancelBook: (bookId: string) => Promise<void>;
+  /**
+   * Nạp danh sách job đang chờ/chạy cho bảng hàng đợi (P5.4).
+   *
+   * **Chỉ gọi khi user mở bảng.** Danh sách tới 200 job và không có event nào
+   * đẩy nó xuống, khác `status` vốn tự cập nhật qua `queue:statusChanged`. Kéo
+   * nó về mỗi lần trạng thái đổi là hàng chục lượt IPC lớn cho một bảng đang đóng.
+   */
+  loadPending: (keepError?: boolean) => Promise<void>;
+  /** Huỷ **một** job. Khác `cancelBook`/`cancelAll` vốn huỷ cả mảng */
+  cancelJob: (jobId: string) => Promise<void>;
   clearError: () => void;
 };
 
@@ -92,6 +112,8 @@ export const useQueueStore = create<QueueStoreState>((set, get) => {
 
   return {
     status: null,
+    pending: [],
+    pendingLoaded: false,
     error: null,
     prefetched: [],
 
@@ -157,6 +179,30 @@ export const useQueueStore = create<QueueStoreState>((set, get) => {
 
     cancelBook: async (bookId) => {
       await call(() => window.api.queue.cancelBook(bookId));
+      await refresh();
+    },
+
+    /**
+     * `keepError` cho lượt nạp **sau** một hành động hỏng.
+     *
+     * Nạp lại thành công không có nghĩa việc user vừa yêu cầu đã thành công.
+     * Xoá lỗi ở đây thì thông báo "job này đã xong rồi" biến mất trong cùng một
+     * nhịp, trước khi user kịp đọc — đúng lý do `call` có `clearOnSuccess`.
+     */
+    loadPending: async (keepError = false) => {
+      const pending = await call(() => window.api.queue.listPending(), !keepError);
+      if (pending !== undefined) set({ pending, pendingLoaded: true });
+    },
+
+    cancelJob: async (jobId) => {
+      // Main trả NOT_FOUND khi job vừa chạy xong ngay trước cú bấm. Vẫn nạp lại
+      // danh sách **dù hỏng hay không**: đúng ca đó nghĩa là bảng đang hiện đã
+      // cũ, mà giữ nguyên nó là hiển thị sai.
+      const before = get().error;
+      await call(() => window.api.queue.cancelJob(jobId));
+      const failed = get().error !== before;
+
+      await get().loadPending(failed);
       await refresh();
     },
 

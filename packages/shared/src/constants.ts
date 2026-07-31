@@ -144,3 +144,29 @@ export const VOICE_PREVIEW_TEXT: Readonly<Record<'vi' | 'en', string>> = {
   vi: 'Chiều hôm ấy ở Tokyo, Asuka mười bảy tuổi bước vào lớp học và khẽ mỉm cười.',
   en: 'That afternoon in Tokyo, seventeen-year-old Asuka stepped into the classroom and smiled.',
 };
+
+/**
+ * Độ dài tối đa của ghi chú dấu trang (P5.4).
+ *
+ * Đây là chỗ ghi "vì sao mình đánh dấu chỗ này", không phải chỗ chép lại đoạn
+ * văn — trần ngắn giữ danh sách dấu trang đọc lướt được. Ghi chú dài hơn nữa
+ * thì mỗi hàng chiếm cả màn hình và mất tác dụng của một danh sách.
+ */
+export const BOOKMARK_NOTE_MAX = 500;
+
+/**
+ * Số ký tự trích từ `Segment.text` để nhận ra dấu trang trỏ vào đâu.
+ *
+ * Cắt ở **main** chứ không gửi cả `text` rồi để renderer cắt: một sách có thể có
+ * hàng trăm dấu trang, mỗi segment tới 300 ký tự — gửi trọn là ~30 lần dữ liệu
+ * cần thiết qua IPC cho một danh sách chỉ hiện một dòng mỗi mục.
+ */
+export const BOOKMARK_EXCERPT_MAX = 120;
+
+/**
+ * Trần số dấu trang trả về cho một sách.
+ *
+ * Cùng lý do với `PENDING_LIMIT` của hàng đợi: danh sách dài hơn thế thì UI
+ * không hiện nổi mà vẫn tốn một lượt IPC lớn. Người đọc thật hiếm khi vượt.
+ */
+export const BOOKMARK_LIST_LIMIT = 500;

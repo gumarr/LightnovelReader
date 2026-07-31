@@ -19,7 +19,9 @@ import {
   type Job,
   type LibraryEntry,
   type QueueStatusInfo,
+  type PronunciationOverride,
   type ReadingProgress,
+  type SavePronunciationRequest,
   type Result,
   type InstalledVoice,
   type SaveBookRequest,
@@ -70,6 +72,8 @@ export type FakeApiOptions = {
   usage?: Partial<StorageUsageInfo>;
   /** Dung lượng từng chương. `chapterId` phải bắt đầu bằng `bookId` để lọc đúng */
   chapterUsage?: ChapterUsageInfo[];
+  /** Phiên âm user đã lưu. Mặc định rỗng */
+  pronunciations?: PronunciationOverride[];
 };
 
 /** Voice mẫu cho test voice manager */
@@ -222,6 +226,8 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
   };
 
   const chapterUsage: ChapterUsageInfo[] = options.chapterUsage ?? [];
+
+  const pronunciations: PronunciationOverride[] = [...(options.pronunciations ?? [])];
 
   /**
    * Trừ dung lượng đã xoá khỏi tổng.
@@ -385,7 +391,34 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       }),
     },
 
-    queue: {
+    pronunciations: {
+      list: vi.fn(
+        async (_bookId: string): Promise<Result<PronunciationOverride[]>> => ok(pronunciations),
+      ),
+      save: vi.fn(async (request: SavePronunciationRequest): Promise<Result<PronunciationOverride>> => {
+        const term = request.term.trim().toLowerCase();
+        const saved: PronunciationOverride = {
+          id: `pron-${String(pronunciations.length + 1)}`,
+          ...(request.bookId === undefined ? {} : { bookId: request.bookId }),
+          term,
+          replacement: request.replacement.trim(),
+          createdAt: 1000,
+        };
+        // Ghi đè khi trùng `term`, giống `upsert` thật — không thì bản giả cho
+        // ra hai dòng cùng một từ mà DB thật không bao giờ có.
+        const at = pronunciations.findIndex((e) => e.term === term);
+        if (at >= 0) pronunciations[at] = { ...saved, id: pronunciations[at]!.id };
+        else pronunciations.push(saved);
+        return ok(at >= 0 ? pronunciations[at]! : saved);
+      }),
+      remove: vi.fn(async (id: string): Promise<Result<void>> => {
+        const at = pronunciations.findIndex((e) => e.id === id);
+        if (at >= 0) pronunciations.splice(at, 1);
+        return ok(undefined);
+      }),
+    },
+
+  queue: {
       enqueueSegments: vi.fn(
         async (request: { segmentIds: string[] }): Promise<Result<EnqueueResult>> =>
           ok({ added: request.segmentIds.length }),

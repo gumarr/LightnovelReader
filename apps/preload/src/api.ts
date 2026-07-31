@@ -37,6 +37,8 @@ import {
   type ThemeMode,
   type VoiceCatalogItem,
   type VoiceDownloadProgress,
+  type PronunciationOverride,
+  type SavePronunciationRequest,
   type VoicePreview,
   type WindowState,
 } from '@ln/shared';
@@ -153,6 +155,21 @@ export const api = {
     onDownloadProgress: (
       listener: (progress: VoiceDownloadProgress) => void,
     ): (() => void) => subscribe('voices:downloadProgress', listener),
+  },
+
+  pronunciations: {
+    /** Gồm cả mục toàn cục lẫn mục riêng của sách */
+    list: (bookId: string): Promise<Result<PronunciationOverride[]>> =>
+      invoke('pronunciations:list', bookId),
+    /**
+     * Thêm/sửa. Trùng `term` thì ghi đè.
+     *
+     * **Không** tự tạo lại audio: đoạn đã generate vẫn giữ cách đọc cũ cho tới
+     * khi user chủ động generate lại.
+     */
+    save: (request: SavePronunciationRequest): Promise<Result<PronunciationOverride>> =>
+      invoke('pronunciations:save', request),
+    remove: (id: string): Promise<Result<void>> => invoke('pronunciations:remove', id),
   },
 
   queue: {

@@ -1,6 +1,7 @@
 import { app, type BrowserWindow } from 'electron';
 import { join, resolve } from 'node:path';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import Store from 'electron-store';
 import type { AppSettings } from '@ln/shared';
@@ -15,6 +16,7 @@ import {
 import { nodeSpawnSidecar } from './services/sidecar-spawn.js';
 import { createSidecarHandlers } from './ipc/handlers/sidecar.js';
 import { createVoicesHandlers } from './ipc/handlers/voices.js';
+import { createPronunciationHandlers } from './ipc/handlers/pronunciations.js';
 import { registerHandler, clearRegisteredChannels } from './ipc/registry.js';
 import { getAppInfo } from './ipc/handlers/app.js';
 import { createImportHandlers } from './ipc/handlers/import.js';
@@ -265,6 +267,13 @@ const start = (): void => {
     },
   });
 
+  const pronunciationHandlers = createPronunciationHandlers({
+    pronunciations: pronunciationRepo,
+    bookExists: (bookId) => bookRepo.findById(bookId) !== undefined,
+    newId: randomUUID,
+    now: () => Date.now(),
+  });
+
   registerHandler('app:getInfo', getAppInfo, logger);
   registerHandler('settings:getAll', settingsHandlers.getAll, logger);
   registerHandler('settings:update', settingsHandlers.update, logger);
@@ -290,6 +299,9 @@ const start = (): void => {
   registerHandler('voices:cancelDownload', voicesHandlers.cancelDownload, logger);
   registerHandler('voices:remove', voicesHandlers.remove, logger);
   registerHandler('voices:preview', voicesHandlers.preview, logger);
+  registerHandler('pronunciations:list', pronunciationHandlers.list, logger);
+  registerHandler('pronunciations:save', pronunciationHandlers.save, logger);
+  registerHandler('pronunciations:remove', pronunciationHandlers.remove, logger);
   registerHandler('queue:enqueueSegments', queueHandlers.enqueueSegments, logger);
   registerHandler('queue:enqueueChapter', queueHandlers.enqueueChapter, logger);
   registerHandler('queue:enqueueBook', queueHandlers.enqueueBook, logger);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { WordTiming } from '@ln/shared';
 import { attachPlayer, detachPlayer, usePlayerStore } from '@/stores/player-store';
 import { SubtitlePane } from './SubtitlePane';
@@ -236,5 +236,40 @@ describe('đổi đoạn giữa chừng', () => {
 
     // Dừng nhạc mà chữ tắt thì user mất chỗ đang nghe dở
     expect(activeWord()).toBe('tới');
+  });
+});
+
+describe('sửa cách đọc (P5.2)', () => {
+  it('chuột phải vào một từ gọi callback với đúng từ đó', () => {
+    const onEditPronunciation = vi.fn();
+    render(<SubtitlePane text={TEXT} onEditPronunciation={onEditPronunciation} />);
+
+    const words = screen.getAllByRole('button');
+    const tokyo = words.find((b) => b.textContent === 'Tokyo.');
+    fireEvent.contextMenu(tokyo!);
+
+    // Gửi text GỐC trên màn hình, không phải bản đọc đã phiên âm — user chọn
+    // sửa cái tên họ nhìn thấy trong sách.
+    expect(onEditPronunciation).toHaveBeenCalledWith('Tokyo.');
+  });
+
+  it('chuột phải chặn menu mặc định của Chromium', () => {
+    // Không chặn thì menu hệ thống đè lên hộp thoại vừa mở.
+    const onEditPronunciation = vi.fn();
+    render(<SubtitlePane text={TEXT} onEditPronunciation={onEditPronunciation} />);
+
+    const word = screen.getAllByRole('button')[0]!;
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(word, event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('không truyền callback thì chuột phải không làm gì', () => {
+    // P3.4 dựng pane này khi chưa có tính năng sửa cách đọc — vẫn phải chạy.
+    render(<SubtitlePane text={TEXT} />);
+    const word = screen.getAllByRole('button')[0]!;
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(word, event);
+    expect(event.defaultPrevented).toBe(false);
   });
 });

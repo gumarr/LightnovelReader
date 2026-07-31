@@ -12,6 +12,8 @@ import { PlayerBar } from '@/features/player/PlayerBar';
 import { usePlayer } from '@/features/player/usePlayer';
 import { usePlayerStore } from '@/stores/player-store';
 import { SubtitlePane } from '@/features/player/SubtitlePane';
+import { PronunciationDialog } from '@/features/player/PronunciationDialog';
+import { usePronunciationStore } from '@/stores/pronunciation-store';
 import { loadPdf } from './pdf-document';
 import { PdfViewer } from './PdfViewer';
 import { DocxViewer } from './DocxViewer';
@@ -86,6 +88,10 @@ export const ReaderScreen = ({
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [showSegments, setShowSegments] = useState(true);
+  /** Từ đang sửa cách đọc, `null` khi hộp thoại đóng */
+  const [editingTerm, setEditingTerm] = useState<string | null>(null);
+
+  const loadPronunciations = usePronunciationStore((s) => s.load);
   const [showSubtitle, setShowSubtitle] = useState(true);
 
   const activeSegment = useReaderStore(activeSegmentOf);
@@ -113,6 +119,13 @@ export const ReaderScreen = ({
   useEffect(() => {
     if (initialChapterId !== undefined) void loadChapter(initialChapterId);
   }, [initialChapterId, loadChapter]);
+
+  // Nạp phiên âm của sách một lần khi mở. Hộp sửa cách đọc cần danh sách này để
+  // biết từ user bấm đã có mục chưa — mở hộp rồi mới đi hỏi thì ô nhập trống
+  // một nhịp rồi mới điền, trông như mất dữ liệu.
+  useEffect(() => {
+    void loadPronunciations(book.id);
+  }, [book.id, loadPronunciations]);
 
   // Hàng đợi generate: nạp trạng thái một lần rồi nghe event. Hai nguồn đẩy —
   // số đếm cho thanh tiến độ, và segment vừa xong để đổi trạng thái trong danh
@@ -325,7 +338,7 @@ export const ReaderScreen = ({
                 className="min-h-0 bg-bg-elevated"
                 style={{ flex: `${String(1 - paneRatio)} 1 0%` }}
               >
-                <SubtitlePane text={subtitleText} />
+                <SubtitlePane text={subtitleText} onEditPronunciation={setEditingTerm} />
               </section>
             </>
           ) : null}
@@ -370,6 +383,10 @@ export const ReaderScreen = ({
         voiceReady={voiceReady}
         {...(onOpenVoices === undefined ? {} : { onOpenVoices })}
       />
+
+      {editingTerm !== null ? (
+        <PronunciationDialog term={editingTerm} onClose={() => setEditingTerm(null)} />
+      ) : null}
     </div>
   );
 };

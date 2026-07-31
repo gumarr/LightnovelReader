@@ -19,9 +19,16 @@ import { useWordHighlight } from './useWordHighlight';
 export type SubtitlePaneProps = {
   /** Text gốc của đoạn đang phát. Rỗng = chưa phát gì. */
   text: string;
+  /**
+   * Bấm chuột phải vào một từ → mở hộp sửa cách đọc (P5.2, tầng 3).
+   *
+   * Không bắt buộc: phụ đề vẫn dùng được khi màn hình chứa nó chưa nối tính
+   * năng này (test của P3.4 chẳng hạn).
+   */
+  onEditPronunciation?: (term: string) => void;
 };
 
-export const SubtitlePane = ({ text }: SubtitlePaneProps): JSX.Element => {
+export const SubtitlePane = ({ text, onEditPronunciation }: SubtitlePaneProps): JSX.Element => {
   const timings = usePlayerStore((s) => s.timings);
   const seek = usePlayerStore((s) => s.seek);
   const state = usePlayerStore((s) => s.state);
@@ -89,6 +96,17 @@ export const SubtitlePane = ({ text }: SubtitlePaneProps): JSX.Element => {
               type="button"
               data-word-index={index}
               onClick={() => seekToWord(word.charStart)}
+              // Chuột phải để sửa cách đọc. Dùng `onContextMenu` chứ không thêm
+              // một nút riêng cạnh mỗi từ: phụ đề là chỗ để đọc, nhồi thêm nút
+              // vào từng chữ sẽ phá mặt chữ mà user đang bám theo.
+              onContextMenu={
+                onEditPronunciation === undefined
+                  ? undefined
+                  : (event) => {
+                      event.preventDefault();
+                      onEditPronunciation(word.text);
+                    }
+              }
               // Kiểu của từ đang đọc đặt qua `data-active` để `useWordHighlight`
               // bật/tắt bằng một lệnh DOM, không qua React. Xem hook đó.
               className="rounded px-0.5 text-left transition-colors hover:bg-bg-subtle data-[active]:bg-subtitle-current/15 data-[active]:font-medium data-[active]:text-subtitle-current"

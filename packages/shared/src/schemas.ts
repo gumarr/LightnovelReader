@@ -224,3 +224,39 @@ export const jobIdSchema = z.string().min(1).max(64);
 // Kiểm tra AUDIO_BITRATES và schema không lệch nhau khi sửa constants
 const _bitrateGuard: ReadonlyArray<z.infer<typeof audioBitrateSchema>> = AUDIO_BITRATES;
 void _bitrateGuard;
+
+/**
+ * Phiên âm do user tự sửa (P5.2 — tầng 3 của plan.md mục 8.1).
+ *
+ * `term` **luôn chữ thường**: sidecar tra bảng này theo khoá thường hoá, nên để
+ * user lưu `"Tokyo"` và `"tokyo"` thành hai mục là dựng sẵn một mục không bao
+ * giờ khớp. Chuẩn hoá ngay ở biên bằng `transform`, không phải nhắc UI làm.
+ *
+ * Cấm khoảng trắng trong `replacement`: Piper chèn khoảng nghỉ giữa các từ, nên
+ * `"Tô ki ô"` nghe rời rạc thành ba tiếng. Dùng gạch nối — xem mục 4.62.
+ */
+export const pronunciationTermSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .transform((value) => value.trim().toLowerCase())
+  .refine((value) => value.length > 0, { message: 'Từ cần sửa không được rỗng' });
+
+export const pronunciationReplacementSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .transform((value) => value.trim())
+  .refine((value) => value.length > 0, { message: 'Cách đọc không được rỗng' })
+  .refine((value) => !/\s/.test(value), {
+    message: 'Cách đọc không được chứa khoảng trắng — dùng gạch nối, ví dụ Tô-ki-ô',
+  });
+
+export const savePronunciationSchema = z.object({
+  /** Bỏ trống = áp cho mọi sách */
+  bookId: z.string().min(1).max(64).optional(),
+  term: pronunciationTermSchema,
+  replacement: pronunciationReplacementSchema,
+});
+
+export const pronunciationIdSchema = z.string().min(1).max(64);

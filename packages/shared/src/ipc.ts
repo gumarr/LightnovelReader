@@ -7,6 +7,7 @@ import type {
   Chapter,
   InstalledVoice,
   Job,
+  PronunciationOverride,
   Segment,
   SidecarStatus,
   ThemeMode,
@@ -230,6 +231,21 @@ export type VoicePreview = {
 };
 
 /**
+ * Yêu cầu lưu một phiên âm do user sửa (P5.2, tầng 3 — plan.md mục 8.1).
+ *
+ * `bookId` bỏ trống = áp cho **mọi sách**. Mặc định của UI là theo sách: cách
+ * đọc một cái tên thường chỉ đúng trong bộ truyện đó (`Kaguya` ở truyện này là
+ * tên người, ở truyện khác là địa danh).
+ */
+export type SavePronunciationRequest = {
+  bookId?: string;
+  /** Từ cần sửa, sẽ được hạ về chữ thường ở biên */
+  term: string;
+  /** Cách đọc thay thế, gạch nối giữa các âm tiết: `Tô-ki-ô` */
+  replacement: string;
+};
+
+/**
  * Trạng thái hàng đợi generate như UI cần thấy.
  *
  * Chỉ có con số tổng chứ không kèm danh sách job: "generate cả sách" là ~4800
@@ -402,6 +418,24 @@ export type IpcContract = {
    */
   'voices:preview': { in: string; out: Result<VoicePreview> };
 
+  /**
+   * Phiên âm do user sửa — tầng 3 của plan.md mục 8.1.
+   *
+   * Hai tầng dưới (từ điển ship sẵn + luật romaji) lo phần lớn; đây là van an
+   * toàn cho tên mà máy đoán sai. Danh sách trả về gồm **cả mục toàn cục lẫn
+   * mục của sách** để user thấy được vì sao một từ đang đọc như vậy.
+   */
+  'pronunciations:list': { in: string; out: Result<PronunciationOverride[]> };
+  /**
+   * Thêm hoặc sửa một mục. Trùng `term` thì **ghi đè** thay vì báo lỗi — sửa
+   * lại cách đọc của cùng một từ là thao tác thường gặp nhất ở màn này.
+   *
+   * Lưu xong **không** tự generate lại: audio cũ vẫn nằm trên đĩa với cách đọc
+   * cũ. Renderer phải nói rõ điều đó và để user tự chọn tạo lại.
+   */
+  'pronunciations:save': { in: SavePronunciationRequest; out: Result<PronunciationOverride> };
+  'pronunciations:remove': { in: string; out: Result<void> };
+
   /** Xếp segment vào hàng đợi generate */
   'queue:enqueueSegments': { in: EnqueueSegmentsRequest; out: Result<EnqueueResult> };
   /** Xếp cả chương — main tự tra segment chưa có audio */
@@ -509,6 +543,9 @@ export const IPC_CHANNELS = [
   'voices:cancelDownload',
   'voices:remove',
   'voices:preview',
+  'pronunciations:list',
+  'pronunciations:save',
+  'pronunciations:remove',
   'queue:enqueueSegments',
   'queue:enqueueChapter',
   'queue:enqueueBook',

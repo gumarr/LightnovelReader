@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-31 · commit `16573ff`
+> **Cập nhật lần cuối:** 2026-07-31 · commit `(P5.2 — điền sau khi commit)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,13 +39,14 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P5.2 — xem mục 3.
+**Việc tiếp theo:** P5.3 — xem mục 3.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
 Xem mục 4.68 để biết lý do đầy đủ và **điều kiện mở lại**.
 
-**Phase 5 đang làm: P5.1 xong** (thêm giọng VI thứ hai + nghe thử giọng).
+**Phase 5 đang làm: P5.1 + P5.2 xong** (giọng VI thứ hai + nghe thử giọng;
+UI sửa cách đọc — trả nợ treo từ P3.5).
 
 ---
 
@@ -917,11 +918,60 @@ trả cờ act về `undefined` trước khi chuỗi `IPC → play() → setPlay
 ⚠️ **Chưa nghe thử bằng tai và chưa chạy `pnpm ui-check`** cho phần này — nút,
 trạng thái và kỷ luật thu hồi Blob URL đều mới chỉ có unit test. Xem mục 8.
 
+### Phase 5 — P5.2 UI sửa cách đọc ✅
+
+Trả nợ treo từ **P3.5**: DB (`pronunciation_overrides`, schema v3), repository
+(22 test) và đường truyền tới sidecar (`getPronunciations` → `/synthesize`) đã
+xong từ hai phase trước, nhưng **không có IPC channel lẫn màn hình nào** — nghĩa
+là suốt P3.5 → P5.1, user không sửa được cách đọc dù backend đã sẵn sàng.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `shared/schemas.ts` | `pronunciationTerm/Replacement`, `savePronunciation` | (qua handler) |
+| `shared/ipc.ts` | `SavePronunciationRequest` + 3 kênh `pronunciations:*` | — |
+| `main/ipc/handlers/pronunciations.ts` | 3 handler, gộp mục toàn cục + theo sách | 12 |
+| `renderer/stores/pronunciation-store.ts` | Danh sách + cờ `dirty` | 8 |
+| `renderer/features/player/PronunciationDialog.tsx` | Hộp sửa cách đọc | 13 |
+| `renderer/features/player/SubtitlePane.tsx` | `onContextMenu` trên từng từ | +3 |
+| `renderer/features/reader/ReaderScreen.tsx` | Nạp phiên âm khi mở sách, dựng hộp | — |
+
+**Bốn quyết định đáng nhớ:**
+
+- **Chuột phải, không thêm nút cạnh mỗi từ.** Phụ đề là chỗ để *đọc*; nhồi thêm
+  một nút vào từng chữ sẽ phá mặt chữ mà user đang bám theo. Mỗi từ vốn đã là
+  `<button>` từ P3.4 (click-to-seek) nên chỉ cần thêm `onContextMenu`.
+- **Mặc định lưu THEO SÁCH, không toàn cục.** Cách đọc một cái tên thường chỉ
+  đúng trong bộ truyện đó — `Kaguya` ở truyện này là tên người, truyện khác có
+  thể là địa danh đọc khác hẳn. Muốn toàn cục thì tích thêm một ô.
+- **Chuẩn hoá `term` về chữ thường ngay ở biên** (`zod.transform`). Sidecar tra
+  bảng theo khoá đã thường hoá, nên để `"Tokyo"` và `"tokyo"` thành hai mục là
+  dựng sẵn một mục không bao giờ khớp. Làm ở schema chứ không nhắc UI nhớ.
+- **Cấm khoảng trắng trong cách đọc, có câu giải thích cho user.** `Tô ki ô`
+  khiến Piper chèn khoảng nghỉ giữa các âm tiết, nghe rời rạc thành ba tiếng
+  (mục 4.62). Nhắc ngay dưới ô nhập chứ không đợi tới lúc báo lỗi.
+
+**Hai cái bẫy đã chặn sẵn:**
+
+- **`save` trả về bản trong DB, không phải bản vừa dựng.** `upsert` ghi đè khi
+  trùng `term`, nên `id` vừa sinh KHÔNG phải id thật trong DB. Renderer dùng id
+  đó cho nút xoá — trả nhầm thì xoá trượt. Có test khoá lại.
+- **Store nạp LẠI sau khi lưu** thay vì tự chèn vào mảng, cùng lý do trên: chèn
+  thêm sẽ ra hai dòng cùng một `term` mà DB thật không bao giờ có.
+
+**Không tự generate lại sau khi sửa.** Audio cũ vẫn nằm trên đĩa với cách đọc cũ,
+mà một cuốn là hàng nghìn đoạn — tự động tạo lại là đúng thứ CLAUDE.md cấm (phải
+hiện ước lượng trước khi generate hàng loạt). Hộp thoại **nói rõ** điều đó, vì
+đây là hiểu nhầm chắc chắn xảy ra: sửa xong mà đoạn đang nghe vẫn đọc như cũ.
+
+⚠️ **Chưa chạy trên app thật.** Toàn bộ P5.2 mới ở mức unit test — chưa mở app để
+bấm chuột phải, và **chưa nghe** một đoạn generate lại sau khi sửa để xác nhận
+cách đọc mới thật sự tới được Piper. Xem mục 8.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1935 passed** (+12 ở P5.1 — preview handler, VoiceManager) |
+| Unit test TypeScript | **1971 passed** (+36 ở P5.2 — handler, store, dialog, context menu) |
 | Unit test sidecar (pytest) | **646 passed** (+8 ở P5.1 — biên HTTP `/preview`) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (không đổi ở P5.1) |
 | **Kiểm UI thật (`pnpm ui-check`)** | **58 phép kiểm**, ⚠️ 11 phép kiểm của P3.4 và toàn bộ P5.1 **chưa chạy** — xem mục 8 |
@@ -946,13 +996,14 @@ Phase 5 chia **năm phần** (thống nhất với user — mỗi phần một c
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
 | P5.1 | Thêm giọng VI thứ hai vào catalog + nghe thử giọng sau khi tải | ✅ Xong |
-| P5.2 | UI tầng 3 phiên âm: sửa cách đọc từ menu chuột phải trên phụ đề (nợ mục 8) | ⬅️ **tiếp theo** |
-| P5.3 | Settings đầy đủ: font phụ đề, xoá cache, và **trả nợ mức TB** trong mục 8 | ⬜ |
+| P5.2 | UI tầng 3 phiên âm: sửa cách đọc từ menu chuột phải trên phụ đề (nợ mục 8) | ✅ Xong |
+| P5.3 | Settings đầy đủ: font phụ đề, xoá cache, và **trả nợ mức TB** trong mục 8 | ⬅️ **tiếp theo** |
 | P5.4 | Bookmark + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ⬜ |
 | P5.5 | Đóng gói: icon app, auto-update, README qua SmartScreen, log rotate | ⬜ |
 
-**Trước khi bắt đầu P5.2, chạy `pnpm ui-check`** — 11 phép kiểm của P3.4 và toàn
-bộ phần nghe thử của P5.1 chưa chạy lần nào. Đây là loại lỗi vitest không thấy.
+⚠️ **Chạy `pnpm ui-check` trước khi làm tiếp** — 11 phép kiểm của P3.4, phần nghe
+thử của P5.1 và hộp sửa cách đọc của P5.2 đều **chưa chạy lần nào** trên app
+thật. Đây là loại lỗi vitest không thấy (chiều cao, màu, lớp phủ hộp thoại).
 
 **DoD Phase 5** (`plan.md`): installer `.exe` cài trên máy sạch chạy được, không
 cần cài Python.
@@ -2736,6 +2787,50 @@ khác — nó mô phỏng thao tác thật sát hơn, chỉ không hợp ở ca 
 Bài học chung: **cảnh báo chỉ xuất hiện ở bộ test mới thì đừng cho là nợ có sẵn.**
 Đã kiểm chứng bằng `git stash` rồi chạy `ReaderScreen.test.tsx` — 0 cảnh báo.
 
+### 4.70 Đo `vivos`: vì sao KHÔNG thêm giọng VI thứ ba
+
+User xin thêm "3–4 giọng VI nữa". **Không làm được bằng cách sửa catalog:**
+`rhasspy/piper-voices` chỉ có đúng **3 giọng VI** — `vais1000` (đã có),
+`25hours_single` (P5.1), và `vivos`. Không có giọng thứ tư nào tồn tại.
+
+`vivos` lại là **65 người nói**, tức mở nó ra sẽ được 65 lựa chọn giọng chứ
+không phải 1 — nhiều hơn hẳn thứ user xin. Nên trước khi bỏ công code `speakerId`
+xuyên 4 tầng, đã tải model 26 MB về **đo thật**.
+
+**Phát hiện quyết định — thiếu phoneme thanh điệu.** So bảng `phoneme_id_map`:
+
+| | Số phoneme |
+|---|---|
+| `vais1000` | 154 |
+| `vivos` | 130 |
+
+24 phoneme `vivos` thiếu gồm `0`–`9` và `↑ ↓` — **đó chính là các dấu thanh**.
+Piper log `Missing phoneme from id map: 2/4/5/6` mỗi lần tổng hợp. Tiếng Việt là
+ngôn ngữ có thanh điệu, nên đây không phải chi tiết nhỏ.
+
+**Đo F0 trên sáu thanh của cùng âm tiết** (autocorrelation, khung 40 ms):
+
+| Thanh | `vivos` dốc F0 | `vais1000` dốc F0 |
+|---|---|---|
+| `má` (sắc — phải đi LÊN) | **+30 Hz** | **+88 Hz** |
+| `mà` (huyền — đi xuống) | −32 Hz | −28 Hz |
+| `mạ` (nặng — rơi mạnh) | **−20 Hz** | **−69 Hz** |
+
+`vivos` **có** tạo thanh điệu và đúng hướng, nhưng biên độ bị ép còn khoảng **một
+phần ba**. Cộng thêm `x_low` ở 16 kHz (so với `medium` 22 kHz), trên một chương
+LN dài thì đó là khác biệt giữa giọng Việt tự nhiên và giọng nghe phèn phẹt.
+
+**Quyết định của user: bỏ `vivos`, giữ 2 giọng VI.** Thêm 65 giọng nghe kém hơn
+thứ đang có chỉ làm user chọn nhầm rồi tưởng app tệ.
+
+Ghi chú `peak = 1.000` gây hiểu nhầm: cả `vais1000` **lẫn** `vivos` đều đạt đỉnh
+1.0, nên đó là chuẩn hoá của Piper chứ không phải `vivos` bị méo. Đừng dùng con
+số đó làm bằng chứng chê model nào.
+
+**Muốn nhiều giọng VI thật thì phải đổi engine** — việc lớn, thuộc Phase 6
+(`plan.md` đã ghi kiến trúc `TTSEngine` cho phép cắm engine khác mà không đụng
+core). Không phải việc của Phase 5.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -2927,9 +3022,10 @@ apps/main/src/
   ipc/wrap.ts              Bọc handler → Result lỗi (test được, không cần Electron)
   ipc/registry.ts          Gắn vào ipcMain, từ chối channel chưa khai báo
   ipc/handlers/            app / settings / window / import / library / sidecar
-                           / voices (tải chạy nền, chặn tải trùng)
+                           / voices (tải chạy nền, chặn tải trùng, nghe thử)
                            / queue (9 channel, handler mỏng — policy ở service)
                            / reader (nội dung sách + getSegmentAudio cho player)
+                           / pronunciations (tầng 3 phiên âm — P5.2)
   services/import-session.ts  Giữ tài liệu đã parse giữa lúc phân tích và xác nhận
   services/library.ts      Copy file + hash + dựng segment + lưu DB
   services/queue.ts        Hàng đợi generate: MỘT worker tuần tự, persist SQLite
@@ -2970,6 +3066,7 @@ apps/renderer/src/
   stores/import-store.ts   Bản nháp chương + hoàn tác
   stores/library-store.ts  Danh sách sách + sách đang mở
   stores/voice-store.ts    Catalog + tiến độ tải theo voiceId + nghe thử
+  stores/pronunciation-store.ts  Phiên âm user sửa + cờ dirty (audio cũ chưa đổi)
   stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng
   stores/storage-store.ts  Dung lượng + xoá; giữ lỗi qua lượt nạp lại
   stores/player-store.ts   Máy trạng thái phát: idle/playing/paused/waiting.
@@ -2990,6 +3087,11 @@ apps/renderer/src/
     RateMenu.tsx           Menu 8 mốc tốc độ (0.75×–3×), mở LÊN
     icons.tsx              5 icon SVG inline — KHÔNG emoji, KHÔNG thư viện (4.55)
     PlayerBar.tsx          Nút phát/trước/sau + menu tốc độ + đường tắt Giọng đọc
+    subtitle.ts            Cắt text GỐC thành từ, map timing qua giao khoảng (4.64)
+    useWordHighlight.ts    rAF bật/tắt data-active, chỉ đụng 2 phần tử (4.66)
+    SubtitlePane.tsx       Phụ đề + click-to-seek + chuột phải sửa cách đọc (P5.2)
+    PronunciationDialog.tsx  Sửa cách đọc một từ. Mặc định theo SÁCH, không
+                           toàn cục; nói rõ audio cũ không tự đổi
     format.ts              Nhãn trạng thái, mốc tốc độ, stepRate, formatClock (thuần)
   features/generate/
     GenerateControls.tsx   Nút tạo audio chương/cả sách (chỗ DUY NHẤT gọi queue:*)
@@ -3090,7 +3192,7 @@ scripts/
 | ~~Đóng gói sidecar chưa vào CI~~ | ✅ Xong | `pnpm build:win` giờ tự gọi `build:sidecar` rồi `scripts/sidecar-preflight.mjs` — không còn phải nhớ. Preflight chặn cả 3 cách hỏng (thiếu `.exe`, thiếu `_internal/`, `.exe` cũ hơn `.py`), đã kiểm chứng bằng `touch` một file `.py`. CI dựng venv 3.12 ở **cả hai** job + kiểm phía đích `resources/sidecar/` sau khi đóng gói. Xem mục 4.44 |
 | ~~Chưa dựng lại installer sau P2.4/P2.5~~ | ✅ Xong | P2.8 chạy lại `pnpm build:win`: NSIS **143.0 MB**, portable **142.8 MB** (trước khi có sidecar là 80.8 MB). electron-builder **có** chép trọn onedir — đo được `resources/sidecar/` **147 MB** đủ cả `_internal/`, và `resources/voices/catalog.json` cũng có. Vượt mốc 200 MB của plan.md thì chưa, nhưng đã dùng hết 71% |
 | ~~Chỉ có 2 voice trong catalog~~ | ✅ Xong (một phần) | P5.1 thêm `vi_VN-25hours_single-low` (16 kHz, sha256 **tải thật rồi tính**, md5 đối chiếu khớp `voices.json` của HF). Nay **3 giọng**: 2 VI + 1 EN. Piper chỉ có đúng 3 giọng VI và giọng thứ ba (`vivos`) là nhiều người nói — xem hàng dưới. Giọng EN thì Piper có 38 cái, chưa thêm vì app là LN tiếng Việt; thêm = sửa JSON, không sửa code |
-| UI tầng 3 phiên âm chưa có | **TB** | P3.5 làm xong DB (`pronunciation_overrides` v3), repository (22 test) và đường truyền tới sidecar (`getPronunciations` → `/synthesize`), nhưng **chưa có IPC channel lẫn màn hình**. Nghĩa là user chưa sửa được cách đọc dù backend đã sẵn sàng. Dự định gắn vào P3.4 nhưng **P3.4 đã xong mà vẫn chưa làm** — P3.4 giữ đúng phạm vi plan.md (pane + highlight + click-to-seek + splitter). Chỗ gắn nay đã có sẵn: mỗi từ trên phụ đề là một `<button>` có `data-word-index`, thêm menu chuột phải "sửa cách đọc" là đủ. Cần 3 IPC channel + 1 dialog |
+| ~~UI tầng 3 phiên âm chưa có~~ | ✅ Xong | P5.2: 3 kênh `pronunciations:*` + hộp sửa cách đọc mở bằng **chuột phải** trên từ ở phụ đề. Mặc định lưu theo sách, tích ô để áp toàn cục. `term` tự hạ chữ thường ở biên, cấm khoảng trắng trong cách đọc kèm câu giải thích. 33 test mới. **Chưa chạy trên app thật** — xem hàng dưới |
 | ~~Phiên âm Nhật chưa nghe thật lần nào~~ | ✅ Xong | User đã nghe hết một chương và xác nhận cả hai vế của DoD Phase 3: nghe liên tục được, chữ sáng đúng nhịp. Đây cũng là căn cứ **bỏ Phase 4** (mục 4.68). P5.1 thêm nút nghe thử với câu mẫu **có sẵn tên riêng Nhật** nên từ nay kiểm lại được bất cứ lúc nào mà không phải generate cả chương |
 | **11 phép kiểm UI của P3.4 chưa chạy lần nào** | **Cao** | `ui-check` đã thêm 3 nhóm (chiều cao 2 pane, tỉ lệ splitter thật, ẩn/hiện, màu `data-active`) nhưng **chưa chạy được trong phiên làm P3.4**. Đây đúng là loại lỗi vitest không thấy: lỗi 4.43 (chiều cao 0) và 4.23 (màu trong suốt) đều thuộc nhóm này, và P3.4 đụng vào **cả hai** — chia flex theo tỉ lệ, và 3 biến màu vừa đổi từ hex sang kênh RGB. Chạy `pnpm ui-check` là việc đầu tiên của phiên sau |
 | Phụ đề chưa giới hạn 3 dòng như plan.md | Thấp | plan.md ghi "subtitle pane 3 dòng". Bản này cho pane cuộn tự do theo tỉ lệ splitter thay vì chốt cứng 3 dòng — user kéo được nên tự chọn được số dòng, và chốt cứng thì đoạn dài bị cắt mất chữ. Nếu thấy vướng thì thêm chế độ "gọn" sau |
@@ -3138,7 +3240,8 @@ scripts/
 | Bấm đoạn lúc player `idle` không tự phát | Thấp | Cố ý: bấm đoạn để xem nó ở trang nào là thao tác thường gặp, tự phát tiếng lúc đó là bất ngờ khó chịu. Đang phát rồi thì bấm đoạn khác mới nhảy tới. Đổi được nếu user thấy ngược |
 | `getSegmentAudio` chưa kiểm trên sách EN | Thấp | Probe chạy trên giọng VI. Cách gộp phoneme → từ của espeak với tiếng Anh chưa đo (đã là nợ sẵn ở hàng "Timing chưa kiểm trên giọng EN"); đường ước lượng thì độc lập ngôn ngữ vì chỉ đếm ký tự |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |
+| **UI sửa cách đọc chưa chạy trên app thật** | **TB** | P5.2 mới ở mức unit test. Hai thứ chưa xác nhận: (1) bấm chuột phải trên phụ đề trong Chromium thật có mở hộp không, và menu ngữ cảnh hệ thống có bị chặn đúng không — jsdom không có menu đó; (2) **chưa nghe** một đoạn generate lại sau khi sửa để xác nhận cách đọc mới thật sự tới được Piper. Đường truyền `getPronunciations` → `/synthesize` có từ P3.5 và có test, nhưng chưa lần nào chạy với dữ liệu do user nhập từ UI |
 | **Nghe thử giọng chưa chạy trên app thật** | **TB** | P5.1 mới có unit test: nút, ba trạng thái (`Nghe thử`/`Đang tạo…`/`Dừng`), và kỷ luật thu hồi Blob URL đều xanh ở jsdom — nhưng **jsdom không phát được audio** (`HTMLMediaElement.play` là bản giả trong `setup.ts`). Nghĩa là chưa có gì chứng minh câu mẫu thật sự kêu thành tiếng, hay `/preview` trả về file `.ogg` Chromium giải mã được. Chạy `pnpm ui-check` + bấm thử bằng tay là việc đầu tiên của phiên sau |
-| Không hỗ trợ voice nhiều người nói | TB | 8 giọng VI/EN của Piper có `num_speakers > 1` — `vi_VN-vivos-x_low` **65 giọng**, `en_US-libritts_r-medium` **904 giọng**. Piper cần `speaker_id` lúc tổng hợp mà `catalog.json`, `SynthesizeRequest` và `AppSettings` đều chưa có trường đó; thêm vào catalog mà không sửa code thì luôn đọc bằng người nói số 0. Đáng làm vì VI chỉ có 3 model — mở `vivos` ra là thêm 65 lựa chọn giọng. Cần: trường `speakerId` xuyên 4 tầng + UI chọn người nói |
+| Không hỗ trợ voice nhiều người nói | Thấp | 8 giọng VI/EN của Piper có `num_speakers > 1` (`vivos` 65, `libritts_r` 904). Cần `speakerId` xuyên 4 tầng + UI chọn người nói. **Mức hạ từ TB xuống Thấp** sau khi đo `vivos`: nó là đường duy nhất thêm giọng VI, nhưng thanh điệu bị ép phẳng (xem 4.70) nên không đáng làm chỉ vì nó. Còn giá trị cho giọng EN nhiều người nói nếu sau này cần |
 | Câu nghe thử cố định, user không tự gõ được | Thấp | `VOICE_PREVIEW_TEXT` chọn sẵn theo `lang`, có tên riêng Nhật + chữ số để phủ đúng hai đường chuẩn hoá dễ sai. Cho user gõ câu riêng sẽ hữu ích để thử tên nhân vật cụ thể trong sách họ đang đọc — nhưng phải giới hạn độ dài và chặn đường dùng nó thay hàng đợi generate |
 | Giọng `25hours` chưa nghe thử lần nào | TB | sha256/size đã đối chiếu thật với HF, và đường 16 kHz đã lần theo code (`target_rate_for_opus` trả 16000 → **bỏ qua resample**), nhưng **chưa tải model 63 MB về để nghe**. Chất lượng `low` + 16 kHz nghe ra sao so với `vais1000` (`medium`, 22 kHz) thì chưa ai biết. Nếu tệ hơn hẳn thì nên ghi chú vào catalog để user khỏi mất công tải |

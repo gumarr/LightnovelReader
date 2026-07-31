@@ -7,6 +7,7 @@ import Store from 'electron-store';
 import type { AppSettings } from '@ln/shared';
 import { closeDatabase, initDatabase } from './db/connection.js';
 import { createFileLogger } from './services/logger.js';
+import { resolveIconPath } from './services/icon-paths.js';
 import { createSettingsService } from './services/settings.js';
 import { dbPath, logsDir, modelsDir } from './services/paths.js';
 import {
@@ -345,11 +346,24 @@ const start = (): void => {
   // Bản đóng gói: <asar>/apps/main/dist. Suy từ __dirname nên đúng cả hai,
   // trong khi app.getAppPath() trỏ về gốc asar và ghép sai đường dẫn.
   const appRoot = __dirname;
+
+  // Icon cửa sổ. Thiếu file thì `undefined` và Electron dùng logo mặc định —
+  // không chặn khởi động vì một file trang trí, nhưng vẫn ghi log để còn biết.
+  const iconPath = resolveIconPath({
+    resourcesPath: process.resourcesPath,
+    repoRoot,
+    exists: existsSync,
+  });
+  if (iconPath === undefined) {
+    logger.warn('Không tìm thấy icon.ico — cửa sổ sẽ dùng logo Electron mặc định');
+  }
+
   mainWindow = createMainWindow({
     preloadPath: resolvePreloadPath(appRoot),
     devServerUrl: DEV_SERVER_URL,
     rendererFile: resolveRendererFile(appRoot),
     settings: settings.getAll(),
+    iconPath,
     openDevTools: process.env['LN_DEVTOOLS'] === '1',
     onLoadError: (message) => logger.error(message),
   });

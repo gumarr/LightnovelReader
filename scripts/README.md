@@ -8,7 +8,8 @@ khi có bundle nào, nên không thể phụ thuộc vào bước build.
 | `dev.mjs` | `pnpm dev` | Vite dev server + watch main/preload + mở Electron |
 | `ui-check.mjs` | `pnpm ui-check` | Kiểm UI trong app **đang chạy** qua CDP |
 | `sidecar-build.mjs` | `pnpm build:sidecar` | PyInstaller → `sidecar/dist/ln-sidecar/` |
-| `sidecar-preflight.mjs` | *(tự gọi trong `build:win`)* | Chặn đóng gói khi sidecar thiếu/cũ |
+| `sidecar-preflight.mjs` | *(tự gọi trong `build:win`)* | Chặn đóng gói khi sidecar hoặc icon thiếu/hỏng |
+| `make-icon.mjs` | `pnpm build:icon` | Vẽ `resources/icon.ico` (7 cỡ) + `icon.png`, không cần thư viện ảnh |
 | `sidecar-test.mjs` | `pnpm test:sidecar` | pytest của sidecar |
 | `sqlite-abi.mjs` | `pnpm abi:node` / `abi:electron` | Đổi bản build `better-sqlite3` giữa Node và Electron |
 | `copy-pdf-worker.mjs` | *(trong build của `@ln/main`)* | Chép `pdf.worker.mjs` cạnh bundle (PROGRESS 4.19) |
@@ -103,3 +104,28 @@ nhớ chạy tay. Preflight kiểm ba cách hỏng đã gặp thật:
 Preflight chỉ kiểm phía **nguồn**. Phía **đích** (`resources/sidecar/` trong bản
 đóng gói) do bước "Kiểm sidecar có trong bản đóng gói" ở CI lo — hai chỗ hỏng
 khác nhau.
+
+Từ P5.5a preflight kiểm thêm **icon**, vì nó hỏng đúng kiểu lặng lẽ ấy:
+electron-builder không thấy `icon.ico` thì lùi về logo Electron mặc định rồi vẫn
+báo build thành công. Kiểm cả header 6 byte chứ không chỉ sự tồn tại — file rỗng
+hay PNG đổi đuôi vẫn "tồn tại" y như file thật. **Icon kiểm TRƯỚC sidecar**: nó
+rẻ và độc lập, để sau thì phải sửa xong sidecar, build lại vài phút mới biết icon
+cũng hỏng.
+
+## `make-icon.mjs` — vì sao tự vẽ
+
+`.ico` là định dạng nhị phân, mà CLAUDE.md cấm thêm dependency khi chưa hỏi.
+`sharp`/`jimp`/`to-ico` đều là bản cài lớn chỉ để tạo **một file, đổi vài năm một
+lần**. Pillow có trong Python hệ thống nhưng **không** có trong `sidecar/.venv`,
+nên dựa vào nó là dựng bẫy cho máy khác.
+
+Thực tế `.ico` rất đơn giản: header 6 byte + mỗi ảnh một mục 16 byte + dữ liệu
+PNG nối đuôi. PNG thì chỉ là vài chunk bọc quanh `zlib.deflate`, có sẵn trong
+`node:zlib`. Toàn bộ script là stdlib.
+
+- Vẽ ở toạ độ 0..1 rồi nhân theo `size` nên mọi cỡ đều cân.
+- Lấy mẫu 3×3 mỗi pixel để khử răng cưa — không có thì icon 16 px trông như bậc
+  thang.
+- **Sóng âm tự rụng ở cỡ < 32 px**: vạch chỉ còn ~1 px, vẽ ra thành vệt xám làm
+  bẩn icon. Cỡ nhỏ ưu tiên đọc được khối lớn (sách mở).
+- Sinh lại cho ra **đúng từng byte** — commit file nhị phân vẫn tái lập được.

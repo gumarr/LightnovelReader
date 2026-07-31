@@ -16,6 +16,13 @@ export type CreateWindowOptions = {
   /** File index.html của bản build */
   rendererFile: string;
   settings: AppSettings;
+  /**
+   * Icon cửa sổ. `undefined` thì Electron dùng logo mặc định.
+   *
+   * Cần cả ở bản đóng gói: icon nhúng trong `.exe` lo Explorer/taskbar, nhưng
+   * cửa sổ lúc dev không đi qua electron-builder nên không có gì để nhúng.
+   */
+  iconPath?: string | undefined;
   openDevTools?: boolean;
   /** Gọi khi renderer không tải được — để log lại thay vì im lặng */
   onLoadError: (message: string) => void;
@@ -30,6 +37,10 @@ export const createMainWindow = (options: CreateWindowOptions): BrowserWindow =>
     show: false,
     frame: false,
     backgroundColor: options.settings.theme === 'light' ? '#ffffff' : '#0f0f11',
+    // Spread có điều kiện chứ không `icon: options.iconPath`:
+    // `exactOptionalPropertyTypes` cấm truyền `undefined` tường minh, và
+    // Electron cũng phân biệt "không truyền" với "truyền undefined".
+    ...(options.iconPath === undefined ? {} : { icon: options.iconPath }),
     webPreferences: {
       preload: options.preloadPath,
       nodeIntegration: false,

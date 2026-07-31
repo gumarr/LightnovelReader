@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-31 · commit `a0f1b03`
+> **Cập nhật lần cuối:** 2026-07-31 · commit `(P5.5a)`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -1100,17 +1100,49 @@ sẵn quy ước `clearOnSuccess: false` cho đúng ca này (lượt gọi *ph�
 động); thêm tham số `keepError` cho `loadPending`. Test khoá lại cả hai chiều:
 huỷ hỏng thì **giữ** lỗi, huỷ được thì **xoá** lỗi cũ.
 
-⚠️ **Chưa chạy trên app thật.** Toàn bộ P5.4 mới ở mức unit test. 10 phép kiểm
-`ui-check` đã viết sẵn — chỉ còn chạy. Xem mục 8.
+✅ **Đã chạy trên app thật.** `pnpm ui-check` sau P5.4: 10 phép kiểm P5.4 xanh
+hết. Hai phép đỏ trong lượt đó là **đỏ giả của chính phép kiểm** (mục 4.74).
+
+### Phase 5 — P5.5a Icon app + latest.yml + log rotate ✅
+
+| Việc | Kết quả |
+|---|---|
+| `scripts/make-icon.mjs` | Vẽ `icon.ico` 7 cỡ (16→256) + `icon.png`, **chỉ dùng stdlib** |
+| `resources/icon.ico` | 12.3 KB, Pillow đọc được đủ 7 cỡ, sinh lại ra **đúng từng byte** |
+| `electron-builder.yml` | `win.icon`, 3 icon NSIS, `publish:` tường minh, **sửa `artifactName`** |
+| `apps/main/src/services/icon-paths.ts` | Resolver thuần + 5 test, cùng khuôn `sidecar-paths.ts` |
+| `apps/main/src/window.ts` | Nhận `iconPath`, spread có điều kiện vì `exactOptionalPropertyTypes` |
+| `scripts/sidecar-preflight.mjs` | Kiểm thêm icon (tồn tại + header 6 byte), **chạy trước** phần sidecar |
+| Log rotate | **Đã có sẵn và chạy đúng** — chỉ thêm 2 test còn thiếu |
+
+**Quyết định: tự vẽ icon thay vì thêm dependency.** Xem `scripts/README.md`.
+`.ico` = header 6 byte + mục 16 byte mỗi ảnh + PNG nối đuôi; PNG = vài chunk bọc
+`zlib.deflate` có sẵn trong `node:zlib`. Pillow có trong Python hệ thống nhưng
+**không** có trong `sidecar/.venv` — dựa vào nó là dựng bẫy cho máy khác.
+
+**Vẽ xong phải NHÌN, không chỉ đo.** Bản đầu qua hết mọi phép kiểm số (7 cỡ, góc
+trong suốt, tâm đúng màu accent) nhưng render ra thì "cuốn sách" là một **khối
+trắng phẳng** — rãnh giữa quá mảnh nên hai trang dính làm một, ở 16 px thành đốm
+trắng vô nghĩa. Bản hai lại để ba vạch sóng âm to choán hết trang phải, đọc ra
+"hai trang kẻ sọc". Phải render ra ảnh và nhìn ở **đúng cỡ thật, trên cả nền tối
+lẫn nền sáng** mới thấy. Cùng một bài học với 4.74: số đo xanh không có nghĩa
+thứ user nhìn thấy là đúng.
+
+**Log rotate hoá ra đã xong từ trước.** `services/logger.ts` có xoay theo kích
+thước (2 MB), giữ 5 file, và **đã nối thật** vào `logsDir(userData)` ở
+`index.ts:90` — kiểm bằng grep trước khi viết gì, đúng bài học 4.71/4.73 (đừng
+tin "chưa có" mà không tra). Chỉ thiếu test cho **giới hạn 5 file** (phần chặn
+log phình vô hạn) và cho việc **lỗi fs khác ENOENT phải nổi lên**; đã bổ sung.
 
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **2131 passed** (+140 ở P5.4 — dấu trang 4 tầng, thống kê, bảng hàng đợi, 3 tab) |
-| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.4 — phần này không đụng sidecar) |
+| Unit test TypeScript | **2138 passed** (+7 ở P5.5a — resolver icon 5, log rotate 2) |
+| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.5a — phần này không đụng sidecar) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
-| **Kiểm UI thật (`pnpm ui-check`)** | **73 phép kiểm** (+10 ở P5.4) — lần chạy gần nhất là sau P5.3: **59/63 đạt**. Phần P5.4 **chưa chạy lần nào**. P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| **Kiểm UI thật (`pnpm ui-check`)** | **73 phép kiểm** — lần chạy gần nhất **sau P5.4: 71/73 đạt**, và 2 phép đỏ đều là **đỏ giả của chính phép kiểm** (mục 4.74, đã sửa). Toàn bộ P5.3 + P5.4 xanh. P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| Icon app | **7 cỡ** (16→256) trong `resources/icon.ico`, sinh từ `pnpm build:icon`, tái lập đúng byte |
 | Giọng đọc trong catalog | **3** (2 VI + 1 EN) — xem mục 8 về giọng nhiều người nói |
 | Schema DB | **v3** — P5.4 **không** thêm migration, xem lý do ở mục 4.73 |
 | Typecheck | Sạch (5 package) |
@@ -1142,9 +1174,17 @@ commit và dừng phiên):
 
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
-| P5.5a | Icon app + metadata installer; `latest.yml` sinh ra đúng; log rotate | ⬅️ **tiếp theo** |
-| P5.5b | Auto-update: `electron-updater` ở main + IPC contract | ⏳ Chờ |
+| P5.5a | Icon app + metadata installer; `latest.yml` sinh ra đúng; log rotate | ✅ Xong |
+| P5.5b | Auto-update: `electron-updater` ở main + IPC contract | ⬅️ **tiếp theo** |
 | P5.5c | UI auto-update (báo có bản mới, tải, cài lại) + README qua SmartScreen | ⏳ Chờ |
+
+⚠️ **P5.5a chưa chạy `pnpm build:win` lần nào.** Icon đã kiểm bằng decoder độc
+lập (Pillow đọc đủ 7 cỡ) và bằng mắt ở cỡ thật trên cả hai nền, preflight đã kiểm
+đủ 4 cách hỏng. Nhưng **hai thứ chỉ bản đóng gói thật mới trả lời được**: (1)
+electron-builder có nhúng icon vào `.exe` không, (2) `artifactName` mới có sinh ra
+`latest.yml` **khớp tên file thật** không — chính lỗi 4.75. Cần một lượt
+`pnpm build:win`, mà bước đó lại đòi build lại sidecar trước (preflight đang chặn
+vì `.exe` cũ hơn mã Python 5 ngày).
 
 ✅ **`pnpm ui-check` đã chạy sau P5.4 — 71/73 đạt.** Toàn bộ P5.3 **và P5.4**
 xanh: mỗi tab panel cao 664 px thật, hai thanh tiến độ ra màu thật,
@@ -3023,6 +3063,36 @@ stylesheet") và **không tính** `rgb(var(--x) / .15)` — cho `rgba(0,0,0,0)` 
 hai nhánh, tức không phân biệt được đúng/sai. Đó chính là lý do `ui-check` tồn
 tại. Xác nhận cuối cùng phải là một lượt `pnpm ui-check` thật.
 
+### 4.75 Dấu cách trong `artifactName` làm hỏng auto-update — không lộ ra khi build
+
+Bản build trước (0.1.0) sinh ra hai thứ **không khớp nhau**:
+
+| Nơi | Tên |
+|---|---|
+| File thật trên đĩa | `LN Reader-0.1.0-x64.exe` (**dấu cách**) |
+| `latest.yml` trỏ tới | `LN-Reader-0.1.0-x64.exe` (**gạch nối**) |
+
+Nguyên nhân: `artifactName: ${productName}-...` mà `productName` là "LN Reader".
+electron-builder chuẩn hoá tên trong metadata nhưng **không đổi tên file thật**,
+còn GitHub Releases lại tự thay dấu cách khi upload — ba cách viết cho cùng một
+file. `electron-updater` tải theo `latest.yml`, nên nó xin một URL không tồn tại.
+
+**Vì sao nguy hiểm:** build xanh, cài tay xong chạy tốt, `latest.yml` nhìn hợp
+lệ. Lỗi chỉ lộ khi user bấm cập nhật ở **bản đã phát hành** — tức sau khi đã
+publish, và với đúng những người đang dùng bản cũ.
+
+Sửa: bỏ `${productName}`, ghi thẳng `LN-Reader-${version}-${arch}.${ext}` cho cả
+NSIS lẫn portable. Tên phát hành **không được có dấu cách**, chấm hết.
+
+> Cùng họ với 4.19/4.29a/4.73: thứ chỉ hỏng ở ranh giới đóng gói/phát hành, nơi
+> unit test không với tới. Khác ở chỗ nó còn qua được cả bước cài đặt thủ công.
+
+**Đồng thời khai tường minh `publish:`.** `app-update.yml` của bản build trước đã
+có đúng `gumarr/LightnovelReader` mà **không có dòng cấu hình nào** —
+electron-builder tự suy từ `git remote`. Tiện, nhưng nghĩa là đích phát hành phụ
+thuộc máy đang build: ai clone từ fork sẽ build ra `latest.yml` trỏ về repo của
+họ và không có gì báo. Nay ghi rõ trong `electron-builder.yml`.
+
 ### 4.74 `ui-check` đỏ giả lần thứ ba: mốc kiểm ngầm giả định chương dài
 
 Lượt chạy `ui-check` sau P5.4 đỏ 2 phép kiểm — **cả hai lại là lỗi của phép kiểm**,
@@ -3345,7 +3415,8 @@ apps/main/src/
   services/storage.ts      CHỖ DUY NHẤT xoá file của user (audio, timing, bản copy
                            sách). Xoá file trước, DB sau — mục 4.39
   services/settings.ts     electron-store, file hỏng → rơi về mặc định từng field
-  services/logger.ts       Log file + xoay vòng
+  services/logger.ts       Log file + xoay vòng (2 MB × 5 file)
+  services/icon-paths.ts   Tìm icon.ico: repo (dev) vs resources/ (đóng gói)
 
 apps/preload/src/
   api.ts                   window.api.* — không lộ ipcRenderer
@@ -3566,6 +3637,7 @@ scripts/
 | Câu nghe thử cố định, user không tự gõ được | Thấp | `VOICE_PREVIEW_TEXT` chọn sẵn theo `lang`, có tên riêng Nhật + chữ số để phủ đúng hai đường chuẩn hoá dễ sai. Cho user gõ câu riêng sẽ hữu ích để thử tên nhân vật cụ thể trong sách họ đang đọc — nhưng phải giới hạn độ dài và chặn đường dùng nó thay hàng đợi generate |
 | Dấu trang không sửa được từ ngoài trình đọc | Thấp | Chỉ xem/sửa được khi đang mở sách. Màn chi tiết sách không có tab dấu trang — muốn xem lại chỗ đã đánh dấu phải vào đọc trước. Đủ dùng vì dấu trang vốn để **quay lại chỗ đọc**, mà quay lại thì đằng nào cũng phải mở sách |
 | Đánh dấu lại đoạn cũ mà bỏ trống ghi chú thì **xoá** ghi chú | Thấp | `upsert` ghi `note = NULL` khi không truyền. Đúng với đường UI hiện tại (`BookmarkButton` luôn điền sẵn ghi chú cũ vào ô nên user thấy trước khi lưu), nhưng nếu sau này có đường gọi `bookmarks:add` không qua ô đó thì nó xoá ghi chú lặng lẽ. Cả bản thật lẫn bản giả trong test đều hành xử giống nhau — đã khoá lại |
+| **P5.5a chưa qua `pnpm build:win`** | **TB** | Icon đã kiểm bằng decoder độc lập + nhìn mắt ở cỡ thật; preflight chặn đủ 4 cách hỏng. Nhưng **chỉ bản đóng gói thật mới trả lời được** hai câu: icon có nhúng vào `.exe` không, và `artifactName` mới có làm `latest.yml` khớp tên file thật không (lỗi 4.75). Vướng: preflight đang chặn vì sidecar `.exe` cũ hơn mã Python 5 ngày → phải `pnpm build:sidecar` trước, mất vài phút |
 | Bảng hàng đợi hiện `segmentId` chứ không hiện text đoạn | Thấp | Job chỉ mang id; tra text cho tới 200 hàng là 200 lượt truy vấn cho một bảng chẩn đoán. Id đủ để đối chiếu với danh sách đoạn, nhưng không đọc được bằng mắt. Sửa được bằng một truy vấn JOIN trả kèm text nếu thấy cần |
 | ~~P5.4 chưa chạy trên app thật~~ | ✅ **đã đóng** | Đã chạy `pnpm ui-check` thật: 10 phép kiểm P5.4 **xanh hết**. Xác nhận trong Chromium: mỗi tab panel cao 664 px thật (không dựng lại 4.43), hai thanh tiến độ ra màu thật (`rgb(129,140,248)` / `rgb(113,113,122)` — không rơi vào bẫy `bg-success` của 4.23), `queue:listPending` trả lời được |
 | ~~Màn Cài đặt chưa chạy trên app thật~~ | ✅ **đã đóng** | Cùng lượt chạy trên: 5 phép kiểm P5.3 xanh. Cỡ chữ preview khớp thanh trượt (18 px vs 18 px), chữ preview không trong suốt, cả dark lẫn light đều ra màu khác nhau thật |

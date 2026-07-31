@@ -99,4 +99,34 @@ describe('createFileLogger', () => {
     logger.info('cũng ngắn');
     expect(readdirSync(dir).filter((f) => f.startsWith('app-'))).toHaveLength(0);
   });
+
+  it('giữ tối đa 5 file lưu trữ, xoá bản cũ nhất', () => {
+    // Đây là phần chặn log phình vô hạn — nếu hỏng thì `{userData}/logs/` cứ
+    // lớn dần mà không có gì báo, và chỉ lộ ra khi user hết ổ đĩa.
+    const logger = createFileLogger(dir);
+
+    // Mỗi vòng: nhồi file vượt ngưỡng rồi ghi một dòng để kích hoạt xoay.
+    for (let i = 0; i < 8; i += 1) {
+      writeFileSync(join(dir, 'app.log'), 'x'.repeat(3 * 1024 * 1024), 'utf8');
+      logger.info(`vòng ${String(i)}`);
+    }
+
+    const archived = readdirSync(dir).filter((f) => f.startsWith('app-') && f.endsWith('.log'));
+
+    // 8 lần xoay nhưng chỉ còn 5 bản: 4 bản lưu trữ + app.log hiện tại.
+    expect(archived.length).toBeLessThanOrEqual(5);
+    expect(archived.length).toBeGreaterThan(0);
+  });
+
+  it('lỗi fs khác ENOENT phải nổi lên, không nuốt', () => {
+    // `rotateIfNeeded` bắt ENOENT (file chưa có ở lần ghi đầu) là đúng, nhưng
+    // bắt hết mọi lỗi thì hỏng quyền ghi cũng thành im lặng — CLAUDE.md cấm
+    // try/catch nuốt lỗi. Thư mục không tồn tại là ca kiểm được ổn định.
+    const logger = createFileLogger(dir);
+    logger.info('có file rồi');
+
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(() => logger.info('thư mục biến mất')).toThrow();
+  });
 });

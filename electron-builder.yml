@@ -29,7 +29,20 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  # KHÔNG dùng `${productName}` ở đây: nó là "LN Reader", có **dấu cách**, và
+  # dấu cách phá auto-update. Bản build trước sinh ra file `LN Reader-0.1.0-x64.exe`
+  # trong khi `latest.yml` ghi `LN-Reader-0.1.0-x64.exe` — electron-builder chuẩn
+  # hoá tên trong metadata nhưng không đổi tên file thật, mà GitHub Releases lại
+  # tự thay dấu cách khi upload. Ba cách viết cho cùng một file, và updater tải
+  # theo `latest.yml` nên sẽ nhận 404. Lỗi này **không lộ ra khi build hay khi
+  # cài tay** — chỉ lộ lúc user bấm cập nhật.
+  artifactName: LN-Reader-${version}-${arch}.${ext}
+  # Khai TƯỜNG MINH dù `buildResources: resources` đã đủ để electron-builder tự
+  # tìm thấy `icon.ico`. Tự tìm mà không thấy thì nó lặng lẽ dùng icon Electron
+  # mặc định và **vẫn báo build thành công** — đúng kiểu hỏng đã gặp ở
+  # `extraResources` (xem ghi chú cuối file). Ghi rõ đường dẫn để thiếu file là
+  # lỗi build, không phải bản cài mang logo Electron.
+  icon: resources/icon.ico
   # Không mua code signing certificate — user sẽ thấy SmartScreen warning,
   # README hướng dẫn "More info → Run anyway"
   signAndEditExecutable: false
@@ -41,9 +54,34 @@ nsis:
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  # Icon cho chính file cài đặt và mục "Add/remove programs"
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  # Icon hiện ở đầu cửa sổ trình cài đặt
+  installerHeaderIcon: resources/icon.ico
+  # Tên thư mục Start Menu — không có thì NSIS dùng productName kèm khoảng trắng
+  shortcutName: LN Reader
+
+# Nơi auto-update đi tìm bản mới (P5.5b sẽ dùng tới).
+#
+# **Khai TƯỜNG MINH dù electron-builder tự suy được từ git remote.** Bản build
+# trước đã sinh ra `app-update.yml` đúng `gumarr/LightnovelReader` mà không có
+# dòng cấu hình nào — tiện, nhưng nghĩa là đích phát hành phụ thuộc vào
+# `git remote` của máy đang build. Ai clone từ fork sẽ build ra `latest.yml` trỏ
+# về repo của họ, và **không có gì báo cho biết**. Ghi rõ ở đây thì đích cố định
+# theo mã nguồn, không theo máy.
+#
+# `releaseType: release` — không đẩy bản nháp. Auto-update chỉ thấy được release
+# đã publish, nên để `draft` là bản cài im lặng không bao giờ tìm thấy bản mới.
+publish:
+  - provider: github
+    owner: gumarr
+    repo: LightnovelReader
+    releaseType: release
 
 portable:
-  artifactName: ${productName}-${version}-portable.${ext}
+  # Cùng lý do như `win.artifactName`: không có dấu cách trong tên file phát hành
+  artifactName: LN-Reader-${version}-portable.${ext}
 
 # Sidecar Python và catalog voice đi kèm bản cài, KHÔNG nằm trong asar.
 #
@@ -65,5 +103,11 @@ extraResources:
     to: sidecar
   - from: resources/voices
     to: voices
+  # Icon cũng phải là file THẬT trong bản cài, không chỉ nhúng vào .exe.
+  # Icon nhúng lo phần Explorer/taskbar; còn `BrowserWindow({ icon })` cần một
+  # đường dẫn đọc được lúc chạy. Đích khớp `resolveIconPath()` ở
+  # `apps/main/src/services/icon-paths.ts` — đổi một bên phải đổi bên kia.
+  - from: resources/icon.ico
+    to: icon.ico
 
 # Không bundle voice model / aligner — tải runtime từ Hugging Face

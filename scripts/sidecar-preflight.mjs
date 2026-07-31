@@ -11,7 +11,7 @@
  * gọi tới đây, nên tới lúc này thiếu file nghĩa là bước build kia đã hỏng mà mã
  * thoát vẫn 0 — chính là thứ cần chặn.
  *
- * Ba thứ được kiểm, tương ứng ba cách hỏng đã gặp thật:
+ * Bốn thứ được kiểm, tương ứng bốn cách hỏng lặng lẽ:
  *
  * 1. **Thiếu `.exe`** — chưa chạy `build:sidecar` lần nào, hoặc PyInstaller trả 0
  *    mà file cuối vẫn thiếu (xem `sidecar/build.py::verify`).
@@ -19,8 +19,11 @@
  * 3. **`.exe` cũ hơn mã nguồn Python** — sửa sidecar rồi quên build lại. Bản cài
  *    sẽ mang sidecar của lần trước, và không có gì báo. Đây là cách hỏng duy
  *    nhất mà mắt thường không thấy được.
+ * 4. **Thiếu/hỏng `resources/icon.ico`** (P5.5a) — electron-builder lùi về logo
+ *    Electron mặc định rồi vẫn báo thành công, y hệt cách nó xử lý
+ *    `extraResources` thiếu.
  */
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -48,6 +51,71 @@ const fail = (lines) => {
   console.error(['[preflight] LỖI:', ...lines, '', HOW_TO_BUILD].join('\n'));
   process.exit(1);
 };
+
+/* ------------------------------------------------------------------ icon */
+
+/**
+ * Icon hỏng **cùng một kiểu lặng lẽ** như sidecar: electron-builder không thấy
+ * `icon.ico` thì lùi về logo Electron mặc định và vẫn báo build thành công. Bản
+ * cài ra mang logo lạ, mà lúc đó đã publish rồi.
+ *
+ * Kiểm luôn cả tính hợp lệ tối thiểu của file, không chỉ sự tồn tại: một file
+ * rỗng hay file PNG đổi đuôi thành `.ico` vẫn "tồn tại" y như file thật.
+ */
+const icon = join(root, 'resources', 'icon.ico');
+
+if (!existsSync(icon)) {
+  console.error(
+    [
+      '[preflight] LỖI:',
+      `Không thấy ${relative(root, icon)}.`,
+      'Bản cài sẽ mang logo Electron mặc định.',
+      '',
+      'Sinh lại bằng:',
+      '  pnpm build:icon',
+    ].join('\n'),
+  );
+  process.exit(1);
+}
+
+// ICONDIR: 2 byte reserved (0), 2 byte type (1 = icon), 2 byte số ảnh.
+// Đọc 6 byte đầu là đủ phân biệt .ico thật với file rỗng/PNG đổi tên.
+const head = readFileSync(icon).subarray(0, 6);
+
+// Kiểm độ dài TRƯỚC khi đọc: `readUInt16LE` trên buffer ngắn ném RangeError, và
+// stack trace đó che mất câu "chạy pnpm build:icon" mà user cần đọc. File rỗng
+// là ca có thật — `> resources/icon.ico` hụt tay là ra ngay.
+if (head.length < 6) {
+  console.error(
+    [
+      '[preflight] LỖI:',
+      `${relative(root, icon)} chỉ dài ${head.length} byte — không phải file .ico.`,
+      '',
+      'Sinh lại bằng:',
+      '  pnpm build:icon',
+    ].join('\n'),
+  );
+  process.exit(1);
+}
+
+const iconType = head.readUInt16LE(2);
+const iconCount = head.readUInt16LE(4);
+
+if (head.readUInt16LE(0) !== 0 || iconType !== 1 || iconCount === 0) {
+  console.error(
+    [
+      '[preflight] LỖI:',
+      `${relative(root, icon)} không phải file .ico hợp lệ.`,
+      `Header đọc được: reserved=${head.readUInt16LE(0)} type=${iconType} count=${iconCount}`,
+      '',
+      'Sinh lại bằng:',
+      '  pnpm build:icon',
+    ].join('\n'),
+  );
+  process.exit(1);
+}
+
+console.log(`[preflight] OK: icon.ico hợp lệ, ${iconCount} cỡ`);
 
 const exe = join(outputDir, EXE_NAME);
 if (!existsSync(exe)) {
@@ -107,3 +175,4 @@ const totalBytes = (dir) => {
 
 const sizeMb = (totalBytes(outputDir) / (1024 * 1024)).toFixed(1);
 console.log(`[preflight] OK: ${EXE_NAME} mới hơn mã nguồn, thư mục ${sizeMb} MB`);
+

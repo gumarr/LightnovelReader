@@ -439,13 +439,22 @@ ngữ nghĩa của nó thì phải sửa lại subtitle pane vừa viết xong.
 **DoD:** Nghe liên tục hết chương, chữ sáng đúng nhịp. Tên Nhật đọc ra nghe
 hiểu được, và highlight vẫn bám đúng chữ trên màn hình ở những câu đó.
 
-### Phase 4 — Forced Alignment (1 tuần)
-- CTC aligner ONNX, background worker
-- Tải model aligner optional trong app
-- Cache `timings.json`, `alignStatus` realtime lên UI
-- Settings: bật/tắt alignment, precision mode
+### ~~Phase 4 — Forced Alignment (1 tuần)~~ — ĐÃ BỎ
 
-**DoD:** Highlight chính xác với câu có số/tên riêng.
+~~CTC aligner ONNX, background worker; tải model aligner optional; cache
+`timings.json`, `alignStatus` realtime; settings bật/tắt alignment.~~
+
+**Bỏ sau khi nghe thật.** User nghe hết một chương ở cuối Phase 3 và xác nhận
+highlight bám đúng từng chữ — timing `phoneme` của Piper (lấy độ dài phoneme do
+chính engine sinh ra) đã đủ chính xác ở quy mô segment ~10 s. Model aligner
+~300 MB sẽ đẩy installer từ 143 MB lên ~450 MB, vượt xa mốc 200 MB ở mục 3.
+
+**Điều kiện mở lại:** user thật báo highlight lệch ở câu **nhiều số hoặc tên
+riêng** — đó là ca `phoneme` cố ý rơi về `estimate`. Khi đó thử phương án rẻ hơn
+trước (sửa cách gộp phoneme → từ cho chữ số) rồi mới tính tới CTC.
+
+Chi tiết đầy đủ ở PROGRESS.md mục 4.68. Hạ tầng đã dựng (`AlignStatus` ba trạng
+thái, `JobType.align`, `AppSettings.alignmentEnabled`) **giữ nguyên**, không gỡ.
 
 ### Phase 5 — Polish & Ship (1 tuần)
 - Settings: theme, font size/family subtitle, tỉ lệ pane, thư mục audio, bitrate, xóa cache

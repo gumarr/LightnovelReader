@@ -24,11 +24,24 @@ export type VoiceState = {
   error: string | null;
   /** Trạng thái sidecar — UI chặn nút tải khi chưa `ready` */
   sidecar: SidecarStatus | null;
+  /**
+   * Voice đang tổng hợp câu nghe thử, `null` khi không có lượt nào.
+   *
+   * Chỉ MỘT lượt tại một thời điểm: sidecar tổng hợp tuần tự, nên bấm thử ba
+   * giọng liền sẽ xếp hàng và giọng cuối phát sau vài giây — user không nối
+   * được tiếng vừa nghe với nút vừa bấm.
+   */
+  previewing: string | null;
+  /** Voice đang phát tiếng nghe thử, `null` khi im lặng */
+  playing: string | null;
 
   load: () => Promise<void>;
   download: (voiceId: string) => Promise<void>;
   cancel: (voiceId: string) => Promise<void>;
   remove: (voiceId: string) => Promise<void>;
+  /** Lấy bytes nghe thử. Trả `undefined` khi hỏng — lỗi đã vào `error`. */
+  preview: (voiceId: string) => Promise<ArrayBuffer | undefined>;
+  setPlaying: (voiceId: string | null) => void;
   applyProgress: (progress: VoiceDownloadProgress) => void;
   setSidecar: (status: SidecarStatus) => void;
   clearError: () => void;
@@ -40,6 +53,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   loading: false,
   error: null,
   sidecar: null,
+  previewing: null,
+  playing: null,
 
   load: async () => {
     set({ loading: true, error: null });
@@ -115,6 +130,28 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       set({ error: `${IPC_FAILED} (${errorMessage(e)})` });
     }
   },
+
+  preview: async (voiceId) => {
+    // Đã có lượt đang chạy thì bỏ qua hẳn, không xếp hàng: xếp hàng nghĩa là
+    // giọng thứ ba phát sau vài giây, lúc user đã quên mình bấm gì.
+    if (get().previewing !== null) return undefined;
+
+    set({ previewing: voiceId, error: null });
+    try {
+      const result = await window.api.voices.preview(voiceId);
+      if (!result.ok) {
+        set({ previewing: null, error: result.error.message });
+        return undefined;
+      }
+      set({ previewing: null });
+      return result.data.bytes;
+    } catch (e) {
+      set({ previewing: null, error: `${IPC_FAILED} (${errorMessage(e)})` });
+      return undefined;
+    }
+  },
+
+  setPlaying: (voiceId) => set({ playing: voiceId }),
 
   applyProgress: (progress) => {
     if (progress.state === 'done') {

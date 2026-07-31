@@ -400,3 +400,74 @@ class TestSynthesize:
         response = client.post("/synthesize", headers=auth(), json=self._body(audio / "s.ogg"))
         assert response.status_code == 422
         assert "Giọng đọc" in response.json()["detail"]
+
+
+class TestPreview:
+    """Route `/preview` — nghe thử giọng đã cài.
+
+    Cũng như `TestSynthesize`: không nạp model thật, chỉ kiểm **biên HTTP**.
+    Phần tổng hợp thật dùng chung `engine.synthesize` đã khoá ở `test_engine.py`.
+    """
+
+    def _body(self, voice_id: str = "vi_VN-test-medium") -> dict[str, object]:
+        return {"voiceId": voice_id, "text": "Xin chào các bạn.", "lang": "vi", "bitrate": 24}
+
+    def test_thiếu_token_bị_từ_chối(self, tmp_path: Path) -> None:
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        assert client.post("/preview", json=self._body()).status_code == 401
+
+    def test_voice_không_có_trong_catalog(self, tmp_path: Path) -> None:
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        response = client.post("/preview", headers=auth(), json=self._body("khong-ton-tai"))
+        assert response.status_code == 404
+
+    def test_voice_chưa_cài_trả_422_kèm_cách_sửa(self, tmp_path: Path) -> None:
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        response = client.post("/preview", headers=auth(), json=self._body())
+        assert response.status_code == 422
+        assert "Giọng đọc" in response.json()["detail"]
+
+    def test_không_cần_cấu_hình_thư_mục_audio(self, tmp_path: Path) -> None:
+        """Khác hẳn `/synthesize`: nghe thử không ghi đĩa nên không cần `audioDir`.
+
+        Đây là điểm phân biệt quan trọng nhất giữa hai route. Nếu ngày nào đó
+        `/preview` bắt đầu đòi `audioDir` thì nghĩa là nó đã lén ghi file — test
+        này đỏ ngay, không phải đợi user thấy rác trong thư viện audio.
+        """
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        response = client.post("/preview", headers=auth(), json=self._body())
+        # 422 = voice chưa cài (đi được tới engine), KHÔNG phải 400 thiếu audioDir.
+        assert response.status_code == 422
+
+    def test_text_rỗng_bị_từ_chối(self, tmp_path: Path) -> None:
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        body = self._body()
+        body["text"] = ""
+        assert client.post("/preview", headers=auth(), json=body).status_code == 422
+
+    def test_text_quá_dài_bị_từ_chối(self, tmp_path: Path) -> None:
+        """Trần 300 ký tự: nghe thử là một câu, không phải một đoạn."""
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        body = self._body()
+        body["text"] = "a" * 301
+        assert client.post("/preview", headers=auth(), json=body).status_code == 422
+
+    def test_bitrate_ngoài_danh_sách_bị_từ_chối(self, tmp_path: Path) -> None:
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        body = self._body()
+        body["bitrate"] = 48
+        assert client.post("/preview", headers=auth(), json=body).status_code == 422
+
+    def test_không_nhận_outPath(self, tmp_path: Path) -> None:
+        """Gửi kèm `outPath` cũng không ghi được gì — route này không có trường đó.
+
+        pydantic bỏ qua field lạ theo mặc định, nên đây chỉ khoá lại rằng không
+        ai âm thầm thêm đường ghi đĩa vào `/preview` mà quên rằng nó đã bỏ
+        `resolve_audio_path`.
+        """
+        client = make_client(tmp_path / "models", write_catalog(tmp_path))
+        body = self._body()
+        body["outPath"] = str(tmp_path / "ke-gian.ogg")
+        response = client.post("/preview", headers=auth(), json=body)
+        assert response.status_code == 422  # dừng ở "voice chưa cài"
+        assert not (tmp_path / "ke-gian.ogg").exists()

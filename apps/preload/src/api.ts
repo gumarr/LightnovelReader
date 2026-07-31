@@ -37,6 +37,7 @@ import {
   type ThemeMode,
   type VoiceCatalogItem,
   type VoiceDownloadProgress,
+  type VoicePreview,
   type WindowState,
 } from '@ln/shared';
 
@@ -140,6 +141,15 @@ export const api = {
     cancelDownload: (voiceId: string): Promise<Result<void>> =>
       invoke('voices:cancelDownload', voiceId),
     remove: (voiceId: string): Promise<Result<void>> => invoke('voices:remove', voiceId),
+    /**
+     * Nghe thử giọng **đã cài**. Chờ tới khi có tiếng (~2 s, lần đầu mỗi voice
+     * thêm ~1.5 s nạp model) — khác `download` vốn trả về ngay.
+     *
+     * Renderer nhận bytes `.ogg` và **phải** `URL.revokeObjectURL` sau khi phát
+     * xong, như mọi đường audio khác.
+     */
+    preview: (voiceId: string): Promise<Result<VoicePreview>> =>
+      invoke('voices:preview', voiceId),
     onDownloadProgress: (
       listener: (progress: VoiceDownloadProgress) => void,
     ): (() => void) => subscribe('voices:downloadProgress', listener),

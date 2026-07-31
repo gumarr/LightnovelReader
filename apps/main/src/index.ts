@@ -259,6 +259,7 @@ const start = (): void => {
     onProgress: (progress) => {
       mainWindow?.webContents.send('voices:downloadProgress', progress);
     },
+    getBitrate: () => settings.getAll().bitrate,
     logError: (message, detail) => {
       logger.error(message, detail);
     },
@@ -288,6 +289,7 @@ const start = (): void => {
   registerHandler('voices:download', voicesHandlers.download, logger);
   registerHandler('voices:cancelDownload', voicesHandlers.cancelDownload, logger);
   registerHandler('voices:remove', voicesHandlers.remove, logger);
+  registerHandler('voices:preview', voicesHandlers.preview, logger);
   registerHandler('queue:enqueueSegments', queueHandlers.enqueueSegments, logger);
   registerHandler('queue:enqueueChapter', queueHandlers.enqueueChapter, logger);
   registerHandler('queue:enqueueBook', queueHandlers.enqueueBook, logger);

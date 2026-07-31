@@ -9,7 +9,16 @@
     "",
     "Thêm voice mới = thêm một mục vào đây, không sửa code. Nhưng BẮT BUỘC phải",
     "tải file thật rồi tính sha256 — đoán hoặc để rỗng thì bước verify thành vô",
-    "nghĩa và user nhận file hỏng mà không biết."
+    "nghĩa và user nhận file hỏng mà không biết.",
+    "",
+    "CHỈ thêm voice một người nói (num_speakers = 1 trong voices.json của HF).",
+    "Voice nhiều người nói (vi_VN-vivos-x_low có 65, en_US-libritts_r-medium có",
+    "904) cần truyền speaker_id lúc tổng hợp — schema này và /synthesize đều",
+    "chưa có trường đó, thêm vào đây sẽ luôn đọc bằng người nói số 0.",
+    "",
+    "sampleRate KHÔNG bắt buộc phải là 22050. Engine đọc tần số thật từ file",
+    "config của model rồi tự chọn đích Opus (xem audio/resample.py), nên voice",
+    "16 kHz như 25hours chạy đúng mà không phải sửa gì."
   ],
   "version": 1,
   "baseUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/",
@@ -33,6 +42,28 @@
           "path": "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx.json",
           "sizeBytes": 4860,
           "sha256": "fafb9da1354ed4b77c31af228ed41fb41cd825c14cffa105454b25e6ae751ee0"
+        }
+      ]
+    },
+    {
+      "id": "vi_VN-25hours_single-low",
+      "lang": "vi",
+      "name": "25 Hours",
+      "quality": "low",
+      "sampleRate": 16000,
+      "license": "Unknown (dataset InfoRe Technology 1)",
+      "files": [
+        {
+          "kind": "model",
+          "path": "vi/vi_VN/25hours_single/low/vi_VN-25hours_single-low.onnx",
+          "sizeBytes": 63104526,
+          "sha256": "266945c4a80cb3301450c8ba6fcf6ba3542c56cf952a08a8ff3d2d4ff0ab5609"
+        },
+        {
+          "kind": "config",
+          "path": "vi/vi_VN/25hours_single/low/vi_VN-25hours_single-low.onnx.json",
+          "sizeBytes": 4176,
+          "sha256": "344b5849f5bc585031a63b9cc75f96e2c469f3d98879d8d3acbc2fce6d470064"
         }
       ]
     },

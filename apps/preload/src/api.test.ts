@@ -69,6 +69,7 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.voices.download('vi_VN-vais1000-medium'),
     () => api.voices.cancelDownload('vi_VN-vais1000-medium'),
     () => api.voices.remove('vi_VN-vais1000-medium'),
+    () => api.voices.preview('vi_VN-vais1000-medium'),
     () => api.queue.enqueueSegments({ segmentIds: ['seg-1'] }),
     () => api.queue.enqueueChapter({ chapterId: 'ch-1' }),
     () => api.queue.enqueueBook('book-1'),

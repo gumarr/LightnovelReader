@@ -45,6 +45,7 @@ const setup = (
   const handlers = createVoicesHandlers({
     getClient: () => client,
     onProgress: (p) => progress.push(p),
+    getBitrate: () => 24,
   });
   return { handlers, progress };
 };
@@ -285,5 +286,104 @@ describe('remove', () => {
   it('voiceId không hợp lệ bị từ chối', async () => {
     const { handlers } = setup(fakeClient());
     await expect(handlers.remove('a/../b')).rejects.toThrow();
+  });
+});
+
+describe('preview', () => {
+  const installedVi = {
+    id: 'vi_VN-vais1000-medium',
+    lang: 'vi' as const,
+    name: 'VAIS 1000',
+    quality: 'medium' as const,
+    sampleRate: 22050,
+    sizeBytes: 63_206_154,
+  };
+
+  /**
+   * `preview` giả trả 4 byte nhận ra được, đủ để kiểm bytes đi đúng đường.
+   *
+   * Khai báo tham số tường minh (không phải `async () => …`) để `mock.calls`
+   * còn giữ kiểu — thiếu nó thì tuple rỗng và không đọc được cái gì đã gửi đi.
+   */
+  const fakePreview = (): SidecarClient['preview'] =>
+    vi.fn(async (_input: Parameters<SidecarClient['preview']>[0]) => ({
+      voiceId: 'vi_VN-vais1000-medium',
+      durationMs: 4200,
+      sampleRate: 24000,
+      audio: new Uint8Array([0x4f, 0x67, 0x67, 0x53]), // "OggS"
+    }));
+
+  it('trả bytes audio và câu đã đọc', async () => {
+    const preview = fakePreview();
+    const { handlers } = setup(
+      fakeClient({ listInstalled: vi.fn(async () => [installedVi]), preview }),
+    );
+
+    const result = await handlers.preview('vi_VN-vais1000-medium');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(new Uint8Array(result.data.bytes)).toEqual(new Uint8Array([0x4f, 0x67, 0x67, 0x53]));
+    expect(result.data.durationMs).toBe(4200);
+    // Câu mẫu phải về theo để UI hiện được user đang nghe gì.
+    expect(result.data.text.length).toBeGreaterThan(0);
+  });
+
+  it('chọn câu mẫu theo ngôn ngữ của voice', async () => {
+    // Voice EN phải đọc câu EN — đọc câu tiếng Việt bằng giọng Anh thì user
+    // không đánh giá được giọng đó có dùng được không.
+    const preview = fakePreview();
+    const installedEn = { ...installedVi, id: 'en_US-lessac-medium', lang: 'en' as const };
+    const { handlers } = setup(
+      fakeClient({ listInstalled: vi.fn(async () => [installedEn]), preview }),
+    );
+
+    await handlers.preview('en_US-lessac-medium');
+    const sent = vi.mocked(preview).mock.calls[0]?.[0];
+    expect(sent?.lang).toBe('en');
+    expect(sent?.text).toMatch(/classroom/);
+  });
+
+  it('voice chưa cài thì báo lỗi thay vì gọi sidecar', async () => {
+    // Gọi thẳng xuống thì sidecar trả 422 với câu khó hiểu; chặn ở đây để nói
+    // đúng thứ user cần làm.
+    const preview = fakePreview();
+    const { handlers } = setup(
+      fakeClient({ listInstalled: vi.fn(async () => []), preview }),
+    );
+
+    const result = await handlers.preview('vi_VN-vais1000-medium');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('NOT_FOUND');
+    expect(preview).not.toHaveBeenCalled();
+  });
+
+  it('dùng bitrate hiện tại trong settings', async () => {
+    // Nghe thử ở bitrate khác lúc generate thì user đánh giá nhầm chất lượng.
+    const preview = fakePreview();
+    const progress: VoiceDownloadProgress[] = [];
+    const handlers = createVoicesHandlers({
+      getClient: () => fakeClient({ listInstalled: vi.fn(async () => [installedVi]), preview }),
+      onProgress: (p) => progress.push(p),
+      getBitrate: () => 32,
+    });
+
+    await handlers.preview('vi_VN-vais1000-medium');
+    const sent = vi.mocked(preview).mock.calls[0]?.[0];
+    expect(sent?.bitrate).toBe(32);
+  });
+
+  it('sidecar chưa sẵn sàng thì báo lỗi thay vì ném', async () => {
+    const { handlers } = setup(undefined);
+    const result = await handlers.preview('vi_VN-vais1000-medium');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('SIDECAR_UNAVAILABLE');
+  });
+
+  it('voiceId không hợp lệ bị từ chối', async () => {
+    const { handlers } = setup(fakeClient());
+    await expect(handlers.preview('a/../b')).rejects.toThrow();
   });
 });

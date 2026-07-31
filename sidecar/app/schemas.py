@@ -117,6 +117,33 @@ class SynthesizeRequest(BaseModel):
     pronunciations: dict[str, str] = Field(default_factory=dict, max_length=500)
 
 
+class PreviewRequest(BaseModel):
+    """Nghe thử một giọng đã cài. Không ghi đĩa — xem ghi chú ở route `/preview`."""
+
+    voiceId: str = Field(min_length=1, max_length=64)  # noqa: N815
+    # Câu mẫu do main chọn theo ngôn ngữ của voice. Giới hạn ngắn hơn hẳn
+    # `SynthesizeRequest` (2000): nghe thử là một câu, không phải một đoạn — và
+    # câu càng dài thì user càng phải chờ lâu mới nghe được tiếng đầu tiên.
+    text: str = Field(min_length=1, max_length=300)
+    lang: str = Field(default="vi", min_length=2, max_length=8)
+    bitrate: Literal[16, 24, 32] = 24
+
+
+class PreviewResponse(BaseModel):
+    """Bytes `.ogg` trả thẳng trong JSON dưới dạng base64.
+
+    Không trả `audioPath` như `/synthesize` vì không có file nào được tạo. Base64
+    phình 33% nhưng một câu mẫu ~3 s ở 24 kbps chỉ ~9 KB → ~12 KB sau mã hoá,
+    không đáng để dựng thêm một kiểu response nhị phân riêng.
+    """
+
+    voiceId: str  # noqa: N815
+    durationMs: int  # noqa: N815
+    sampleRate: int  # noqa: N815
+    # `.ogg` đã mã hoá base64. Renderer bọc thành Blob URL cho thẻ `<audio>`.
+    audioBase64: str  # noqa: N815
+
+
 class WordTimingModel(BaseModel):
     """Khớp `WordTiming` ở `packages/shared/src/types.ts` — tên field giữ nguyên."""
 

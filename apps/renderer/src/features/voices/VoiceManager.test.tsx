@@ -1,7 +1,9 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { err } from '@ln/shared';
 import { fakeVoice, installFakeApi, type FakeApi } from '@/test/fake-api';
+import { countOpenObjectUrls } from '@/test/setup';
 import { useVoiceStore } from '@/stores/voice-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { VoiceManager } from './VoiceManager';
@@ -23,6 +25,8 @@ const renderManager = async (options: Parameters<typeof installFakeApi>[0] = {})
     loading: false,
     error: null,
     sidecar: null,
+    previewing: null,
+    playing: null,
   });
 
   // Từ P2.6 màn này đọc `AppSettings.voiceVi/voiceEn` để biết giọng nào đang dùng
@@ -30,10 +34,28 @@ const renderManager = async (options: Parameters<typeof installFakeApi>[0] = {})
   await useSettingsStore.getState().load();
 
   const onBack = vi.fn();
+  let unmount = (): void => undefined;
   await act(async () => {
-    render(<VoiceManager onBack={onBack} />);
+    ({ unmount } = render(<VoiceManager onBack={onBack} />));
   });
-  return { onBack };
+  return { onBack, unmount };
+};
+
+/**
+ * Bấm nút nghe thử và **đợi hết** chuỗi bất đồng bộ nó khởi động.
+ *
+ * Dùng `fireEvent` chứ không phải `userEvent`: `userEvent.click` bọc thao tác
+ * trong `asyncWrapper` riêng của nó, và wrapper đó trả cờ act về `undefined`
+ * TRƯỚC khi `previewVoice` kịp gọi IPC → `play()` → `setPlaying`. Ba lượt đó
+ * rơi ra ngoài act, zustand cập nhật store và React cảnh báo — dù test vẫn xanh.
+ *
+ * `fireEvent` bắn sự kiện thẳng, nên cả chuỗi nằm trọn trong `act` của mình.
+ */
+const clickPreview = async (): Promise<void> => {
+  await act(async () => {
+    fireEvent.click(screen.getByTestId('voice-preview'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 };
 
 beforeEach(() => {
@@ -381,5 +403,91 @@ describe('chọn giọng đọc (P2.6)', () => {
 
     expect(fake.api.settings.update).not.toHaveBeenCalled();
     expect(fake.api.voices.remove).toHaveBeenCalledWith('vi_VN-vais1000-medium');
+  });
+});
+
+describe('nghe thử giọng', () => {
+  it('chỉ hiện nút nghe thử với giọng ĐÃ CÀI', async () => {
+    // Giọng chưa tải thì không có model nào để tổng hợp — hiện nút sẽ dẫn tới
+    // một lỗi mà user không hiểu vì sao.
+    await renderManager({
+      voices: [
+        fakeVoice({ installed: false }),
+        fakeVoice({ id: 'en_US-lessac-medium', lang: 'en', name: 'Lessac', installed: true }),
+      ],
+    });
+
+    await waitFor(() => expect(screen.getAllByTestId('voice-row')).toHaveLength(2));
+    expect(screen.getAllByTestId('voice-preview')).toHaveLength(1);
+  });
+
+  it('bấm nghe thử thì gọi IPC và phát tiếng', async () => {
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+
+    await waitFor(() => expect(screen.getByTestId('voice-preview')).toBeInTheDocument());
+    await clickPreview();
+
+    expect(fake.api.voices.preview).toHaveBeenCalledWith('vi_VN-vais1000-medium');
+    expect(screen.getByTestId('voice-preview').dataset['playing']).toBe('true');
+  });
+
+  it('đang phát thì nút đổi thành Dừng và bấm lại thì im', async () => {
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+
+    await waitFor(() => expect(screen.getByTestId('voice-preview')).toBeInTheDocument());
+    await clickPreview();
+    expect(screen.getByTestId('voice-preview')).toHaveTextContent('Dừng');
+
+    await clickPreview();
+    expect(screen.getByTestId('voice-preview')).toHaveTextContent('Nghe thử');
+    // Dừng phải thu hồi Blob URL, không đợi tới lúc rời màn.
+    expect(countOpenObjectUrls()).toBe(0);
+  });
+
+  it('rời màn hình khi đang phát thì thu hồi Blob URL', async () => {
+    // Đường phổ biến nhất và cũng là đường rò rỉ dễ nhất: user bấm nghe rồi
+    // quay ra ngay, không đợi hết câu.
+    const { unmount } = await renderManager({ voices: [fakeVoice({ installed: true })] });
+
+    await waitFor(() => expect(screen.getByTestId('voice-preview')).toBeInTheDocument());
+    await clickPreview();
+    expect(countOpenObjectUrls()).toBe(1);
+
+    unmount();
+    expect(countOpenObjectUrls()).toBe(0);
+  });
+
+  it('IPC lỗi thì hiện thông báo, không kẹt ở "Đang tạo…"', async () => {
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+    await waitFor(() => expect(screen.getByTestId('voice-preview')).toBeInTheDocument());
+
+    fake.api.voices.preview.mockResolvedValueOnce(
+      err('SIDECAR_UNAVAILABLE', 'Dịch vụ TTS chưa sẵn sàng.'),
+    );
+
+    await clickPreview();
+
+    expect(screen.getByTestId('voice-error')).toHaveTextContent('Dịch vụ TTS');
+    // Nút phải mở lại được — kẹt ở trạng thái khoá là hỏng nặng hơn cả lỗi gốc.
+    expect(screen.getByTestId('voice-preview')).not.toBeDisabled();
+  });
+
+  it('xoá giọng đang nghe thử thì tiếng dừng theo', async () => {
+    // Nút "Nghe thử" biến mất cùng dòng đó; để tiếng chạy tiếp là user không
+    // còn chỗ nào bấm dừng.
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+    await waitFor(() => expect(screen.getByTestId('voice-preview')).toBeInTheDocument());
+
+    await clickPreview();
+    expect(countOpenObjectUrls()).toBe(1);
+
+    // Xoá kéo theo `load()` nạp lại catalog — cũng phải đợi hết như `clickPreview`.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Xoá' }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(countOpenObjectUrls()).toBe(0);
+    expect(useVoiceStore.getState().playing).toBeNull();
   });
 });

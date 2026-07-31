@@ -2,10 +2,13 @@ import {
   err,
   ok,
   voiceIdSchema,
+  VOICE_PREVIEW_TEXT,
+  type AudioBitrate,
   type InstalledVoice,
   type Result,
   type VoiceCatalogItem,
   type VoiceDownloadProgress,
+  type VoicePreview,
 } from '@ln/shared';
 import type { SidecarClient } from '../../services/sidecar-client.js';
 import { InvalidInputError } from '../wrap.js';
@@ -29,6 +32,7 @@ export type VoicesHandlers = {
   download: (input: unknown) => Result<void>;
   cancelDownload: (input: unknown) => Result<void>;
   remove: (input: unknown) => Promise<Result<void>>;
+  preview: (input: unknown) => Promise<Result<VoicePreview>>;
 };
 
 export type VoicesHandlerDeps = {
@@ -36,6 +40,8 @@ export type VoicesHandlerDeps = {
   getClient: () => SidecarClient | undefined;
   /** Đẩy tiến độ xuống renderer */
   onProgress: (progress: VoiceDownloadProgress) => void;
+  /** Bitrate hiện tại trong settings — nghe thử phải giống thứ user sẽ nghe thật */
+  getBitrate: () => AudioBitrate;
   logError?: (message: string, detail: string) => void;
 };
 
@@ -157,6 +163,43 @@ export const createVoicesHandlers = (deps: VoicesHandlerDeps): VoicesHandlers =>
 
       await client.deleteVoice(voiceId);
       return ok(undefined);
+    },
+
+    preview: async (input) => {
+      const voiceId = parseVoiceId(input);
+
+      const client = deps.getClient();
+      if (client === undefined) return err('SIDECAR_UNAVAILABLE', SIDECAR_NOT_READY);
+
+      // Tra trong danh sách ĐÃ CÀI, không phải catalog: catalog có cả voice chưa
+      // tải, mà nghe thử voice chưa tải thì sidecar trả 422 khó hiểu. Chặn ở đây
+      // để báo đúng thứ user cần làm.
+      const installed = await client.listInstalled();
+      const voice = installed.find((item) => item.id === voiceId);
+      if (voice === undefined) {
+        return err('NOT_FOUND', 'Giọng này chưa tải về nên chưa nghe thử được.');
+      }
+
+      const text = VOICE_PREVIEW_TEXT[voice.lang];
+      const result = await client.preview({
+        voiceId,
+        text,
+        lang: voice.lang,
+        bitrate: deps.getBitrate(),
+      });
+
+      return ok({
+        voiceId: result.voiceId,
+        // `.buffer` của một `Uint8Array` có thể là bộ đệm lớn hơn phần dữ liệu
+        // thật (khi nó là một lát cắt), nên cắt đúng khoảng trước khi gửi —
+        // gửi cả bộ đệm thì renderer nhận thừa byte rác ở đuôi file `.ogg`.
+        bytes: result.audio.buffer.slice(
+          result.audio.byteOffset,
+          result.audio.byteOffset + result.audio.byteLength,
+        ) as ArrayBuffer,
+        durationMs: result.durationMs,
+        text,
+      });
     },
   };
 };

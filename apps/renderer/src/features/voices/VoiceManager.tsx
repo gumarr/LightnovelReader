@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { BookLang } from '@ln/shared';
 import { useVoiceStore } from '@/stores/voice-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { SidecarBadge } from './SidecarBadge';
 import { VoiceRow } from './VoiceRow';
+import { createPreviewPlayer, type PreviewPlayer } from './preview-player';
 
 /**
  * Màn quản lý giọng đọc: xem catalog, tải, xoá.
@@ -32,6 +33,10 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
   const applyProgress = useVoiceStore((s) => s.applyProgress);
   const setSidecar = useVoiceStore((s) => s.setSidecar);
   const clearError = useVoiceStore((s) => s.clearError);
+  const previewing = useVoiceStore((s) => s.previewing);
+  const playing = useVoiceStore((s) => s.playing);
+  const preview = useVoiceStore((s) => s.preview);
+  const setPlaying = useVoiceStore((s) => s.setPlaying);
 
   const settings = useSettingsStore((s) => s.settings);
   const updateSettings = useSettingsStore((s) => s.update);
@@ -48,7 +53,65 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
     // Xoá voice đang chọn thì phải bỏ chọn luôn: để nguyên thì settings trỏ tới
     // model không còn trên đĩa, và hàng đợi chỉ báo lỗi tới lúc generate.
     if (selectedFor(lang) === voiceId) selectVoice(lang, '');
+    // Đang nghe thử chính giọng vừa xoá thì dừng: nút "Nghe thử" biến mất cùng
+    // dòng đó, để tiếng chạy tiếp là user không còn chỗ nào bấm dừng.
+    if (useVoiceStore.getState().playing === voiceId) {
+      playerRef.current?.stop();
+      setPlaying(null);
+    }
     void remove(voiceId);
+  };
+
+  // Thẻ `<audio>` dựng bằng tay, KHÔNG render qua JSX: nghe thử không cần
+  // controls trên màn hình, và để React quản lý thì mỗi lần re-render lại phải
+  // canh cho `src` không bị đặt lại giữa lúc đang phát.
+  const playerRef = useRef<PreviewPlayer | null>(null);
+
+  useEffect(() => {
+    const element = new Audio();
+    const player = createPreviewPlayer(element, {
+      onEnded: () => setPlaying(null),
+      onError: (message) => {
+        setPlaying(null);
+        useVoiceStore.setState({ error: message });
+      },
+    });
+    playerRef.current = player;
+
+    // Rời màn hình khi đang phát: dừng tiếng và thu hồi Blob URL. Thiếu bước
+    // này thì tiếng vẫn kêu sau khi user đã quay về thư viện.
+    return () => {
+      player.stop();
+      playerRef.current = null;
+      setPlaying(null);
+    };
+  }, [setPlaying]);
+
+  const previewVoice = (voiceId: string): void => {
+    const player = playerRef.current;
+    if (player === null) return;
+
+    // Đang phát chính giọng này thì nút là "Dừng".
+    if (playing === voiceId) {
+      player.stop();
+      setPlaying(null);
+      return;
+    }
+
+    void (async () => {
+      const bytes = await preview(voiceId);
+      if (bytes === undefined) return;
+      // Người dùng có thể đã rời màn trong lúc chờ tổng hợp (~2 s).
+      if (playerRef.current === null) return;
+
+      try {
+        await playerRef.current.play(bytes);
+        setPlaying(voiceId);
+      } catch {
+        // `play()` bị từ chối — `preview-player` đã thu hồi url rồi.
+        setPlaying(null);
+      }
+    })();
   };
 
   useEffect(() => {
@@ -141,10 +204,13 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
               progress={progress[voice.id]}
               canDownload={canDownload}
               selected={selectedFor(voice.lang) === voice.id}
+              previewing={previewing === voice.id}
+              playing={playing === voice.id}
               onDownload={() => void download(voice.id)}
               onCancel={() => void cancel(voice.id)}
               onRemove={() => removeVoice(voice.lang, voice.id)}
               onSelect={() => selectVoice(voice.lang, voice.id)}
+              onPreview={() => previewVoice(voice.id)}
             />
           ))}
         </ul>

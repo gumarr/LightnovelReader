@@ -96,7 +96,29 @@ export type SidecarClient = {
     pronunciations?: Record<string, string>;
     signal?: AbortSignal;
   }) => Promise<SynthesisResult>;
+  /**
+   * Đọc thử một câu mẫu bằng voice đã cài. Trả bytes `.ogg` — **không ghi đĩa**.
+   *
+   * Khác `synthesize` ở chỗ không có `outPath`: nghe thử mà ghi ra file thì mỗi
+   * lần bấm lại đẻ một file rác trong thư viện audio và Storage Manager đếm nó
+   * thành dung lượng sách.
+   */
+  preview: (input: {
+    voiceId: string;
+    text: string;
+    lang: BookLang;
+    bitrate: AudioBitrate;
+    signal?: AbortSignal;
+  }) => Promise<PreviewResult>;
   baseUrl: string;
+};
+
+/** Kết quả nghe thử. Bytes nằm trong RAM, không có file nào trên đĩa. */
+export type PreviewResult = {
+  voiceId: string;
+  durationMs: number;
+  sampleRate: number;
+  audio: Uint8Array;
 };
 
 /** Kiểu `fetch` tối thiểu, để test đưa vào bản giả mà không cần mạng thật */
@@ -453,6 +475,32 @@ export const createSidecarClient = (options: {
         voiceId: typeof body['voiceId'] === 'string' ? body['voiceId'] : voiceId,
         timingSource: timingSource === 'phoneme' ? 'phoneme' : 'estimate',
         timings: parseTimings(body['timings']),
+      };
+    },
+
+    preview: async (input): Promise<PreviewResult> => {
+      const { voiceId, text, lang, bitrate, signal } = input;
+
+      const raw = await request('/preview', {
+        method: 'POST',
+        body: { voiceId, text, lang, bitrate },
+        // Cùng timeout với `/synthesize`: lần nghe thử đầu tiên của một voice
+        // cũng phải nạp model 63 MB y hệt.
+        timeoutMs: SYNTHESIZE_TIMEOUT_MS,
+        ...(signal === undefined ? {} : { signal }),
+      });
+      const body = parseJson(raw, '/preview');
+
+      const { audioBase64, durationMs, sampleRate } = body;
+      if (typeof audioBase64 !== 'string' || audioBase64 === '') {
+        throw new Error('Phản hồi /preview thiếu "audioBase64"');
+      }
+
+      return {
+        voiceId: typeof body['voiceId'] === 'string' ? body['voiceId'] : voiceId,
+        durationMs: typeof durationMs === 'number' ? durationMs : 0,
+        sampleRate: typeof sampleRate === 'number' ? sampleRate : 0,
+        audio: new Uint8Array(Buffer.from(audioBase64, 'base64')),
       };
     },
   };

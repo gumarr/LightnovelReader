@@ -29,6 +29,7 @@ import {
   type StorageUsageInfo,
   type VoiceCatalogItem,
   type VoiceDownloadProgress,
+  type VoicePreview,
   type WindowState,
 } from '@ln/shared';
 
@@ -367,6 +368,17 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       download: vi.fn(async (_voiceId: string) => ok(undefined)),
       cancelDownload: vi.fn(async (_voiceId: string) => ok(undefined)),
       remove: vi.fn(async (_voiceId: string) => ok(undefined)),
+      // 4 byte "OggS" — đủ để kiểm bytes đi đúng đường mà không phải dựng file
+      // Opus thật. jsdom không giải mã audio nên nội dung không quan trọng.
+      preview: vi.fn(
+        async (voiceId: string): Promise<Result<VoicePreview>> =>
+          ok({
+            voiceId,
+            bytes: new Uint8Array([0x4f, 0x67, 0x67, 0x53]).buffer,
+            durationMs: 4200,
+            text: 'Chiều hôm ấy ở Tokyo, Asuka mười bảy tuổi bước vào lớp học và khẽ mỉm cười.',
+          }),
+      ),
       onDownloadProgress: vi.fn((listener: (p: VoiceDownloadProgress) => void) => {
         voiceProgressListeners.add(listener);
         return () => voiceProgressListeners.delete(listener);

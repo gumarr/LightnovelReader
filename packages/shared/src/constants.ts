@@ -109,3 +109,25 @@ export const PLAYBACK_RATE_MAX = 3;
 export const PLAYBACK_LOOKAHEAD_SEGMENTS = 5;
 
 export const SUPPORTED_FORMATS = ['pdf', 'docx'] as const;
+
+/**
+ * Câu mẫu để nghe thử giọng, chọn theo ngôn ngữ của voice.
+ *
+ * **Do main chọn, không phải renderer gửi lên.** Cho renderer gửi text tuỳ ý là
+ * mở một đường tổng hợp không giới hạn không đi qua hàng đợi — user dán cả
+ * chương vào là sidecar chạy hàng phút mà không có nút huỷ nào.
+ *
+ * Nội dung chọn có chủ đích, mỗi câu phải cho user nghe được thứ họ sẽ thật sự
+ * gặp khi đọc LN:
+ *
+ * - **Có tên riêng Nhật** (`Tokyo`, `Asuka`) vì đó là thứ xuất hiện mọi trang
+ *   trong LN dịch và cũng là thứ dễ đọc sai nhất — nghe thử mà không có tên
+ *   riêng thì không kiểm được ba tầng phiên âm của P3.5 có chạy không.
+ * - **Có chữ số** (`17`) vì số đi qua đường chuẩn hoá khác hẳn chữ thường.
+ * - **Đủ ngắn để nghe hết mà không sốt ruột** (~4–5 s), đủ dài để nghe ra ngữ
+ *   điệu chứ không chỉ một tiếng rời rạc.
+ */
+export const VOICE_PREVIEW_TEXT: Readonly<Record<'vi' | 'en', string>> = {
+  vi: 'Chiều hôm ấy ở Tokyo, Asuka mười bảy tuổi bước vào lớp học và khẽ mỉm cười.',
+  en: 'That afternoon in Tokyo, seventeen-year-old Asuka stepped into the classroom and smiled.',
+};

@@ -214,6 +214,22 @@ export type VoiceCatalogItem = {
 };
 
 /**
+ * Kết quả nghe thử một giọng. Bytes đi thẳng qua IPC như `SegmentAudio`.
+ *
+ * **Không có file nào trên đĩa** — đó là khác biệt cốt lõi so với generate:
+ * nghe thử mà ghi ra `audioDir` thì Storage Manager đếm nó thành dung lượng
+ * sách, và user không có cách nào xoá vì nó không thuộc chương nào cả.
+ */
+export type VoicePreview = {
+  voiceId: string;
+  /** Nội dung `.ogg`. Renderer bọc thành Blob URL rồi **phải** thu hồi khi xong */
+  bytes: ArrayBuffer;
+  durationMs: number;
+  /** Câu đã đọc — hiện dưới nút để user biết mình đang nghe cái gì */
+  text: string;
+};
+
+/**
  * Trạng thái hàng đợi generate như UI cần thấy.
  *
  * Chỉ có con số tổng chứ không kèm danh sách job: "generate cả sách" là ~4800
@@ -373,6 +389,18 @@ export type IpcContract = {
   /** Huỷ lượt tải đang chạy. Không có gì đang tải thì coi như thành công */
   'voices:cancelDownload': { in: string; out: Result<void> };
   'voices:remove': { in: string; out: Result<void> };
+  /**
+   * Đọc thử một câu mẫu bằng voice **đã cài**, trả bytes `.ogg`.
+   *
+   * Chờ trong `invoke` (khác `voices:download`): một câu mẫu mất ~2 s, và lần
+   * đầu của mỗi voice thêm ~1.5 s nạp model — đủ ngắn để user chờ, mà nghe thử
+   * lại là thao tác chỉ có nghĩa khi kết quả về ngay.
+   *
+   * Câu mẫu do **main** chọn theo `lang` của voice, renderer không gửi text:
+   * để renderer tự do gửi chuỗi bất kỳ là mở một đường tổng hợp không giới hạn
+   * mà không đi qua hàng đợi.
+   */
+  'voices:preview': { in: string; out: Result<VoicePreview> };
 
   /** Xếp segment vào hàng đợi generate */
   'queue:enqueueSegments': { in: EnqueueSegmentsRequest; out: Result<EnqueueResult> };
@@ -480,6 +508,7 @@ export const IPC_CHANNELS = [
   'voices:download',
   'voices:cancelDownload',
   'voices:remove',
+  'voices:preview',
   'queue:enqueueSegments',
   'queue:enqueueChapter',
   'queue:enqueueBook',

@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-27 · commit `d5336ce`
+> **Cập nhật lần cuối:** 2026-07-31 · commit `4c230a9`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,16 +39,13 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P3.4 — Subtitle pane + highlight từng từ (xem mục 3).
-**Phase 1 xong. Phase 2 xong đủ 7/7 phần — DoD đạt, đã kiểm trên app đang chạy
-lẫn bản đóng gói.** P2.8 đã trả **hết 4 nợ mức Cao** trong mục 8.
-**Phase 3 đang làm: P3.1 + P3.2 + P3.3 + P3.5 xong** (tầng dữ liệu, máy trạng
-thái phát, player UI đầy đủ, và phiên âm tên riêng Nhật). Còn P3.4 là hết Phase 3.
+**Việc tiếp theo:** P5.2 — xem mục 3.
 
-⚠️ **P3.5 đổi ngữ nghĩa `WordTiming.charStart`** — nay trỏ vào `Segment.text`
-**gốc** (đúng như docstring vẫn hứa), không phải text đã chuẩn hoá. P3.4 phải
-biết: nhiều `WordTiming` liên tiếp có thể trỏ về *cùng* một khoảng gốc. Xem mục
-4.59.
+**Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
+thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
+Xem mục 4.68 để biết lý do đầy đủ và **điều kiện mở lại**.
+
+**Phase 5 đang làm: P5.1 xong** (thêm giọng VI thứ hai + nghe thử giọng).
 
 ---
 
@@ -874,14 +871,61 @@ gọi tới**. P3.4 là lần đầu nó được dùng thật.
 được trong phiên. Chiều cao pane, tỉ lệ splitter và màu `data-active` **đều là
 loại lỗi vitest không thấy**. Xem mục 8.
 
+### Phase 5 — P5.1 Thêm giọng VI + nghe thử giọng ✅
+
+Phần đầu Phase 5, làm theo **yêu cầu trực tiếp của user**: catalog chỉ có 1 giọng
+VI + 1 giọng EN nên user không có gì để chọn, và tải xong cũng không biết giọng
+nghe ra sao trước khi đem generate cả cuốn sách.
+
+| File | Vai trò | Test |
+|---|---|---|
+| `resources/voices/catalog.json` | +`vi_VN-25hours_single-low`, sha256 **tải thật rồi tính** | (qua catalog) |
+| `sidecar/app/schemas.py` | `PreviewRequest` / `PreviewResponse` (base64) | — |
+| `sidecar/app/main.py` | `POST /preview` — tổng hợp **không ghi đĩa** | +8 |
+| `main/services/sidecar-client.ts` | `preview()`, giải base64 → `Uint8Array` | — |
+| `main/ipc/handlers/voices.ts` | `voices:preview`, chọn câu mẫu theo `lang` | +6 |
+| `shared/constants.ts` | `VOICE_PREVIEW_TEXT` — câu mẫu VI/EN | — |
+| `shared/ipc.ts` | `VoicePreview` + kênh `voices:preview` | — |
+| `renderer/features/voices/preview-player.ts` | Thẻ `<audio>` riêng + kỷ luật thu hồi Blob URL | (qua VoiceManager) |
+| `renderer/stores/voice-store.ts` | `previewing` / `playing`, chặn bấm trùng | — |
+| `renderer/features/voices/VoiceRow.tsx` | Nút "Nghe thử" / "Đang tạo…" / "Dừng" | +6 |
+
+**Bốn quyết định đáng nhớ:**
+
+- **`/preview` là route RIÊNG, không dùng lại `/synthesize`.** Route kia bắt buộc
+  có `outPath` trong `audioDir` và luôn ghi file — nghe thử qua đó thì mỗi lần
+  bấm đẻ một file rác mà Storage Manager đếm thành dung lượng sách, và user không
+  có cách nào xoá vì nó không thuộc chương nào. `engine.synthesize` vốn đã trả
+  bytes trong RAM nên chỉ cần **bỏ** bước ghi, không phải viết lại gì.
+- **Câu mẫu do main chọn, renderer không gửi text.** Cho renderer gửi chuỗi tuỳ ý
+  là mở một đường tổng hợp không giới hạn không đi qua hàng đợi. Câu mẫu **có chủ
+  đích**: chứa tên riêng Nhật (`Tokyo`, `Asuka`) và chữ số (`17`) — đúng hai thứ
+  đi qua đường chuẩn hoá khác nhau, nghe thử mà thiếu chúng thì không kiểm được
+  ba tầng phiên âm của P3.5.
+- **Chỉ thêm giọng MỘT người nói.** Piper có 3 giọng VI nhưng `vi_VN-vivos-x_low`
+  là 65 người nói — cần `speaker_id` lúc tổng hợp mà schema catalog lẫn
+  `/synthesize` đều chưa có. Thêm vào sẽ luôn đọc bằng người nói số 0. Còn nợ.
+- **`sampleRate` không bắt buộc 22050.** Giọng mới là **16 kHz**; engine đọc tần
+  số thật từ config của model rồi tự chọn đích Opus, và 16000 vốn đã nằm trong
+  danh sách Opus nên **bỏ qua resample hoàn toàn**. Không phải sửa code nào.
+
+**Một lỗi thật tìm ra khi viết test** (mục 4.69): cảnh báo `act(...)` của React
+chỉ xuất hiện ở bộ test mới. Nguyên nhân **không** phải thiếu cờ môi trường như
+tưởng ban đầu, mà là `userEvent.click` bọc thao tác trong `asyncWrapper` riêng và
+trả cờ act về `undefined` trước khi chuỗi `IPC → play() → setPlaying` kịp chạy.
+
+⚠️ **Chưa nghe thử bằng tai và chưa chạy `pnpm ui-check`** cho phần này — nút,
+trạng thái và kỷ luật thu hồi Blob URL đều mới chỉ có unit test. Xem mục 8.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **1923 passed** (+38 ở P3.4 — subtitle, splitter, ReaderScreen) |
-| Unit test sidecar (pytest) | **638 passed** (+27 ở P3.4 — luật `ao`/`eo`, chặn âm tiết Việt) |
-| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (không đổi ở P3.4) |
-| **Kiểm UI thật (`pnpm ui-check`)** | **58 phép kiểm** (47 → 58 ở P3.4), ⚠️ **11 phép kiểm mới CHƯA chạy lần nào** — xem mục 8 |
+| Unit test TypeScript | **1935 passed** (+12 ở P5.1 — preview handler, VoiceManager) |
+| Unit test sidecar (pytest) | **646 passed** (+8 ở P5.1 — biên HTTP `/preview`) |
+| Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản** (không đổi ở P5.1) |
+| **Kiểm UI thật (`pnpm ui-check`)** | **58 phép kiểm**, ⚠️ 11 phép kiểm của P3.4 và toàn bộ P5.1 **chưa chạy** — xem mục 8 |
+| Giọng đọc trong catalog | **3** (2 VI + 1 EN) — xem mục 8 về giọng nhiều người nói |
 | Schema DB | **v3** (v3 thêm `pronunciation_overrides` — mục 4.59) |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
@@ -890,7 +934,30 @@ loại lỗi vitest không thấy**. Xem mục 8.
 
 ---
 
-## 3. Việc tiếp theo — Phase 3
+## 3. Việc tiếp theo — Phase 5
+
+**Phase 4 đã bỏ.** User nghe thật một chương ở P3.4 và xác nhận highlight bám
+đúng từng chữ, không thấy vấn đề nào. CTC aligner đổi lại là model ~300 MB đẩy
+installer từ 143 MB lên ~450 MB — quá đắt cho thứ không ai thấy thiếu. Lý do đầy
+đủ và **điều kiện mở lại** ở mục 4.68.
+
+Phase 5 chia **năm phần** (thống nhất với user — mỗi phần một commit):
+
+| Mã | Nội dung | Trạng thái |
+|---|---|---|
+| P5.1 | Thêm giọng VI thứ hai vào catalog + nghe thử giọng sau khi tải | ✅ Xong |
+| P5.2 | UI tầng 3 phiên âm: sửa cách đọc từ menu chuột phải trên phụ đề (nợ mục 8) | ⬅️ **tiếp theo** |
+| P5.3 | Settings đầy đủ: font phụ đề, xoá cache, và **trả nợ mức TB** trong mục 8 | ⬜ |
+| P5.4 | Bookmark + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ⬜ |
+| P5.5 | Đóng gói: icon app, auto-update, README qua SmartScreen, log rotate | ⬜ |
+
+**Trước khi bắt đầu P5.2, chạy `pnpm ui-check`** — 11 phép kiểm của P3.4 và toàn
+bộ phần nghe thử của P5.1 chưa chạy lần nào. Đây là loại lỗi vitest không thấy.
+
+**DoD Phase 5** (`plan.md`): installer `.exe` cài trên máy sạch chạy được, không
+cần cài Python.
+
+### Phase 3 — đã xong
 
 Phase 3 chia **năm phần** (thống nhất với user — mỗi phần một commit, không dồn).
 Giữ nguyên quy ước **logic thuần trước, UI sau**:
@@ -903,8 +970,9 @@ Giữ nguyên quy ước **logic thuần trước, UI sau**:
 | P3.5 | Phiên âm tên riêng Nhật + `charStart` quy về text gốc (xem plan.md mục 8.1) | ✅ Xong (trừ UI tầng 3) |
 | P3.4 | Subtitle pane + highlight từng chữ (`rAF` + `ref`) + click-to-seek + splitter `viewerPaneRatio` | ✅ Xong |
 
-**Phase 3 đã đủ 5/5 phần.** Còn lại trước khi đóng phase: chạy `pnpm ui-check`
-và **nghe thật một chương** — xem mục 8, cả hai đều là nợ chưa trả.
+**Phase 3 đủ 5/5 phần và DoD đã đạt.** User đã **nghe thật một chương** và xác
+nhận chữ sáng đúng nhịp — đó cũng là căn cứ để bỏ Phase 4 (mục 4.68). Còn lại
+`pnpm ui-check` vẫn là nợ chưa trả.
 
 P3.2 đã kèm sẵn một `PlayerBar` chạy được (nút phát/trước/sau + 6 mốc tốc độ) vì
 không có nút thì không kiểm được máy trạng thái trên app thật. P3.3 đã làm phần
@@ -2608,6 +2676,66 @@ Một ca **cố tình bỏ**: `Nao` — trùng hoàn toàn với `nào` không d
 một trong những từ tiếng Việt hay gặp nhất. Đây là loại đánh đổi đã ghi ở 4.61:
 thà bỏ sót một tên còn hơn phá một từ của chính ngôn ngữ đang đọc.
 
+### 4.68 Bỏ Phase 4 (CTC forced alignment) — quyết định của user
+
+**Căn cứ:** user nghe thật một chương sau khi P3.4 xong và xác nhận highlight
+bám đúng từng chữ, không thấy vấn đề nào. Đây là kiểm chứng bằng tai — thứ mà
+`ui-check` qua CDP **không** làm được (nợ "chưa nghe thử bằng tai" nay đã trả).
+
+**Cái giá của Phase 4:** model `wav2vec2` ONNX-quantized ~300 MB. Sidecar `.exe`
+hiện đã 145 MB và installer 143 MB; thêm aligner sẽ đẩy lên ~450 MB, vượt xa mốc
+200 MB của plan.md. Rất đắt cho thứ không ai thấy thiếu.
+
+**Cần biết cho phiên sau — vì sao "nghe thấy ổn" chưa phải là "timing hoàn hảo":**
+DoD Phase 4 nhắm đúng vào câu có **số và tên riêng**, mà đó lại là ca `phoneme`
+**cố ý rơi về `estimate`** (chia đều theo ký tự). Xem `TimingSource` ở
+`shared/types.ts`: khi số nhóm phoneme không khớp số từ (`"30"` → "ba mươi",
+`"Tokyo"` → `"Tô-ki-ô"`) thì timing phoneme bị bỏ. Nên chương user nghe hoặc ít
+số/tên riêng, hoặc lệch nhỏ tới mức mắt không bắt được ở tốc độ đọc thường.
+
+**Điều kiện mở lại Phase 4** (đừng làm nếu chưa gặp): user thật báo highlight
+lệch **ở câu nhiều số hoặc tên riêng**, và đo được `timingSource === 'estimate'`
+chiếm tỉ lệ đáng kể trên sách đó. Lúc đó cân nhắc trước phương án rẻ hơn: cải
+thiện cách gộp phoneme → từ cho ca chữ số, thay vì kéo về cả một model 300 MB.
+
+**Hạ tầng đã dựng sẵn cho Phase 4 thì GIỮ NGUYÊN**, không gỡ: `AlignStatus` ba
+trạng thái (DB → repo → IPC → UI), `JobType` có `'align'`, và
+`AppSettings.alignmentEnabled`. Chúng vô hại và gỡ ra sẽ tốn một migration.
+Lưu ý `alignmentEnabled` hiện **chưa ai đọc** — cùng hình thái với `playbackRate`
+trước P3.3 và `viewerPaneRatio` trước P3.4.
+
+⚠️ **Hàng đợi chưa rẽ nhánh theo `job.type`.** `queue.ts` gọi `jobs.claimNext()`
+rồi xử lý mọi job như `synthesize`. Không phải lỗi hiện tại (chỉ có job
+`synthesize` được tạo), nhưng ai định enqueue job `'align'` phải thêm dispatch
+trước, nếu không worker sẽ đem nó đi tổng hợp audio lại.
+
+### 4.69 Cảnh báo `act(...)` đến từ `userEvent`, không phải thiếu cờ môi trường
+
+Bộ test mới của P5.1 in ra `The current testing environment is not configured to
+support act(...)` trong khi 1923 test cũ thì không. Test vẫn **xanh**, nên rất
+dễ bỏ qua — nhưng nó có nghĩa là một số cập nhật state không được gom vào lượt
+render nào, tức test đang khẳng định trên DOM chưa chắc đã ổn định.
+
+Hai lần chẩn đoán **sai** trước khi tìm ra, đáng ghi lại để khỏi lặp:
+
+1. *"Thiếu `globalThis.IS_REACT_ACT_ENVIRONMENT = true` trong `setup.ts`"* — đặt
+   vào **không đổi gì**. `react-dom` đọc biến global trần chứ không qua
+   `globalThis`, và `@testing-library/react` vốn đã tự bật/tắt cờ quanh `act()`.
+2. *"Thiếu `await` cho chuỗi bất đồng bộ"* — thêm một vòng macrotask trong `act`
+   cũng không đổi gì.
+
+Nguyên nhân thật, truy ra bằng cách in stack trong `console.error`: stack chỉ
+thẳng vào `zustand/vanilla.mjs → handleStoreChange`. `userEvent.click` bọc thao
+tác trong `asyncWrapper` **riêng của nó**, và wrapper đó trả cờ act về
+`undefined` **trước khi** chuỗi `IPC → play() → setPlaying` kịp chạy xong.
+
+Cách sửa: dùng `fireEvent.click` cho đúng những cú bấm khởi động chuỗi bất đồng
+bộ dài, rồi tự `await` trong `act` của mình. `userEvent` vẫn giữ nguyên ở mọi chỗ
+khác — nó mô phỏng thao tác thật sát hơn, chỉ không hợp ở ca này.
+
+Bài học chung: **cảnh báo chỉ xuất hiện ở bộ test mới thì đừng cho là nợ có sẵn.**
+Đã kiểm chứng bằng `git stash` rồi chạy `ReaderScreen.test.tsx` — 0 cảnh báo.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -2841,7 +2969,7 @@ apps/renderer/src/
   stores/settings-store.ts Zustand, có bắt rejection IPC
   stores/import-store.ts   Bản nháp chương + hoàn tác
   stores/library-store.ts  Danh sách sách + sách đang mở
-  stores/voice-store.ts    Catalog + tiến độ tải theo voiceId
+  stores/voice-store.ts    Catalog + tiến độ tải theo voiceId + nghe thử
   stores/queue-store.ts    Hàng đợi generate + chống prefetch trùng
   stores/storage-store.ts  Dung lượng + xoá; giữ lỗi qua lượt nạp lại
   stores/player-store.ts   Máy trạng thái phát: idle/playing/paused/waiting.
@@ -2876,8 +3004,9 @@ apps/renderer/src/
     format.ts              warnPercent, usageLevel, nhãn chương (thuần)
   features/voices/
     VoiceManager.tsx       Màn quản lý giọng đọc
-    VoiceRow.tsx           Một voice: thông tin + tải/huỷ/xoá + thanh tiến trình
+    VoiceRow.tsx           Một voice: thông tin + tải/huỷ/xoá/nghe thử + tiến trình
     SidecarBadge.tsx       Trạng thái sidecar (chỗ ĐẦU TIÊN user thấy được)
+    preview-player.ts      Thẻ <audio> riêng cho nghe thử; luôn <= 1 Blob URL sống
     format.ts              Dung lượng, phần trăm, nhãn trạng thái (thuần)
   styles/theme.css         CSS variables — mọi màu lấy từ đây
 
@@ -2897,7 +3026,8 @@ sidecar/                   Dịch vụ TTS Python (venv riêng — mục 5.4)
   app/config.py            Đọc env do main đặt lúc spawn; models dir BẮT BUỘC
   app/auth.py              Middleware X-Session-Token, so token thời gian hằng
   app/main.py              FastAPI: /health (không token), /normalize, /voices*,
-                           /synthesize (một SEGMENT mỗi lần, chạy thread riêng)
+                           /synthesize (một SEGMENT mỗi lần, chạy thread riêng),
+                           /preview (nghe thử — trả bytes, KHÔNG ghi đĩa)
   app/server.py            Bind socket + bắt tay stdout (hợp đồng — mục 4.26)
   app/schemas.py           pydantic cho mọi biên vào-ra
   app/text/normalize_vi.py 8 luật, mỗi luật một hàm thuần (thứ tự bắt buộc)
@@ -2959,9 +3089,9 @@ scripts/
 | ~~Renderer chưa hiện trạng thái sidecar~~ | ✅ Xong | `SidecarBadge` hiện ở màn Giọng đọc, có cả 5 trạng thái. Đã đo màu thật trong app đóng gói ở cả dark lẫn light |
 | ~~Đóng gói sidecar chưa vào CI~~ | ✅ Xong | `pnpm build:win` giờ tự gọi `build:sidecar` rồi `scripts/sidecar-preflight.mjs` — không còn phải nhớ. Preflight chặn cả 3 cách hỏng (thiếu `.exe`, thiếu `_internal/`, `.exe` cũ hơn `.py`), đã kiểm chứng bằng `touch` một file `.py`. CI dựng venv 3.12 ở **cả hai** job + kiểm phía đích `resources/sidecar/` sau khi đóng gói. Xem mục 4.44 |
 | ~~Chưa dựng lại installer sau P2.4/P2.5~~ | ✅ Xong | P2.8 chạy lại `pnpm build:win`: NSIS **143.0 MB**, portable **142.8 MB** (trước khi có sidecar là 80.8 MB). electron-builder **có** chép trọn onedir — đo được `resources/sidecar/` **147 MB** đủ cả `_internal/`, và `resources/voices/catalog.json` cũng có. Vượt mốc 200 MB của plan.md thì chưa, nhưng đã dùng hết 71% |
-| Chỉ có 2 voice trong catalog | **TB** | VI (`vais1000`) + EN (`lessac`), đều `medium`. **User đã hỏi trực tiếp về việc chọn model/giọng khác** — màn `VoiceManager` đã có đủ (tải/xoá/chọn, tách `voiceVi`/`voiceEn`), thiếu là **dữ liệu**: Piper còn vài giọng VI (`vivos`, `25hours`) chưa liệt kê. Thêm = thêm mục vào `resources/voices/catalog.json`, **không sửa code**, nhưng bắt buộc tải file thật để tính `sha256` (xem `$comment` trong file đó) |
+| ~~Chỉ có 2 voice trong catalog~~ | ✅ Xong (một phần) | P5.1 thêm `vi_VN-25hours_single-low` (16 kHz, sha256 **tải thật rồi tính**, md5 đối chiếu khớp `voices.json` của HF). Nay **3 giọng**: 2 VI + 1 EN. Piper chỉ có đúng 3 giọng VI và giọng thứ ba (`vivos`) là nhiều người nói — xem hàng dưới. Giọng EN thì Piper có 38 cái, chưa thêm vì app là LN tiếng Việt; thêm = sửa JSON, không sửa code |
 | UI tầng 3 phiên âm chưa có | **TB** | P3.5 làm xong DB (`pronunciation_overrides` v3), repository (22 test) và đường truyền tới sidecar (`getPronunciations` → `/synthesize`), nhưng **chưa có IPC channel lẫn màn hình**. Nghĩa là user chưa sửa được cách đọc dù backend đã sẵn sàng. Dự định gắn vào P3.4 nhưng **P3.4 đã xong mà vẫn chưa làm** — P3.4 giữ đúng phạm vi plan.md (pane + highlight + click-to-seek + splitter). Chỗ gắn nay đã có sẵn: mỗi từ trên phụ đề là một `<button>` có `data-word-index`, thêm menu chuột phải "sửa cách đọc" là đủ. Cần 3 IPC channel + 1 dialog |
-| Phiên âm Nhật chưa nghe thật lần nào | **Cao** | Toàn bộ P3.5 mới ở mức unit test (279 test) + soi tay mặt chữ, gồm cả lượt đo trên **291 tên LN thật** user đưa ở P3.4 (xem 4.67). **Vẫn chưa chạy Piper thật để nghe.** Mức nâng từ TB lên Cao vì đây là thứ duy nhất còn chặn việc đóng Phase 3 — DoD ghi rõ "nghe liên tục hết chương, chữ sáng đúng nhịp", mà cả hai vế đều chưa xác nhận bằng tai |
+| ~~Phiên âm Nhật chưa nghe thật lần nào~~ | ✅ Xong | User đã nghe hết một chương và xác nhận cả hai vế của DoD Phase 3: nghe liên tục được, chữ sáng đúng nhịp. Đây cũng là căn cứ **bỏ Phase 4** (mục 4.68). P5.1 thêm nút nghe thử với câu mẫu **có sẵn tên riêng Nhật** nên từ nay kiểm lại được bất cứ lúc nào mà không phải generate cả chương |
 | **11 phép kiểm UI của P3.4 chưa chạy lần nào** | **Cao** | `ui-check` đã thêm 3 nhóm (chiều cao 2 pane, tỉ lệ splitter thật, ẩn/hiện, màu `data-active`) nhưng **chưa chạy được trong phiên làm P3.4**. Đây đúng là loại lỗi vitest không thấy: lỗi 4.43 (chiều cao 0) và 4.23 (màu trong suốt) đều thuộc nhóm này, và P3.4 đụng vào **cả hai** — chia flex theo tỉ lệ, và 3 biến màu vừa đổi từ hex sang kênh RGB. Chạy `pnpm ui-check` là việc đầu tiên của phiên sau |
 | Phụ đề chưa giới hạn 3 dòng như plan.md | Thấp | plan.md ghi "subtitle pane 3 dòng". Bản này cho pane cuộn tự do theo tỉ lệ splitter thay vì chốt cứng 3 dòng — user kéo được nên tự chọn được số dòng, và chốt cứng thì đoạn dài bị cắt mất chữ. Nếu thấy vướng thì thêm chế độ "gọn" sau |
 | Không tô màu "đã đọc" cho từ phía trước | Thấp | Chỉ từ **đang đọc** đổi màu. Tô cả phần đã đọc thì mỗi khung hình phải duyệt toàn bộ `<span>` đứng trước (mục 4.66). Làm được nếu cần: đặt một class ở container rồi dùng CSS sibling selector, nhưng chưa ai thấy thiếu |
@@ -2992,7 +3122,7 @@ scripts/
 | Hàng đợi không tự chạy lại sau khi sidecar hồi phục | TB | `index.ts` gọi `queue.resume()` khi sidecar về `ready`, nhưng **chưa kiểm thật** đường này: probe dựng queue riêng chứ không qua `index.ts`. Kiểm khi P2.6 có UI để giết sidecar giữa lúc generate |
 | Retry không có backoff | Thấp | Job hỏng quay lại hàng đợi và có thể được `claimNext` ngay lượt sau — 3 lượt thử cháy hết trong vài chục ms nếu lỗi là tức thời (sidecar từ chối luôn). Đủ dùng vì `markError` vẫn đếm đúng, nhưng lỗi tạm thời (mạng, khoá file) sẽ không kịp qua cơn |
 | Nút "Giọng đọc" vẫn phải quay ra thư viện | Thấp | Trình đọc đã có nút generate (P2.6) nhưng khi báo "chưa chọn giọng" thì user phải tự quay ra màn thư viện rồi vào Giọng đọc. Nên có đường tắt ngay từ thông báo đó |
-| Job `align` khai trong schema nhưng chưa dùng | Thấp | `JobType` có `'align'` từ schema v1, hàng đợi hiện chỉ tạo job `'synthesize'`. Dành cho CTC forced alignment ở Phase 4 — `findActiveBySegment` đã nhận `type` nên không phải sửa gì thêm lúc đó |
+| Job `align` khai trong schema nhưng chưa dùng | Thấp | `JobType` có `'align'` từ schema v1, hàng đợi chỉ tạo job `'synthesize'`. **Phase 4 đã bỏ** (mục 4.68) nên nhiều khả năng không bao giờ dùng tới — giữ lại vì gỡ đi tốn một migration mà chẳng được gì. ⚠️ Ai định enqueue job `'align'` phải thêm **dispatch theo `job.type`** vào `queue.ts` trước: hiện `claimNext()` trả job nào cũng bị xử lý như `synthesize` |
 | Engine chỉ giữ MỘT voice trong RAM | Thấp | Sách VI và EN xen kẽ sẽ nạp lại model mỗi lần đổi (~1.5 s). Giữ hai model là ~400 MB RAM. Chấp nhận được vì generate thường chạy theo cả chương cùng một giọng |
 | Timing chưa kiểm trên giọng EN | TB | Cách gộp phoneme → từ mới đo thật trên `vi_VN-vais1000-medium`. Voice EN chưa tải nên chưa biết espeak tách từ tiếng Anh có khớp regex `\w+` không (viết tắt `Mr.`, sở hữu cách `John's`). Có lưới an toàn nên không vỡ, nhưng có thể rơi về `estimate` nhiều hơn cần thiết |
 | ~~`SYNTHESIS_RTF_ESTIMATE` chưa hiệu chỉnh~~ | ✅ Xong | Đã đối chiếu với số đo thật ở P2.6: ước 1680 ms vs thật 2045 ms (**RTF thật 0.24** gồm nạp model). Lệch +22% → giữ nguyên 0.15. Dung lượng lệch −15%, thời lượng −24%. Probe khoá lại ngưỡng 0.25–4× để hằng số không âm thầm sai bản chất |
@@ -3000,11 +3130,15 @@ scripts/
 | Chưa có luật normalize cho ký tự Nhật còn sót | Thấp | LN dịch đôi khi giữ nguyên `〜`, furigana trong ngoặc. Chưa gặp ở 2429 segment mẫu nên chưa viết luật — đợi thấy thật rồi làm |
 | **`apps/main/probe/` nằm ngoài typecheck** | **TB** | `apps/main/tsconfig.json` chỉ `include` `src/**/*.ts`. Đã kiểm chứng: đổi `errorCount` thành `XXerrorCount` mà `tsc --noEmit` vẫn xanh. Cộng với việc probe không ở `pnpm test` lẫn CI thì nó **không có lưới nào** — chính vì thế lỗi 4.50 nằm im qua hai commit. Sửa: nới `include` (kèm `rootDir`) hoặc thêm `tsconfig.probe.json` nối vào `pnpm typecheck` |
 | ~~Renderer phải tự `revokeObjectURL` cho audio~~ | ✅ Xong | P3.2: việc tạo và thu hồi gom vào `audio-element.ts`, không có đường nào tạo url mà không đi qua chỗ thu hồi. `setup.ts` **đếm** url chưa nhả và xuất `countOpenObjectUrls()` — test khoá lại: phát 3 đoạn liên tiếp còn đúng 1 url mở, rời trình đọc về 0 (mục 4.54) |
-| `PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa đo trên sách thật | TB | Suy ra từ RTF 0.24 (sinh ~2s, phát ~10s) chứ chưa nghe hết một chương thật để xem player có hụt không. Quá nhỏ thì đứt tiếng giữa các câu; quá lớn thì generate audio user không nghe tới. Vẫn chưa đo được ở P3.3 vì cần **nghe** mới biết hụt — đo cùng lượt nghe thử ở P3.4 |
-| Chưa nghe thử bằng tai | **TB** | `ui-check` chứng minh được thẻ audio **thật** tồn tại (P3.3 sửa lại phép kiểm này — trước nó đo nhầm thẻ tự tạo, mục 4.56), `preservesPitch` được giữ tới 3×, tốc độ tới được thẻ, phím tắt thông suốt — nhưng **CDP không đọc được đầu ra âm thanh**. "Nghe liên tục hết chương, chữ sáng đúng nhịp" (DoD Phase 3) vẫn phải do người kiểm |
+| ~~`PLAYBACK_LOOKAHEAD_SEGMENTS = 5` chưa đo trên sách thật~~ | ✅ Xong | Lượt nghe cả chương của user không báo đứt tiếng giữa các câu → 5 là đủ với RTF 0.24. Giữ nguyên hằng số |
+| ~~Chưa nghe thử bằng tai~~ | ✅ Xong | User nghe hết một chương ở P3.4: audio liên tục, highlight bám đúng từng chữ. `ui-check` vẫn không thay được lượt nghe này (CDP không đọc được đầu ra âm thanh) nên mọi thay đổi đụng tới timing sau này vẫn phải nghe lại tay |
 | ~~Player chưa có phím tắt~~ | ✅ Xong | P3.3: Space, ←/→, J/K, `[`/`]`. Phần khó hoá ra không phải gắn listener mà là **loại trừ** — ô nhập, vùng `contenteditable`, nút đang có tiêu điểm, tổ hợp có phím bổ trợ (mục 4.57) |
 | **Danh sách đoạn chỉ render 5 dòng cho khung chứa được ~10** | **TB** | `ui-check` đỏ ở "số dòng khớp chiều cao khung": khung 695 px (≈10 dòng × 64 px) mà virtualizer chỉ dựng 5. **Có sẵn từ trước P3.3** — đã xác nhận bằng cách stash toàn bộ P3.3 rồi chạy lại: baseline cũng đỏ (5 dòng / ~11). Không phải do thanh player cao thêm; P3.3 chỉ đổi con số kỳ vọng 11 → 10 vì khung ngắn lại. Chưa sửa ở đây để commit này đúng phạm vi. Hậu quả thật: cuộn nhanh thấy khoảng trắng ở nửa dưới danh sách |
 | Thanh tiến độ chưa kiểm khi audio **đang chạy thật** | Thấp | `ui-check` đo được kích thước, màu, và dạng chuỗi `0:00 / 0:00` — nhưng lúc đó player `idle` nên chưa chứng minh được thanh **chạy** đúng nhịp. Unit test có kiểm (giả `positionMs`), còn trên app thật thì cùng chung nợ với "chưa nghe thử bằng tai" |
 | Bấm đoạn lúc player `idle` không tự phát | Thấp | Cố ý: bấm đoạn để xem nó ở trang nào là thao tác thường gặp, tự phát tiếng lúc đó là bất ngờ khó chịu. Đang phát rồi thì bấm đoạn khác mới nhảy tới. Đổi được nếu user thấy ngược |
 | `getSegmentAudio` chưa kiểm trên sách EN | Thấp | Probe chạy trên giọng VI. Cách gộp phoneme → từ của espeak với tiếng Anh chưa đo (đã là nợ sẵn ở hàng "Timing chưa kiểm trên giọng EN"); đường ước lượng thì độc lập ngôn ngữ vì chỉ đếm ký tự |
 | Cleaner chưa xử lý cột đôi trải qua nhiều trang | Thấp | `detectColumnLayout` xét từng trang độc lập; sách đổi bố cục giữa chương vẫn đúng, nhưng trang có đúng 1 dòng mỗi cột thì rơi về `single` |
+| **Nghe thử giọng chưa chạy trên app thật** | **TB** | P5.1 mới có unit test: nút, ba trạng thái (`Nghe thử`/`Đang tạo…`/`Dừng`), và kỷ luật thu hồi Blob URL đều xanh ở jsdom — nhưng **jsdom không phát được audio** (`HTMLMediaElement.play` là bản giả trong `setup.ts`). Nghĩa là chưa có gì chứng minh câu mẫu thật sự kêu thành tiếng, hay `/preview` trả về file `.ogg` Chromium giải mã được. Chạy `pnpm ui-check` + bấm thử bằng tay là việc đầu tiên của phiên sau |
+| Không hỗ trợ voice nhiều người nói | TB | 8 giọng VI/EN của Piper có `num_speakers > 1` — `vi_VN-vivos-x_low` **65 giọng**, `en_US-libritts_r-medium` **904 giọng**. Piper cần `speaker_id` lúc tổng hợp mà `catalog.json`, `SynthesizeRequest` và `AppSettings` đều chưa có trường đó; thêm vào catalog mà không sửa code thì luôn đọc bằng người nói số 0. Đáng làm vì VI chỉ có 3 model — mở `vivos` ra là thêm 65 lựa chọn giọng. Cần: trường `speakerId` xuyên 4 tầng + UI chọn người nói |
+| Câu nghe thử cố định, user không tự gõ được | Thấp | `VOICE_PREVIEW_TEXT` chọn sẵn theo `lang`, có tên riêng Nhật + chữ số để phủ đúng hai đường chuẩn hoá dễ sai. Cho user gõ câu riêng sẽ hữu ích để thử tên nhân vật cụ thể trong sách họ đang đọc — nhưng phải giới hạn độ dài và chặn đường dùng nó thay hàng đợi generate |
+| Giọng `25hours` chưa nghe thử lần nào | TB | sha256/size đã đối chiếu thật với HF, và đường 16 kHz đã lần theo code (`target_rate_for_opus` trả 16000 → **bỏ qua resample**), nhưng **chưa tải model 63 MB về để nghe**. Chất lượng `low` + 16 kHz nghe ra sao so với `vais1000` (`medium`, 22 kHz) thì chưa ai biết. Nếu tệ hơn hẳn thì nên ghi chú vào catalog để user khỏi mất công tải |

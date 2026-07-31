@@ -1,13 +1,17 @@
 """FastAPI app của sidecar.
 
-Route hiện có: `/health`, `/normalize` (P2.1), nhóm `/voices` (P2.3) và
-`/synthesize` (P2.4). `/align` (CTC forced alignment) thêm ở Phase 4 — cố ý
-không dựng sẵn route trả mock (CLAUDE.md cấm).
+Route hiện có: `/health`, `/normalize` (P2.1), nhóm `/voices` (P2.3),
+`/synthesize` (P2.4) và `/preview` (P5.1 — nghe thử giọng đã cài).
+
+Không có `/align`: Phase 4 (CTC forced alignment) đã bị **bỏ** sau khi nghe thật
+một chương thấy timing phoneme của Piper đã bám đúng nhịp. Xem PROGRESS.md
+mục 4 để biết lý do và điều kiện mở lại.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 from collections.abc import AsyncIterator
@@ -30,6 +34,8 @@ from .schemas import (
     InstalledVoicesResponse,
     NormalizeRequest,
     NormalizeResponse,
+    PreviewRequest,
+    PreviewResponse,
     SynthesizeRequest,
     SynthesizeResponse,
     VoiceFileInfo,
@@ -309,6 +315,51 @@ def create_app(config: SidecarConfig) -> FastAPI:
                 )
                 for t in timings
             ],
+        )
+
+    @app.post("/preview", response_model=PreviewResponse)
+    async def preview(request: PreviewRequest) -> PreviewResponse:
+        """Đọc thử một câu mẫu bằng voice đã cài, trả bytes `.ogg` **không ghi đĩa**.
+
+        **Vì sao không dùng lại `/synthesize`.** Route kia bắt buộc có `outPath`
+        nằm trong `audioDir` và luôn ghi ra file. Nghe thử mà đi đường đó thì mỗi
+        lần bấm lại đẻ một file rác trong thư viện audio của user, và Storage
+        Manager sẽ đếm nó thành dung lượng sách. `engine.synthesize` vốn đã trả
+        bytes trong RAM (`EncodedAudio`), ghi đĩa là bước riêng — nên bỏ bước đó
+        là đủ, không phải viết lại gì.
+
+        **Không trả timing.** Nghe thử là để nghe giọng, không phải để tô chữ.
+        Bỏ luôn cả bước `remap_to_source`.
+
+        Chạy trong thread riêng vì cùng lý do với `/synthesize`: CPU-bound, chặn
+        event loop thì `/health` treo và supervisor giết oan sidecar.
+        """
+        catalog = read_catalog()
+        entry = catalog.find(request.voiceId)
+        if entry is None:
+            raise HTTPException(
+                status_code=404, detail=f"Không có voice {request.voiceId!r} trong catalog"
+            )
+
+        # Chuẩn hoá y như lúc đọc thật: câu mẫu có tên riêng Nhật thì user phải
+        # nghe được đúng thứ app sẽ đọc, không phải bản chưa qua xử lý.
+        normalized = normalize_mapped(request.text, request.lang, {})
+
+        def run() -> SynthesisResult:
+            return engine.synthesize(normalized.spoken, entry, request.bitrate)
+
+        try:
+            result = await asyncio.to_thread(run)
+        except EngineError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except EncodeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        return PreviewResponse(
+            voiceId=result.voice_id,
+            durationMs=result.audio.duration_ms,
+            sampleRate=result.audio.sample_rate,
+            audioBase64=base64.b64encode(result.audio.data).decode("ascii"),
         )
 
     @app.delete("/voices/{voice_id}", response_model=DeleteVoiceResponse)

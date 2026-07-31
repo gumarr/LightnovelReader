@@ -13,10 +13,15 @@ export type VoiceRowProps = {
   canDownload: boolean;
   /** Voice này đang được chọn cho ngôn ngữ của nó (`AppSettings.voiceVi/voiceEn`) */
   selected: boolean;
+  /** Đang tổng hợp câu nghe thử cho voice này */
+  previewing: boolean;
+  /** Đang phát tiếng nghe thử của voice này */
+  playing: boolean;
   onDownload: () => void;
   onCancel: () => void;
   onRemove: () => void;
   onSelect: () => void;
+  onPreview: () => void;
 };
 
 export const VoiceRow = ({
@@ -24,10 +29,13 @@ export const VoiceRow = ({
   progress,
   canDownload,
   selected,
+  previewing,
+  playing,
   onDownload,
   onCancel,
   onRemove,
   onSelect,
+  onPreview,
 }: VoiceRowProps): JSX.Element => {
   const downloading = progress !== undefined;
   // `totalBytes` của khung SSE đầu tiên có thể là 0 (sidecar chưa kịp đọc
@@ -71,6 +79,32 @@ export const VoiceRow = ({
             >
               Đã cài
             </span>
+          )}
+
+          {/*
+            Nghe thử đứng TRƯỚC "Dùng giọng này" vì đó là thứ tự user thật sự
+            làm: nghe rồi mới quyết định chọn. Chỉ hiện với voice đã cài —
+            nghe thử voice chưa tải thì không có model nào để tổng hợp.
+          */}
+          {voice.installed && !downloading && (
+            <button
+              type="button"
+              onClick={onPreview}
+              // Đang tổng hợp thì khoá nút: bấm lại lần nữa cũng bị store bỏ
+              // qua, mà nút vẫn sáng thì user tưởng lần bấm đầu không ăn.
+              disabled={previewing}
+              data-testid="voice-preview"
+              data-previewing={previewing}
+              data-playing={playing}
+              title={
+                playing
+                  ? 'Dừng nghe thử'
+                  : 'Đọc thử một câu mẫu có tên riêng Nhật và chữ số'
+              }
+              className="rounded border border-border px-2.5 py-1 text-xs text-fg transition-colors hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {previewing ? 'Đang tạo…' : playing ? 'Dừng' : 'Nghe thử'}
+            </button>
           )}
 
           {/*

@@ -7,7 +7,9 @@ import {
   type AppInfo,
 } from '@ln/shared';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useUpdateStore } from '@/stores/update-store';
 import { SubtitleFontSetting } from './SubtitleFontSetting';
+import { UpdatePanel } from './UpdatePanel';
 import { AppInfoPanel } from './AppInfoPanel';
 
 /**
@@ -36,6 +38,12 @@ export const SettingsScreen = ({
   const settings = useSettingsStore((s) => s.settings);
   const error = useSettingsStore((s) => s.error);
   const update = useSettingsStore((s) => s.update);
+
+  const updateStatus = useUpdateStore((s) => s.status);
+  const updateError = useUpdateStore((s) => s.error);
+  const checkUpdate = useUpdateStore((s) => s.check);
+  const downloadUpdate = useUpdateStore((s) => s.download);
+  const installUpdate = useUpdateStore((s) => s.install);
 
   const [info, setInfo] = useState<AppInfo | null>(null);
 
@@ -80,6 +88,17 @@ export const SettingsScreen = ({
         </p>
       )}
 
+      {/*
+        Lỗi đường IPC của cập nhật hiện riêng: nó không phải lỗi lưu settings, và
+        gộp vào một ô sẽ khiến "không kiểm được bản mới" trông như "không lưu
+        được cỡ chữ".
+      */}
+      {updateError !== null && (
+        <p role="alert" data-testid="update-error" className="text-sm text-danger">
+          {updateError}
+        </p>
+      )}
+
       <SubtitleFontSetting
         value={fontSize}
         min={SUBTITLE_FONT_SIZE_MIN}
@@ -109,6 +128,19 @@ export const SettingsScreen = ({
           Mở
         </button>
       </section>
+
+      {/*
+        Đặt ngay trên "Về ứng dụng": user vào đây nhìn số phiên bản rồi mới hỏi
+        "có bản mới chưa" — hai ô đó thuộc cùng một câu hỏi.
+      */}
+      <UpdatePanel
+        status={updateStatus}
+        autoCheck={settings?.autoCheckUpdates ?? DEFAULT_SETTINGS.autoCheckUpdates}
+        onCheck={() => void checkUpdate()}
+        onDownload={() => void downloadUpdate()}
+        onInstall={() => void installUpdate()}
+        onAutoCheckChange={(autoCheckUpdates) => void update({ autoCheckUpdates })}
+      />
 
       {info !== null && <AppInfoPanel info={info} />}
     </section>

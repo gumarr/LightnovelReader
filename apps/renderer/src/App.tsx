@@ -7,8 +7,10 @@ import { ReaderScreen } from '@/features/reader/ReaderScreen';
 import { VoiceManager } from '@/features/voices/VoiceManager';
 import { StorageManager } from '@/features/storage/StorageManager';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
+import { UpdateBanner } from '@/features/settings/UpdateBanner';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useLibraryStore } from '@/stores/library-store';
+import { useUpdateStore } from '@/stores/update-store';
 
 /**
  * Điều hướng: thư viện → nhập sách → chi tiết sách → trình đọc.
@@ -31,6 +33,14 @@ export const App = (): JSX.Element => {
   const closeBook = useLibraryStore((s) => s.close);
   const loadLibrary = useLibraryStore((s) => s.load);
 
+  const updateStatus = useUpdateStore((s) => s.status);
+  const updateDismissed = useUpdateStore((s) => s.dismissed);
+  const loadUpdate = useUpdateStore((s) => s.load);
+  const applyUpdate = useUpdateStore((s) => s.applyExternal);
+  const downloadUpdate = useUpdateStore((s) => s.download);
+  const installUpdate = useUpdateStore((s) => s.install);
+  const dismissUpdate = useUpdateStore((s) => s.dismiss);
+
   const [screen, setScreen] = useState<Screen>('library');
   // Chương đang đọc. `null` = đang xem mục lục; `undefined` bên trong nghĩa là
   // mở chỗ đọc dở. Reset khi đóng sách để lần mở sau vào lại mục lục.
@@ -41,6 +51,15 @@ export const App = (): JSX.Element => {
     // Main có thể đổi settings (ví dụ user chọn thư mục audio) → nhận event
     return window.api.settings.onChanged(applyExternal);
   }, [load, applyExternal]);
+
+  useEffect(() => {
+    // Đăng ký TRƯỚC khi nạp: lượt kiểm tự động ở main chạy sau 5 giây kể từ lúc
+    // khởi động (P5.5b), nhưng không có gì bảo đảm renderer luôn sẵn sàng trước
+    // mốc đó. Đăng ký sau `await` là để hở một khe mà event rơi vào là mất.
+    const off = window.api.update.onStatusChanged(applyUpdate);
+    void loadUpdate();
+    return off;
+  }, [loadUpdate, applyUpdate]);
 
   const body = (): JSX.Element => {
     if (opened !== null) {
@@ -130,6 +149,18 @@ export const App = (): JSX.Element => {
   return (
     <div className="flex h-full flex-col bg-bg text-fg">
       <TitleBar title="LN Reader" />
+
+      {/*
+        Ngoài `<main>` và `shrink-0`: dải này không được ăn vào chiều cao của
+        vùng nội dung theo kiểu làm co ô cuộn — đó đúng là lỗi bố cục 4.43.
+      */}
+      <UpdateBanner
+        status={updateStatus}
+        dismissed={updateDismissed}
+        onDownload={() => void downloadUpdate()}
+        onInstall={() => void installUpdate()}
+        onDismiss={dismissUpdate}
+      />
 
       <main className="flex flex-1 flex-col overflow-hidden">
         {error !== null ? (

@@ -10,11 +10,16 @@
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Scaffold: monorepo, Electron, SQLite, titlebar, theme | ✅ Xong |
-| 1 | Import, chapter detection, viewer | ⏳ Đang làm |
-| 2 | TTS sidecar & storage manager | — |
-| 3 | Player & subtitle sync | — |
-| 4 | Forced alignment | — |
-| 5 | Polish & ship | — |
+| 1 | Import, chapter detection, viewer | ✅ Xong |
+| 2 | TTS sidecar & storage manager | ✅ Xong |
+| 3 | Player & subtitle sync | ✅ Xong |
+| 4 | Forced alignment | ⏹️ Đã bỏ |
+| 5 | Polish & ship | ✅ Xong |
+
+**Phase 4 bỏ có chủ đích.** Highlight theo từ hiện dùng nội suy theo độ dài từ,
+nghe thật thì bám đúng nhịp. Đổi sang CTC forced alignment là thêm model ~300 MB,
+đẩy installer từ 143 MB lên ~450 MB — quá đắt cho thứ không ai thấy thiếu. Lý do
+đầy đủ và **điều kiện mở lại** ở [PROGRESS.md](PROGRESS.md) mục 4.68.
 
 Chi tiết kế hoạch: [plan.md](plan.md). Trạng thái công việc và ghi chú kỹ thuật:
 [PROGRESS.md](PROGRESS.md).
@@ -93,8 +98,53 @@ Segment nhỏ (~10s audio) vì CTC aligner degrade nghiêm trọng khi audio > 3
 
 ## Cài đặt bản phát hành
 
-Ứng dụng không mua code signing certificate. Khi cài, Windows SmartScreen sẽ
-cảnh báo — chọn **More info → Run anyway**.
+Tải từ trang [Releases](../../releases). Có hai bản:
+
+| File | Dùng khi | Tự cập nhật |
+|---|---|---|
+| `LN-Reader-<version>-x64.exe` | Cài bình thường (khuyến nghị) | ✅ Có |
+| `LN-Reader-<version>-portable.exe` | Chạy từ USB, không muốn cài | ❌ Không |
+
+Bản portable **không tự cập nhật được** — nó không có trình gỡ cài để thay chính
+mình. App biết điều đó và nói thẳng trong mục Cài đặt thay vì báo lỗi mơ hồ; muốn
+lên bản mới thì tải file mới và thay file cũ.
+
+### Windows SmartScreen chặn — đây là chuyện bình thường
+
+Đây là dự án cá nhân mã nguồn mở, **không mua code signing certificate** (~400
+USD/năm). Windows không nhận ra nhà phát hành nên chặn mọi file `.exe` chưa ký,
+bất kể nội dung là gì.
+
+Cách qua: bấm **More info** → **Run anyway**.
+
+Nếu ngại, hai cách tự kiểm chứng — đều không cần tin lời README này:
+
+- Đối chiếu SHA-512 của file tải về với dòng `sha512` trong `latest.yml` cùng
+  release.
+- Tự build từ mã nguồn: `pnpm install && pnpm build:win`.
+
+### Cập nhật
+
+Bản cài kiểm bản mới lúc khởi động rồi hiện một dải báo ở đầu cửa sổ. **Chỉ kiểm
+tra là tự động** — tải (~150 MB) và cài đều do bạn bấm, vì đây là app đọc offline
+và không nên tự ngốn băng thông của bạn.
+
+Tắt hẳn việc kiểm tra ở **Cài đặt → Cập nhật → bỏ tick "Tự kiểm tra bản mới"**.
+Tắt rồi thì app không gửi request mạng nào ra ngoài; vẫn kiểm tay được bằng nút
+**Kiểm tra** ngay cạnh đó.
+
+Ứng dụng **không có** telemetry hay analytics dưới bất kỳ dạng nào.
+
+### Dữ liệu của bạn nằm ở đâu
+
+- Sách, tiến độ đọc, dấu trang, hàng đợi: `%APPDATA%/LN Reader/`
+- Audio đã tạo: thư mục bạn chọn trong **Dung lượng & audio** (mặc định
+  `%APPDATA%/LN Reader/audio/`)
+
+Một volume có thể chiếm 800 MB–1.2 GB audio, nên nếu ổ C chật thì đổi thư mục
+sang ổ khác ngay từ đầu.
+
+Gỡ cài **không** xoá hai thư mục này. Cài đè bản mới giữ nguyên toàn bộ dữ liệu.
 
 ## Đóng góp
 

@@ -33,6 +33,7 @@ import {
   type SegmentAudio,
   type SidecarStatus,
   type StorageUsageInfo,
+  type UpdateStatus,
   type VoiceCatalogItem,
   type VoiceDownloadProgress,
   type VoicePreview,
@@ -82,6 +83,8 @@ export type FakeApiOptions = {
   bookmarks?: BookmarkEntry[];
   /** Thống kê đọc trả cho `library.getStats`. Mặc định một sách đọc dở */
   stats?: Partial<ReadingStats>;
+  /** Trạng thái auto-update. Mặc định `idle` chưa từng kiểm (P5.5c) */
+  updateStatus?: UpdateStatus;
 };
 
 /** Voice mẫu cho test voice manager */
@@ -208,6 +211,17 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
 
   const queueStatusListeners = new Set<(s: QueueStatusInfo) => void>();
   const segmentUpdateListeners = new Set<(s: Segment) => void>();
+
+  const updateListeners = new Set<(s: UpdateStatus) => void>();
+  /**
+   * Mặc định `idle` chưa từng kiểm — trạng thái thật của app vừa mở khi
+   * `autoCheckUpdates` tắt. Không mặc định `unsupported`: đó là ca của bản dev,
+   * mà lấy nó làm mặc định thì mọi test UI đều rơi vào nhánh "không làm gì được".
+   */
+  let updateStatus: UpdateStatus = options.updateStatus ?? {
+    state: 'idle',
+    currentVersion: '0.1.0',
+  };
 
   let queueStatus: QueueStatusInfo = {
     state: 'idle',
@@ -622,6 +636,21 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
       }),
     },
 
+    update: {
+      getStatus: vi.fn(async () => ok(updateStatus)),
+      // Không tự đổi sang `checking`: service thật đổi trạng thái qua **event**
+      // chứ không qua giá trị trả về. Test nào cần đường đi đó thì gọi
+      // `emitUpdateStatus` — bản giả tự bịa ra một chuỗi trạng thái sẽ che mất
+      // lỗi "UI không nghe event".
+      check: vi.fn(async () => ok(updateStatus)),
+      download: vi.fn(async () => ok(updateStatus)),
+      quitAndInstall: vi.fn(async () => ok(updateStatus.state === 'downloaded')),
+      onStatusChanged: vi.fn((listener: (s: UpdateStatus) => void) => {
+        updateListeners.add(listener);
+        return () => updateListeners.delete(listener);
+      }),
+    },
+
     window: {
       minimize: vi.fn(async () => ok(undefined)),
       toggleMaximize: vi.fn(async () => {
@@ -677,6 +706,13 @@ export const createFakeApi = (options: FakeApiOptions = {}) => {
     },
     queueStatusListenerCount: () => queueStatusListeners.size,
     segmentUpdateListenerCount: () => segmentUpdateListeners.size,
+
+    /** Mô phỏng main đẩy event update:statusChanged */
+    emitUpdateStatus: (next: UpdateStatus) => {
+      updateStatus = next;
+      for (const l of updateListeners) l(next);
+    },
+    updateListenerCount: () => updateListeners.size,
 
     /** Dung lượng hiện tại của bản giả — kiểm xoá có thật sự trừ đi hay không */
     getUsage: () => usage,

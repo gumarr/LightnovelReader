@@ -7,6 +7,7 @@ import { installFakeApi, fakeLibraryEntry, type FakeApi } from '@/test/fake-api'
 import { useSettingsStore } from '@/stores/settings-store';
 import { useImportStore } from '@/stores/import-store';
 import { useLibraryStore } from '@/stores/library-store';
+import { useUpdateStore } from '@/stores/update-store';
 
 let fake: FakeApi;
 
@@ -27,6 +28,7 @@ beforeEach(() => {
     history: [],
   });
   useLibraryStore.setState({ entries: [], opened: null, loading: false, error: null });
+  useUpdateStore.setState({ status: null, error: null, dismissed: false });
 });
 
 /**
@@ -158,6 +160,90 @@ describe('App', () => {
 
     unmount();
     expect(fake.settingsListenerCount()).toBe(0);
+  });
+});
+
+describe('dải báo cập nhật (P5.5c)', () => {
+  it('nạp trạng thái cập nhật lúc mở app', async () => {
+    await renderApp();
+    await waitFor(() => expect(fake.api.update.getStatus).toHaveBeenCalledTimes(1));
+  });
+
+  it('không có dải nào khi không có bản mới', async () => {
+    await renderApp();
+    await waitFor(() => expect(fake.api.update.getStatus).toHaveBeenCalled());
+
+    expect(screen.queryByTestId('update-banner')).not.toBeInTheDocument();
+  });
+
+  it('hiện dải khi main đẩy event có bản mới', async () => {
+    // Đây là đường quan trọng nhất của P5.5c: lượt kiểm tự động chạy ở main
+    // (P5.5b) và kết quả tới renderer **chỉ** qua event. Đứt chỗ này thì user
+    // không bao giờ biết có bản mới trừ khi tự vào Cài đặt bấm.
+    await renderApp();
+    await waitFor(() => expect(fake.updateListenerCount()).toBe(1));
+
+    act(() =>
+      fake.emitUpdateStatus({
+        state: 'available',
+        currentVersion: '0.1.0',
+        availableVersion: '0.2.0',
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('update-banner')).toHaveTextContent('0.2.0'));
+  });
+
+  it('đóng dải thì nó biến mất mà không ghi gì xuống settings', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+    await waitFor(() => expect(fake.updateListenerCount()).toBe(1));
+
+    act(() =>
+      fake.emitUpdateStatus({
+        state: 'available',
+        currentVersion: '0.1.0',
+        availableVersion: '0.2.0',
+      }),
+    );
+    await screen.findByTestId('update-banner');
+
+    await user.click(screen.getByTestId('update-banner-dismiss'));
+
+    await waitFor(() => expect(screen.queryByTestId('update-banner')).not.toBeInTheDocument());
+    // Đóng dải là "để tôi yên lúc này", không phải một thiết lập lâu dài.
+    expect(fake.api.settings.update).not.toHaveBeenCalled();
+  });
+
+  it('bấm tải trên dải gọi tới main', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+    await waitFor(() => expect(fake.updateListenerCount()).toBe(1));
+
+    act(() =>
+      fake.emitUpdateStatus({
+        state: 'available',
+        currentVersion: '0.1.0',
+        availableVersion: '0.2.0',
+      }),
+    );
+    await screen.findByTestId('update-banner');
+
+    await act(async () => {
+      await user.click(screen.getByTestId('update-banner-action'));
+    });
+
+    expect(fake.api.update.download).toHaveBeenCalledTimes(1);
+  });
+
+  it('huỷ đăng ký event cập nhật khi unmount', async () => {
+    // Cùng lý do với listener settings: giữ lại là rò rỉ, và event tới sau khi
+    // component đã gỡ sẽ đổi state của một cây React không còn tồn tại.
+    const { unmount } = await renderApp();
+    await waitFor(() => expect(fake.updateListenerCount()).toBe(1));
+
+    unmount();
+    expect(fake.updateListenerCount()).toBe(0);
   });
 });
 

@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-08-01 · commit `7e4e48b`
+> **Cập nhật lần cuối:** 2026-08-01 · commit `PENDING_P55C`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,7 +39,8 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** P5.5 — xem mục 3.
+**Việc tiếp theo:** không còn phần code nào. Xem mục 3 — việc còn lại là
+**publish release** và kiểm nhánh cập nhật trên bản cài thật.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
@@ -1180,14 +1181,65 @@ hàm; `getStatus()` trả `state: 'unsupported'` với đúng câu cho bản dev
 `quitAndInstall()` trả `false` chứ không ném. Chứng minh `electron-updater` nạp
 được trong Electron thật và cả chuỗi main → preload → renderer thông suốt.
 
+### Phase 5 — P5.5c UI auto-update + README phát hành ✅
+
+| Việc | Kết quả |
+|---|---|
+| `stores/update-store.ts` | Bản sao trạng thái + 4 lượt IPC, cùng khuôn `queue-store.ts`. 17 test |
+| `features/settings/update-format.ts` | Hàm **thuần** dựng nhãn/mô tả/nút từ `UpdateStatus`. 21 test |
+| `features/settings/UpdatePanel.tsx` | Ô đầy đủ trong màn Cài đặt + ô tick `autoCheckUpdates`. 11 test |
+| `features/settings/UpdateBanner.tsx` | Dải báo dưới titlebar, **một** nút + nút đóng. 10 test |
+| `App.tsx` | Đăng ký `onStatusChanged`, dựng dải. +6 test ở `App.test.tsx` |
+| `SettingsScreen.tsx` | Nối `UpdatePanel`, ô lỗi cập nhật **riêng**. +4 test |
+| `README.md` | Bảng phase đúng thực tế, mục cài đặt / SmartScreen / cập nhật / dữ liệu |
+| `scripts/ui-check.mjs` | +5 phép kiểm (3 ô cập nhật + `fg`/`fgMuted` ở **cả hai** theme) |
+
+**Trạng thái tới qua event, không qua giá trị trả về.** `check()` và `download()`
+đều **kết thúc trước khi việc thật xong**: `checkForUpdates()` trả về rồi sự kiện
+`update-available` mới bắn, còn tải thì chạy hàng phút. Chỉ đọc giá trị trả về
+thì UI đứng im ở `checking` mãi mãi. `onStatusChanged` là đường chính; giá trị
+trả về chỉ dùng bắt ca hỏng ngay lập tức. Có test cho đúng chỗ này ở `App.test`.
+
+**Đăng ký listener TRƯỚC khi `load()`.** Lượt kiểm tự động ở main chạy sau 5 giây
+kể từ khởi động (P5.5b), nhưng không có gì bảo đảm renderer luôn sẵn sàng trước
+mốc đó. Đăng ký sau `await` là để hở một khe mà event rơi vào đúng khe đó là mất
+hẳn — user không bao giờ thấy dải báo.
+
+**Dải báo chỉ hiện ở `available` và `downloaded`.** Hai trạng thái user **làm
+được gì đó**. `error` **cố tình** không báo ra dải: đây là app đọc sách offline,
+mỗi lần mở máy không có mạng lại hiện một dải đỏ thì user học cách bỏ qua dải đó
+— và khi đó nó vô dụng cả ở lần đáng nghe. Lỗi vẫn đọc được trong màn Cài đặt.
+
+**`dismissed` chỉ sống trong bộ nhớ, không ghi vào settings.** Đóng dải là "để
+tôi yên lúc này", không phải "đừng bao giờ báo nữa" — mở lại app thì báo lại, vì
+bản cập nhật vẫn còn đó và vẫn đáng cài. Bấm "Tải" thì `dismissed` **mở lại**:
+không mở lại thì user đóng dải rồi vào Cài đặt bấm tải sẽ không bao giờ thấy lời
+mời cài lúc tải xong.
+
+**`autoCheckUpdates` hết là setting chết.** Cờ này có trong `AppSettings` từ
+P5.5b mà chưa màn nào đọc — đúng hình dạng mục 4.71, thứ dự án đã mắc một lần với
+`subtitleFontSize`. Giờ có ô tick trong `UpdatePanel`, có test đường ghi xuống
+settings, **và** có phép kiểm trong `ui-check` để nó không chết lại lần nữa.
+
+✅ **`pnpm ui-check` chạy sau P5.5c — 87/87 đạt, không có phép nào đỏ.** Ô cập
+nhật có mặt, tiêu đề không trong suốt, ô tick có mặt, bản dev ra `unsupported` và
+**không** mời user bấm nút vô nghĩa.
+
+**Phép kiểm màu thiếu `fg`/`fgMuted` suốt từ đầu dự án.** Viết xong `UpdatePanel`
+tôi định kết luận "màu an toàn vì dùng `text-fg`, đã đo rồi" — kiểm lại thì
+`measureColors` **chưa bao giờ đo hai token đó**. Mọi phép kiểm màu chữ khác đều
+chạy trên màn Cài đặt, mà script cố ý về dark trước khi vào đó → nhánh light của
+`--fg` chưa từng có ai đo. Đã thêm cả hai; giờ mất màu chữ ở một theme là đỏ
+ngay. Mất biến đó ở một theme là **mất chữ toàn app**, không riêng ô nào.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **2184 passed** (+46 ở P5.5b — policy 19, service 20, handler 6, schema 1) |
-| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.5b — phần này không đụng sidecar) |
+| Unit test TypeScript | **2253 passed** (+69 ở P5.5c — format 21, store 17, panel 11, banner 10, App 6, SettingsScreen 4) |
+| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.5c — phần này không đụng sidecar) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
-| **Kiểm UI thật (`pnpm ui-check`)** | **73 phép kiểm** — lần chạy gần nhất **sau P5.4: 71/73 đạt**, và 2 phép đỏ đều là **đỏ giả của chính phép kiểm** (mục 4.74, đã sửa). Toàn bộ P5.3 + P5.4 xanh. P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| **Kiểm UI thật (`pnpm ui-check`)** | **87 phép kiểm** — lần chạy gần nhất **sau P5.5c: 87/87 đạt, không phép nào đỏ**. Hai phép đỏ giả của lượt P5.4 đã đóng (mục 4.74). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Icon app | **7 cỡ** (16→256) trong `resources/icon.ico`, sinh từ `pnpm build:icon`, tái lập đúng byte |
 | Giọng đọc trong catalog | **3** (2 VI + 1 EN) — xem mục 8 về giọng nhiều người nói |
 | Schema DB | **v3** — P5.4 **không** thêm migration, xem lý do ở mục 4.73 |
@@ -1213,7 +1265,7 @@ Phase 5 chia **năm phần** (thống nhất với user — mỗi phần một c
 | P5.2 | UI tầng 3 phiên âm: sửa cách đọc từ menu chuột phải trên phụ đề (nợ mục 8) | ✅ Xong |
 | P5.3 | Màn Cài đặt (cỡ chữ phụ đề) + trả 3 nợ mức TB | ✅ Xong |
 | P5.4 | Dấu trang + thống kê đọc; bảng hàng đợi (`queue:listPending` chưa ai gọi) | ✅ Xong |
-| P5.5 | Đóng gói + phát hành — chia nhỏ thành **a/b/c**, xem bảng dưới | ⬅️ **đang làm** |
+| P5.5 | Đóng gói + phát hành — chia nhỏ thành **a/b/c**, xem bảng dưới | ✅ Xong |
 
 **P5.5 chia ba, mỗi phần một commit** (thống nhất với user — mỗi phần xong thì
 commit và dừng phiên):
@@ -1222,7 +1274,7 @@ commit và dừng phiên):
 |---|---|---|
 | P5.5a | Icon app + metadata installer; `latest.yml` sinh ra đúng; log rotate | ✅ Xong |
 | P5.5b | Auto-update: `electron-updater` ở main + IPC contract | ✅ Xong |
-| P5.5c | UI auto-update (báo có bản mới, tải, cài lại) + README qua SmartScreen | ⬅️ **tiếp theo** |
+| P5.5c | UI auto-update (báo có bản mới, tải, cài lại) + README qua SmartScreen | ✅ Xong |
 
 ✅ **P5.5a đã qua `pnpm build:win` thật (user chạy 2026-07-31).** Cả hai câu treo
 đều có lời đáp: icon **có** nhúng vào `.exe` (thấy trong Explorer), và `latest.yml`
@@ -1250,6 +1302,10 @@ lượt trước cũng chính là hai phép đỏ giả này, nay đã đóng.
 
 **DoD Phase 5** (`plan.md`): installer `.exe` cài trên máy sạch chạy được, không
 cần cài Python.
+
+✅ **P5.5c xong → Phase 5 đủ 5/5 phần.** Toàn bộ mã của app đã viết xong. Việc
+còn lại **không phải việc code**: publish một release thật lên GitHub rồi tự cài
+và bấm cập nhật — xem mục 8, đó là cách duy nhất chứng minh nhánh cập nhật.
 
 ### Phase 3 — đã xong
 
@@ -3308,6 +3364,22 @@ lời, chỉ `/json/list` rỗng. Từ ngoài không phân biệt được với
 `printCrashLog()` khi hết giờ chờ. Script mới của tôi bỏ cả hai. Đã ghi lại vào
 `scripts/README.md` để lần sau không mất thêm một lượt.
 
+### 4.78 Dấu backtick trong **comment** làm chết cả `ui-check.mjs`
+
+Thêm phép kiểm màu ở P5.5c, tôi viết một comment có ``--fg`` trong dấu backtick.
+Cả khối `measureColors` là **một template literal** — dấu backtick trong comment
+vẫn đóng chuỗi như thường, vì JS phân tích chuỗi trước khi biết đâu là comment.
+Kết quả: `SyntaxError` ở dòng 410, script chết **trước khi chạy phép kiểm nào**.
+
+Đáng ghi vì hai lẽ. Một, lỗi báo ở dòng mở template (410) chứ không ở dòng có
+backtick — nhìn dòng 410 thì không thấy gì sai. Hai, đây là loại lỗi mà **thói
+quen viết comment tốt lại gây ra**: dự án này quy ước đặt tên biến/CSS trong
+backtick, và quy ước đó đúng ở mọi file `.ts` — chỉ sai bên trong template literal.
+
+Cách tránh: trong mọi khối chuỗi CDP của `ui-check.mjs`, viết tên biến **trần**
+(`--fg` không có backtick). `node --check scripts/ui-check.mjs` bắt được ngay,
+rẻ hơn nhiều so với chờ hết một lượt chạy app.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -3554,6 +3626,11 @@ apps/renderer/src/
     SubtitleFontSetting.tsx  Thanh cỡ chữ + xem thử tại chỗ
     AppInfoPanel.tsx       Phiên bản + thư mục dữ liệu (app:getInfo, kênh có từ
                            Phase 0 mà tới P5.3 mới có UI gọi)
+    UpdatePanel.tsx        Ô cập nhật ĐẦY ĐỦ: kiểm/tải/cài + ô tick
+                           autoCheckUpdates (P5.5c)
+    UpdateBanner.tsx       Dải dưới titlebar, MỘT nút. Chỉ hiện ở available và
+                           downloaded — error cố ý không báo ra đây (P5.5c)
+    update-format.ts       Hàm thuần: tiêu đề, mô tả, nút, có nên báo ra ngoài
   features/bookmarks/      Dấu trang + thống kê đọc (P5.4). Thống kê **suy từ
                            dữ liệu đã có**, không có bảng theo dõi hành vi
     BookmarkButton.tsx     Nút đánh dấu + ô ghi chú (neo vào đoạn ĐANG CHỌN)
@@ -3574,6 +3651,8 @@ apps/renderer/src/
                            loadPending/cancelJob cho bảng hàng đợi (P5.4)
   stores/bookmark-store.ts Dấu trang VÀ thống kê chung một store — chúng luôn
                            đổi cùng nhau (P5.4)
+  stores/update-store.ts   Bản sao UpdateStatus. Trạng thái tới qua EVENT chứ
+                           không qua giá trị trả về — xem P5.5c (P5.5c)
   stores/storage-store.ts  Dung lượng + xoá; giữ lỗi qua lượt nạp lại
   stores/player-store.ts   Máy trạng thái phát: idle/playing/paused/waiting.
                            KHÔNG giữ vị trí ms (đổi 60 lần/giây) — đọc qua
@@ -3755,6 +3834,8 @@ scripts/
 | ~~P5.5a chưa qua `pnpm build:win`~~ | ~~TB~~ | ✅ **Đóng 2026-07-31** — user chạy `build:win` thật. Icon **có** nhúng vào `.exe`; `latest.yml` ghi `LN-Reader-0.1.0-x64.exe` khớp đúng tên file thật, size khớp từng byte. Lỗi 4.75 xác nhận đã sửa trên bản đóng gói |
 | **P5.5b chưa chạy trên bản NSIS đã cài** | **TB** | Đã kiểm CDP trên **bản dev** (ra `unsupported`, đúng) và kiểm bundle có `NsisUpdater` (mục 4.76). Nhưng nhánh **cập nhật được** — `checking` → `available` → tải → cài — chỉ chạy khi có `app-update.yml`, tức **chỉ bản NSIS đã cài** mới đi tới. Kiểm đầy đủ cần: publish một release thật lên GitHub rồi cài bản cũ hơn và bấm cập nhật. Không có đường tắt nào chứng minh được nhánh này |
 | **`release/` không tự dọn giữa các lần build** | **Thấp** | electron-builder chỉ ghi đè file trùng tên. Đổi `artifactName` ở P5.5a nên bộ cũ (`LN Reader-…`, có dấu cách) vẫn nằm cạnh bộ mới. Vô hại khi build thử, **nguy khi publish**: upload nhầm file có dấu cách là updater 404 trở lại (lỗi 4.75). Cách xử: xoá tay `release/` trước khi build bản phát hành. Chưa tự động hoá vì xoá thư mục output tự động là thao tác phá huỷ, cần user quyết |
+| **Nhánh cập nhật được của P5.5c chưa ai bấm** | **TB** | Cùng gốc với nợ P5.5b ngay trên. `ui-check` chứng minh được ô cập nhật dựng đúng và bản dev ra `unsupported`, nhưng `available` → tải → `downloaded` → cài **chỉ tới được khi GitHub có release mới hơn bản đang chạy**. Nghĩa là dải báo, thanh tiến độ và nút "Khởi động lại & cài" mới chỉ chạy với dữ liệu giả trong vitest. Đóng nợ này và nợ P5.5b là **cùng một việc**: publish release rồi cài bản cũ hơn và bấm |
+| Không kiểm được `ui-check` ở theme sáng cho các màn sau titlebar | Thấp | Script cố ý về dark trước khi vào màn Cài đặt để ảnh chụp nhất quán, nên mọi phép đo trên màn đó chỉ có nhánh dark. P5.5c bù bằng cách đo `fg`/`fgMuted` ở **cả hai** theme trong `measureColors` — đủ bắt lỗi mất biến màu, nhưng không bắt được lỗi chỉ xảy ra ở bố cục màn Cài đặt trong theme sáng |
 | Bảng hàng đợi hiện `segmentId` chứ không hiện text đoạn | Thấp | Job chỉ mang id; tra text cho tới 200 hàng là 200 lượt truy vấn cho một bảng chẩn đoán. Id đủ để đối chiếu với danh sách đoạn, nhưng không đọc được bằng mắt. Sửa được bằng một truy vấn JOIN trả kèm text nếu thấy cần |
 | ~~P5.4 chưa chạy trên app thật~~ | ✅ **đã đóng** | Đã chạy `pnpm ui-check` thật: 10 phép kiểm P5.4 **xanh hết**. Xác nhận trong Chromium: mỗi tab panel cao 664 px thật (không dựng lại 4.43), hai thanh tiến độ ra màu thật (`rgb(129,140,248)` / `rgb(113,113,122)` — không rơi vào bẫy `bg-success` của 4.23), `queue:listPending` trả lời được |
 | ~~Màn Cài đặt chưa chạy trên app thật~~ | ✅ **đã đóng** | Cùng lượt chạy trên: 5 phép kiểm P5.3 xanh. Cỡ chữ preview khớp thanh trượt (18 px vs 18 px), chữ preview không trong suốt, cả dark lẫn light đều ra màu khác nhau thật |

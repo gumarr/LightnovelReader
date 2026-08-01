@@ -65,6 +65,9 @@ pnpm ui-check --keep-open    # giữ app mở để soi tay tiếp
 | **Chromium giữ `preservesPitch`** | nền tảng của "đổi tốc độ ≠ regenerate" (CLAUDE.md) — jsdom không có media element nên đây là chỗ **duy nhất** kiểm được |
 | Tốc độ tới được thẻ `<audio>` thật | đứt ở một mắt trong chuỗi store → sink → thẻ `<audio>` |
 | Phím tắt ăn ở ngoài, **nhường** khi đang gõ trong ô nhập | phím tắt gắn ở `window` cướp phím của cả app |
+| Ô cập nhật có mặt, chữ không trong suốt | P5.5c nối `update:*` — máy trạng thái có từ P5.5b mà thiếu chỗ bấm |
+| Ô tick "tự kiểm tra bản mới" có mặt | `autoCheckUpdates` thành setting chết như 4.71 nếu không có chỗ bấm |
+| **Bản dev ra `unsupported`, bản đóng gói KHÔNG** | `updateBlockReason` phân biệt sai → bản portable mời user tải bản cài không áp được |
 
 Đổi theme bằng cách **bấm nút thật** (`[data-theme-resolved]`), không sửa
 `classList` — cần biết cả đường đi nút → IPC → settings → biến CSS có đúng không.

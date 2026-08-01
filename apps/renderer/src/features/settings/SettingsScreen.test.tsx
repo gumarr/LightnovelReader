@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { err } from '@ln/shared';
+import { err, type UpdateStatus } from '@ln/shared';
 import { installFakeApi, type FakeApi } from '@/test/fake-api';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useUpdateStore } from '@/stores/update-store';
 import { SettingsScreen } from './SettingsScreen';
 
 /**
@@ -30,10 +31,16 @@ const renderScreen = async (): Promise<{
   return { onBack, onManageStorage };
 };
 
+/** Dựng trạng thái cập nhật **trước** khi render — không cần `act` ở đây */
+const setUpdateStatus = (status: UpdateStatus): void => {
+  useUpdateStore.setState({ status });
+};
+
 beforeEach(async () => {
   vi.clearAllMocks();
   fake = installFakeApi();
   useSettingsStore.setState({ settings: null, error: null, loading: false });
+  useUpdateStore.setState({ status: null, error: null, dismissed: false });
   await useSettingsStore.getState().load();
 });
 
@@ -111,6 +118,58 @@ describe('về ứng dụng', () => {
     await renderScreen();
 
     expect(screen.getByTestId('settings-screen')).toBeInTheDocument();
+  });
+});
+
+describe('cập nhật (P5.5c)', () => {
+  it('ô tick tự kiểm tra ghi xuống settings', async () => {
+    // `autoCheckUpdates` có trong schema từ P5.5b mà tới đây mới có chỗ bấm —
+    // đúng hình dạng "setting chết" của PROGRESS 4.71.
+    await renderScreen();
+
+    // `fireEvent` chứ không `userEvent`: `userEvent.click` chờ giữa các bước
+    // chuột, mà store zustand `set()` ngay trong handler — React thấy lần đổi
+    // state đó rơi ngoài `act` và cảnh báo. `fireEvent` bắn một sự kiện gọn.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('update-auto-check'));
+    });
+
+    await waitFor(() => {
+      expect(fake.api.settings.update).toHaveBeenCalledWith({ autoCheckUpdates: false });
+    });
+  });
+
+  it('bấm "Kiểm tra" gọi tới main', async () => {
+    setUpdateStatus({ state: 'idle', currentVersion: '0.1.0' });
+    await renderScreen();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('update-action'));
+    });
+
+    expect(fake.api.update.check).toHaveBeenCalledTimes(1);
+  });
+
+  it('bấm "Tải bản mới" gọi download chứ không gọi check', async () => {
+    setUpdateStatus({ state: 'available', currentVersion: '0.1.0', availableVersion: '0.2.0' });
+    await renderScreen();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('update-action'));
+    });
+
+    expect(fake.api.update.download).toHaveBeenCalledTimes(1);
+    expect(fake.api.update.check).not.toHaveBeenCalled();
+  });
+
+  it('lỗi cập nhật hiện riêng, không lẫn với lỗi lưu settings', async () => {
+    // Gộp chung một ô sẽ khiến "không kiểm được bản mới" trông như "không lưu
+    // được cỡ chữ" — hai việc khác hẳn nhau.
+    useUpdateStore.setState({ error: 'Không kết nối được tiến trình chính.' });
+    await renderScreen();
+
+    expect(screen.getByTestId('update-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('settings-error')).not.toBeInTheDocument();
   });
 });
 

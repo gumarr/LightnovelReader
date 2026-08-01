@@ -462,6 +462,13 @@ const measureColors = `
       subtitleCurrent: readColor('data-[active]:text-subtitle-current', 'data-active'),
       subtitleCurrentAlpha15: read('data-[active]:bg-subtitle-current/15', 'data-active'),
       subtitlePast: readColor('text-subtitle-past'),
+      // Hai token chữ dùng ở gần như mọi màn (P5.5c thêm vào đây). Trước đó
+      // chúng chưa từng được đo ở **cả hai** theme: các phép kiểm màu chữ khác
+      // đều chạy trên màn Cài đặt, mà script cố tình về dark trước khi vào đó.
+      // Mất biến --fg ở một theme là mất chữ toàn app, không riêng ô nào.
+      // (Không viết tên biến trong dấu backtick: cả khối này là template literal.)
+      fg: readColor('text-fg'),
+      fgMuted: readColor('text-fg-muted'),
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
     };
     probe.remove();
@@ -1072,6 +1079,79 @@ const run = async (cdp) => {
         !fontSetting.previewColor.includes('rgba(0, 0, 0, 0)'),
       fontSetting.previewColor,
     );
+    /* --- Ô cập nhật (P5.5c) ------------------------------------------- */
+
+    const updatePanel = await cdp.evaluate(`
+      (() => {
+        const panel = document.querySelector('[data-testid="settings-update"]');
+        if (panel === null) return null;
+        const title = document.querySelector('[data-testid="update-title"]');
+        const auto = document.querySelector('[data-testid="update-auto-check"]');
+        const action = document.querySelector('[data-testid="update-action"]');
+        return {
+          state: panel.getAttribute('data-update-state'),
+          titleText: title === null ? '' : title.textContent.trim(),
+          // Màu chữ tiêu đề: cùng bẫy 4.23 — ô dựng ra mà chữ trong suốt thì
+          // mọi phép kiểm cấu trúc vẫn xanh còn user không đọc được gì.
+          titleColor: title === null ? '' : getComputedStyle(title).color,
+          hasAutoCheck: auto !== null,
+          autoChecked: auto === null ? null : auto.checked,
+          actionLabel: action === null ? null : action.textContent.trim(),
+          actionState: action === null ? null : action.getAttribute('data-action'),
+        };
+      })()
+    `);
+
+    if (updatePanel === null) {
+      fail('ô cập nhật có trong màn cài đặt', 'không thấy [data-testid="settings-update"]');
+    } else {
+      check('ô cập nhật có mặt', true, `trạng thái: ${updatePanel.state}`);
+      check(
+        'tiêu đề cập nhật không trong suốt',
+        !updatePanel.titleColor.includes('rgba(0, 0, 0, 0)'),
+        `${updatePanel.titleText} — ${updatePanel.titleColor}`,
+      );
+      // `autoCheckUpdates` có trong AppSettings từ P5.5b nhưng tới P5.5c mới có
+      // chỗ bấm. Thiếu ô này là setting chết quay lại (PROGRESS 4.71).
+      check(
+        'ô tick tự kiểm tra bản mới có mặt',
+        updatePanel.hasAutoCheck,
+        `đang ${updatePanel.autoChecked === true ? 'bật' : 'tắt'}`,
+      );
+      // Bản dev KHÔNG có `app-update.yml` → phải ra `unsupported` và **không**
+      // được có nút nào. Có nút ở đây nghĩa là `updateBlockReason` không chạy,
+      // và bản portable sẽ mời user tải một bản cài không bao giờ áp được.
+      if (!packaged) {
+        check(
+          'bản dev báo không tự cập nhật được',
+          updatePanel.state === 'unsupported',
+          `state=${updatePanel.state}`,
+        );
+        check(
+          'bản dev không mời user bấm nút vô nghĩa',
+          updatePanel.actionLabel === null,
+          updatePanel.actionLabel ?? 'không có nút — đúng',
+        );
+      } else {
+        // `win-unpacked` CÓ `app-update.yml` (electron-builder chép vào
+        // `resources/`), nên bản này đi vào đúng nhánh của bản NSIS đã cài:
+        // phải ra `idle` kèm nút bấm được, không phải `unsupported`.
+        //
+        // Nhánh `checking → available → tải → cài` vẫn **không** kiểm được ở
+        // đây — nó cần một release thật trên GitHub (PROGRESS mục 8).
+        check(
+          'bản đóng gói không rơi vào nhánh "không tự cập nhật"',
+          updatePanel.state !== 'unsupported',
+          `state=${updatePanel.state}`,
+        );
+        check(
+          'bản đóng gói có nút cập nhật bấm được',
+          updatePanel.actionLabel !== null,
+          `${updatePanel.actionState ?? '—'}: ${updatePanel.actionLabel ?? 'KHÔNG CÓ NÚT'}`,
+        );
+      }
+    }
+
     await cdp.screenshot(packaged ? 'packaged-settings-dark' : 'dev-settings-dark');
 
     await waitFor('về được màn thư viện từ cài đặt', async () => {

@@ -1,6 +1,6 @@
 {
   "name": "ln-reader",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Electron desktop app đọc Light Novel với TTS local, phụ đề sync theo từ",

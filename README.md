@@ -15,11 +15,21 @@
 | 3 | Player & subtitle sync | ✅ Xong |
 | 4 | Forced alignment | ⏹️ Đã bỏ |
 | 5 | Polish & ship | ✅ Xong |
+| 6 | Giọng đọc tự nhiên hơn (engine TTS thứ hai) | 📋 Đã lên kế hoạch |
+| 7 | EPUB + mở rộng | — |
 
 **Phase 4 bỏ có chủ đích.** Highlight theo từ hiện dùng nội suy theo độ dài từ,
 nghe thật thì bám đúng nhịp. Đổi sang CTC forced alignment là thêm model ~300 MB,
 đẩy installer từ 143 MB lên ~450 MB — quá đắt cho thứ không ai thấy thiếu. Lý do
 đầy đủ và **điều kiện mở lại** ở [PROGRESS.md](PROGRESS.md) mục 4.68.
+
+**Phase 6 đang lên kế hoạch: giọng đọc tự nhiên hơn.** Giọng Piper hiện tại chạy
+tốt và nhanh, nhưng nghe khá máy móc với truyện dài. Hướng xử lý là thêm engine
+thứ hai ([VieNeu-TTS](https://github.com/pnnbao97/VieNeu-TTS), Apache 2.0) chạy
+cùng ONNX Runtime đã có sẵn — nhiều giọng hơn, có ngữ điệu kể chuyện, và
+**không** làm installer phình quá 250 MB. Đánh đổi: engine đó không trả mốc thời
+gian từng từ, nên highlight sẽ dựa trên ước lượng. Chi tiết ở [plan.md](plan.md)
+mục 9.
 
 Chi tiết kế hoạch: [plan.md](plan.md). Trạng thái công việc và ghi chú kỹ thuật:
 [PROGRESS.md](PROGRESS.md).

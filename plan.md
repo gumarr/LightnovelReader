@@ -466,12 +466,154 @@ thái, `JobType.align`, `AppSettings.alignmentEnabled`) **giữ nguyên**, khôn
 
 **DoD:** Installer `.exe` cài trên máy sạch chạy được, không cần cài Python.
 
-### Phase 6 — EPUB + mở rộng
+### Phase 6 — Giọng đọc tự nhiên hơn (engine thứ hai)
+
+**Vấn đề user nêu:** giọng Piper VI "không phù hợp" để đọc Light Novel — máy
+móc, không có ngữ điệu kể chuyện. Giọng user muốn là loại nghe trên các kênh
+review phim/anime YouTube; tra ra đó là **Vbee AIVoice** (dịch vụ thương mại,
+tính phí theo ký tự, **không có model tải về**). Không đưa vào app này được, và
+cũng phá nguyên tắc "TTS local, đọc offline".
+
+Bản mã nguồn mở đạt tầm chất lượng đó: **VieNeu-TTS** (Apache 2.0). User đã nghe
+example trong repo và xác nhận **đúng giọng cần**.
+
+| Ràng buộc user đặt | VieNeu-TTS |
+|---|---|
+| Installer ≤ 250 MB | Torch-free trên CPU — chạy **ONNX Runtime đã có sẵn** trong sidecar |
+| Chậm hơn vài lần vẫn chấp nhận | ~2–3× nhanh hơn thời gian thực trên CPU laptop |
+| Nhiều giọng để đổi | 14 giọng preset (Bắc/Trung/Nam, nam + nữ) |
+| — | Có style `doc_truyen` tách khỏi `tin_tuc` — đúng thứ Piper không có |
+
+#### Cái giá phải trả: mất word alignment
+
+VieNeu-TTS **không trả về mốc thời gian từng từ**, và đây không phải "chưa hỗ
+trợ" mà là **kiến trúc không mang thông tin đó**. Codec MOSS-Audio-Tokenizer
+chạy **12,5 token/giây** (mỗi token = 80 ms). Token là đơn vị *nén âm thanh*,
+ranh giới của nó không tương ứng ranh giới từ — biết "token thứ 17" không cho
+biết đang ở từ nào. Khác hẳn Piper: Piper phát âm **theo phoneme** nên số sample
+mỗi phoneme là thông tin có thật.
+
+`infer_stream()` cũng chunk theo frame codec, không theo từ. **Không có đường
+moi alignment ra từ chính engine.**
+
+Hệ quả: `timing_source` rơi từ `phoneme` xuống `estimate` cho mọi segment sinh
+bằng engine mới.
+
+#### Vì sao KHÔNG dùng forced alignment (đường đã loại)
+
+Sinh audio bằng VieNeu rồi chạy một model CTC căn chữ vào audio — đây chính là
+**Phase 4 đã bỏ**, quay lại. Đã tra và loại vì hai lý do cứng:
+
+- Model tiếng Việt đúng việc này ([lyric-alignment](https://huggingface.co/nguyenvulebinh/lyric-alignment),
+  nền wav2vec2-large) mang license **CC BY-NC 4.0** — *phi thương mại*, không
+  tương thích với **MIT** của dự án.
+- Không có bản ONNX → kéo PyTorch → phá thẳng ràng buộc 250 MB.
+
+Cộng thêm: chạy aligner sau mỗi segment làm generate chậm ít nhất gấp đôi.
+
+---
+
+### P6.1 — Cải tiến `estimate_word_timings` (làm TRƯỚC, độc lập)
+
+**Làm trước khi đụng engine, và đây là điểm quan trọng nhất của cả Phase 6.**
+Piper cho `phoneme` alignment thật, nên lúc này ta có **thước đo khách quan**:
+chạy cả hai đường trên cùng một segment rồi đo lệch bao nhiêu mili-giây. Cơ hội
+này **mất hẳn** khi chuyển sang VieNeu — lúc đó chỉ còn cảm giác "hình như lệch".
+
+Phần này **độc lập hoàn toàn** với chuyện đổi engine: kể cả sau này không dùng
+VieNeu, nó vẫn cải thiện những đoạn Piper đang rơi về `estimate` (câu nhiều chữ
+số hoặc tên riêng — xem điều kiện mở lại Phase 4).
+
+**Hiện trạng — đã đọc code, không phải phỏng đoán.** `estimate_word_timings`
+([sidecar/app/audio/timings.py](sidecar/app/audio/timings.py)) đã làm đúng hai
+việc thường bị bỏ sót:
+
+- Chia theo **độ dài từng từ**, không chia đều số từ.
+- Khoảng trắng + dấu câu gộp vào từ đứng trước → mốc nối liền, không có khe hở.
+- Từ cuối chốt đúng `duration_ms` → sai số **không tích luỹ vô hạn**.
+
+Nên phần cải tiến **không phải** ba thứ đó. Vấn đề thật nằm ở đơn vị đo.
+
+**Lỗi gốc: đếm ký tự cho một ngôn ngữ đơn âm tiết.** Tiếng Việt mỗi từ chính tả
+là **một âm tiết**, và thời gian đọc một âm tiết gần như không phụ thuộc số chữ
+cái viết ra. Đo trên câu thật:
+
+| Từ | Thời lượng được cấp (ký tự) | Đúng ra (âm tiết) | Lệch |
+|---|---|---|---|
+| `Nghieng` | 13.0% | 7.1% | **5.8 pp** |
+| `a` | 1.9% | 7.1% | **5.3 pp** |
+| `nghi` | 7.4% | 7.1% | 0.3 pp |
+
+Trên segment 10 giây, 5.8 pp là **~580 ms cho một từ** — đủ để mắt thấy chữ sáng
+sai chỗ. Và đây không phải ca hiếm: LN tiếng Việt đầy `à`, `ừ`, `ồ`, `nhé` xen
+giữa các từ dài như `nghiêng`, `chuyện`, `nghiêm`.
+
+**Ba việc, theo thứ tự giá trị:**
+
+1. **Trọng số theo âm tiết thay vì ký tự.** Với tiếng Việt, đếm âm tiết ≈ đếm
+   từ chính tả — rất rẻ. **Không** áp dụng mù cho mọi ngôn ngữ: tiếng Anh
+   `"international"` (5 âm tiết) và `"a"` (1) thì độ dài ký tự lại là xấp xỉ tốt
+   hơn. Hàm phải nhận `lang` và chọn cách tính; đây là lý do nó là hàm thuần
+   riêng chứ không phải sửa tại chỗ.
+
+2. **Dấu câu tạo khoảng nghỉ có trọng số riêng.** Hiện dấu câu chỉ *thuộc về* từ
+   trước, nhưng **không được cấp thêm thời lượng**. Thực tế dấu phẩy tạo pause
+   ~100–200 ms, dấu chấm dài hơn. Không mô hình hoá thì mọi từ sau dấu phẩy đầu
+   tiên đều trôi dần.
+
+3. **Kẹp theo câu, không chỉ theo segment.** Segment có 1–3 câu; nếu biết ranh
+   giới câu thì neo được ở nhiều điểm hơn thay vì chỉ hai đầu. Chỉ làm nếu (1)
+   và (2) chưa đủ — đo rồi mới quyết.
+
+**Cách đo — bắt buộc có trước khi sửa.** Một script probe (ngoài `pytest`, cùng
+lối `apps/main/probe/`) chạy trên voice thật đã cài:
+
+- Lấy N segment thật từ sách trong thư viện.
+- Với mỗi segment: sinh bằng Piper, lấy **cả** `word_timings_from_phonemes`
+  (chuẩn vàng) **và** `estimate_word_timings` (bản đang có + bản mới).
+- Báo cáo: lệch trung bình / lệch lớn nhất per-word (ms), và **tỉ lệ từ lệch quá
+  150 ms** — mốc mắt bắt đầu thấy sai.
+
+**DoD P6.1:** trên tập segment thật, bản mới giảm **lệch trung bình ≥ 30%** và
+**không có từ nào tệ hơn** bản cũ quá 50 ms. Con số ra sao ghi vào PROGRESS —
+đó là căn cứ để quyết P6.2 có đáng làm không.
+
+⚠️ **Nếu P6.1 không đạt DoD** thì phải xem lại P6.2: mất alignment mà `estimate`
+vẫn kém nghĩa là đổi giọng sẽ làm hỏng tính năng highlight — lúc đó cân nhắc giữ
+Piper, hoặc chấp nhận rằng giọng mới đi kèm highlight kém hơn hẳn.
+
+### P6.2 — Engine thứ hai (VieNeu-TTS)
+
+Chỉ bắt đầu **sau khi P6.1 có số**.
+
+| Việc | Ghi chú |
+|---|---|
+| `engines/base.py` | Interface chung. Chữ ký `synthesize` hiện tại **đã đúng sẵn** — `SynthesisResult` không mang gì của Piper |
+| `engines/vieneu.py` | Implement thứ hai. `PiperEngine` giữ nguyên, không sửa |
+| `EngineRegistry` | Chọn engine + cache model theo `(engine, voice_id)` |
+| Catalog đa engine | Thêm trường `engine`; `baseUrl` chuyển **xuống từng voice** (hiện là một gốc HF chung); `files` co giãn (Piper cần đúng 2 file, engine khác khác) |
+| UI | Bỏ `quality`/`sampleRate` cứng khỏi [VoiceRow.tsx](apps/renderer/src/features/voices/VoiceRow.tsx) — `VoiceQuality` (`x_low\|low\|medium\|high`) là thang **riêng của Piper** |
+| `style` | VieNeu có `tu_nhien`/`tin_tuc`/`doc_truyen`. Mặc định `doc_truyen`, cho đổi trong Cài đặt |
+
+**Điểm cần quyết khi tới:** `voiceVi`/`voiceEn` hiện là **hai ô, chọn theo ngôn
+ngữ**. Nếu user muốn đổi giọng theo từng sách thì mô hình này phải mở rộng —
+quyết định sản phẩm, không phải kỹ thuật. Chưa chốt.
+
+**Rủi ro đóng gói:** mọi dependency mới đi vào PyInstaller. PROGRESS ghi rõ bài
+học ở P2.4 — thư viện có DLL native là loại PyInstaller hay bỏ sót, và **lỗi đó
+không lộ ra ở venv**. Mỗi lần thêm phải chạy `pnpm build:sidecar` rồi khởi động
+thử `.exe` thật, không chỉ `pytest`.
+
+**DoD Phase 6:** nghe hết một chương bằng giọng mới, highlight vẫn bám ở mức
+chấp nhận được, installer ≤ 250 MB.
+
+### Phase 7 — EPUB + mở rộng
 - EPUB parser cắm vào interface Parser
 - Gộp segment thành container `.ogg` theo chương (nếu đo thấy cần)
 - Multi-voice per character (heuristic dialogue detection)
 - Export audiobook M4B + chapters
-- Kokoro engine cho EN
+- Kokoro engine cho EN — **rẻ đi nhiều sau Phase 6**: `engines/base.py` và catalog
+  đa engine đã dựng sẵn, thêm Kokoro chỉ còn là một implement nữa
 
 ---
 
@@ -484,7 +626,9 @@ thái, `JobType.align`, `AppSettings.alignmentEnabled`) **giữ nguyên**, khôn
 | PDF text layer lộn xộn (2 cột, header/footer) | Cao | Cleaner heuristic + cho user preview & sửa |
 | Aligner model 300MB tải chậm | TB | Optional; app dùng estimated timing vẫn chạy |
 | Antivirus flag sidecar `.exe` | TB | Không code sign → README hướng dẫn; dùng python.exe + script thay PyInstaller onefile nếu bị flag nặng |
-| Giọng VI Piper chưa thật tự nhiên | TB | Catalog cho phép thêm voice; kiến trúc engine-agnostic |
+| ~~Giọng VI Piper chưa thật tự nhiên~~ | **Cao — đã xảy ra** | User xác nhận Piper "không phù hợp" để đọc LN. Hướng xử: **Phase 6** thêm VieNeu-TTS. Giả định cũ ("catalog cho phép thêm voice" là đủ) **sai**: catalog hiện khoá cứng cấu trúc Piper (đúng 2 file, một `baseUrl` chung, thang `quality` riêng) |
+| Đổi engine làm mất word alignment | **Cao** | VieNeu không trả mốc từng từ và **không thể** trả (codec 12,5 token/s, xem Phase 6). Giảm thiểu: **P6.1 cải tiến `estimate` trước, đo bằng Piper làm chuẩn vàng** — cơ hội đo này mất hẳn sau khi đổi engine. Có DoD định lượng; không đạt thì xem lại P6.2 |
+| Engine mới kéo PyTorch làm installer phình | TB | Chỉ nhận engine chạy ONNX Runtime (đã có sẵn trong sidecar 145 MB). VieNeu torch-free trên CPU. Model tải runtime như voice hiện nay, không bundle |
 | Sidecar chết giữa chừng | TB | Supervisor retry 3 lần, báo UI, queue persist SQLite |
 | 600 file/chương gây chậm | Thấp | Đo trước; nếu chậm → container `.ogg` ở Phase 6 |
 

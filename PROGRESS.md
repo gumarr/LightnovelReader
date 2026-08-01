@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-08-01 · commit `1690c02`
+> **Cập nhật lần cuối:** 2026-08-01 · commit `PENDING_P6PLAN`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -39,8 +39,10 @@ pnpm ui-check --packaged   # bản đã build:win
 
 Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELECTRON_RUN_AS_NODE`).
 
-**Việc tiếp theo:** không còn phần code nào. Xem mục 3 — việc còn lại là
-**publish release** và kiểm nhánh cập nhật trên bản cài thật.
+**Việc tiếp theo:** Phase 5 xong hết. Hai việc song song:
+1. **Publish release** + kiểm nhánh cập nhật trên bản cài thật (mục 3, mục 8).
+2. **Phase 6 — đổi engine TTS** vì user thấy giọng Piper không hợp đọc LN. Bắt
+   đầu bằng **P6.1** (cải tiến `estimate`), xem `plan.md` và mục 4.79.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
@@ -1303,9 +1305,27 @@ lượt trước cũng chính là hai phép đỏ giả này, nay đã đóng.
 **DoD Phase 5** (`plan.md`): installer `.exe` cài trên máy sạch chạy được, không
 cần cài Python.
 
-✅ **P5.5c xong → Phase 5 đủ 5/5 phần.** Toàn bộ mã của app đã viết xong. Việc
-còn lại **không phải việc code**: publish một release thật lên GitHub rồi tự cài
-và bấm cập nhật — xem mục 8, đó là cách duy nhất chứng minh nhánh cập nhật.
+✅ **P5.5c xong → Phase 5 đủ 5/5 phần.** Toàn bộ mã theo kế hoạch ban đầu đã
+viết xong. Việc còn lại của Phase 5 **không phải việc code**: publish một release
+thật lên GitHub rồi tự cài và bấm cập nhật — xem mục 8, đó là cách duy nhất
+chứng minh nhánh cập nhật.
+
+### Phase 6 — đổi engine TTS (mới, sau P5.5c)
+
+**User thấy giọng Piper VI không phù hợp để đọc LN.** Không phải lỗi kỹ thuật —
+app chạy đúng, chỉ là giọng nghe máy móc, thiếu ngữ điệu kể chuyện. Đây là phản
+hồi về **sản phẩm**, và nó lớn hơn mọi nợ kỹ thuật còn lại.
+
+| Mã | Nội dung | Trạng thái |
+|---|---|---|
+| P6.1 | Cải tiến `estimate_word_timings` + probe đo lệch so với Piper | ⬅️ **tiếp theo** |
+| P6.2 | Engine thứ hai (VieNeu-TTS) + catalog đa engine | Chờ số liệu P6.1 |
+
+**Thứ tự này bắt buộc, không đảo được.** Lý do đầy đủ ở mục 4.79: Piper cho
+alignment `phoneme` thật, nên **bây giờ** là lúc duy nhất còn thước đo khách quan
+để biết `estimate` tốt tới đâu. Đổi engine trước là tự bịt mắt.
+
+Kế hoạch chi tiết + DoD định lượng ở [plan.md](plan.md) mục 9, Phase 6.
 
 ### Phase 3 — đã xong
 
@@ -3379,6 +3399,51 @@ backtick, và quy ước đó đúng ở mọi file `.ts` — chỉ sai bên tro
 Cách tránh: trong mọi khối chuỗi CDP của `ui-check.mjs`, viết tên biến **trần**
 (`--fg` không có backtick). `node --check scripts/ui-check.mjs` bắt được ngay,
 rẻ hơn nhiều so với chờ hết một lượt chạy app.
+
+### 4.79 Đổi engine TTS: vì sao phải sửa `estimate` TRƯỚC, không phải sau
+
+User thấy giọng Piper VI không hợp đọc LN và muốn giọng như các kênh review
+phim/anime YouTube. Tra ra giọng đó là **Vbee AIVoice** — dịch vụ thương mại,
+tính phí theo ký tự, **không có model tải về**. Không dùng được, và cũng phá
+nguyên tắc TTS local / đọc offline. Bản mã nguồn mở đạt tầm đó: **VieNeu-TTS**
+(Apache 2.0, torch-free trên CPU, 14 giọng, có style `doc_truyen`). User đã nghe
+example và xác nhận đúng giọng cần.
+
+**Cái giá: VieNeu không trả word alignment, và không thể trả.** Codec
+MOSS-Audio-Tokenizer chạy **12,5 token/giây** — mỗi token là 80 ms *audio đã
+nén*, ranh giới của nó không tương ứng ranh giới từ. Khác hẳn Piper: Piper phát
+âm **theo phoneme** nên số sample mỗi phoneme là thông tin có thật. Đây là khác
+biệt **kiến trúc**, không phải tính năng thiếu — đừng tốn thời gian đi tìm cờ
+bật nào đó.
+
+**Forced alignment đã tra và loại.** Model VI đúng việc này (`lyric-alignment`,
+wav2vec2-large) mang license **CC BY-NC 4.0** — phi thương mại, không tương thích
+MIT của dự án. Không có bản ONNX → kéo PyTorch → phá ràng buộc 250 MB user đặt.
+Đây cũng chính là Phase 4 đã bỏ, quay lại từ hướng khác.
+
+**Vì sao thứ tự P6.1 → P6.2 không đảo được.** Piper cho `phoneme` alignment
+thật, tức là **hiện tại còn một chuẩn vàng để đo `estimate` sai bao nhiêu ms**.
+Sau khi chuyển sang VieNeu thì mọi segment đều `estimate`, không còn gì để so —
+chỉ còn cảm giác "hình như lệch". Làm P6.2 trước là **vứt bỏ vĩnh viễn** khả
+năng đo. Đây là lý do duy nhất và đủ.
+
+**Lỗi gốc của `estimate` — đã đo, không phải phỏng đoán.** Hàm hiện chia theo
+**độ dài ký tự**. Với tiếng Việt (đơn âm tiết) đó là sai đơn vị: `"nghiêng"` và
+`"à"` đều là **một âm tiết**, đọc mất thời gian gần bằng nhau, nhưng được cấp
+13.0% vs 1.9% thời lượng — lệch **5.8 điểm phần trăm**, tức **~580 ms** trên
+segment 10 giây. LN tiếng Việt đầy `à`/`ừ`/`ồ`/`nhé` xen giữa từ dài.
+
+Ba thứ **đã đúng sẵn**, đừng "sửa" lại: chia theo độ dài từng từ (không chia đều
+số từ), dấu câu gộp vào từ đứng trước (mốc nối liền, không khe hở), và từ cuối
+chốt đúng `duration_ms` (sai số không tích luỹ vô hạn).
+
+**Không áp dụng trọng số âm tiết cho tiếng Anh.** `"international"` (5 âm tiết)
+vs `"a"` (1) thì độ dài ký tự lại là xấp xỉ **tốt hơn**. Hàm phải nhận `lang` —
+đây là lý do nó tách thành hàm thuần riêng chứ không sửa tại chỗ.
+
+**Ghi chú về `vivos`:** đừng đề xuất lại "thêm speakerId để có 65 giọng VI". Mục
+4.70 đã đo F0 thật trên sáu thanh: `vivos` ép biên độ thanh điệu còn ~1/3 so với
+`vais1000`. User đã quyết bỏ. Đường đó đóng rồi.
 
 ---
 

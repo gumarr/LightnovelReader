@@ -15,6 +15,7 @@ import base64
 import json
 import os
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -24,7 +25,7 @@ from . import __version__
 from .audio import AudioPathError, EncodeError, resolve_audio_path, write_opus
 from .auth import make_auth_middleware
 from .config import SidecarConfig
-from .engines import EngineError, PiperEngine, SynthesisResult
+from .engines import EngineError, EngineRegistry, SynthesisResult
 from .schemas import (
     CatalogResponse,
     CatalogVoice,
@@ -53,6 +54,8 @@ from .voices import (
     is_installed,
     load_catalog,
     remove_voice,
+    resolve_model_entry,
+    voice_base_url,
 )
 
 
@@ -82,10 +85,10 @@ def create_app(config: SidecarConfig) -> FastAPI:
     models_dir = Path(config.models_dir)
     catalog_path = Path(config.catalog_path) if config.catalog_path else None
 
-    # Một engine dùng chung cho cả tiến trình: nó giữ model đã nạp (~200 MB RAM)
-    # nên dựng mới mỗi request là nạp lại 1.2 s và phình bộ nhớ. Bản thân engine
-    # tự khoá luồng — xem `PiperEngine`.
-    engine = PiperEngine(models_dir)
+    # Một registry dùng chung cho cả tiến trình: nó giữ model đã nạp (~200 MB
+    # RAM cho Piper, ~300 MB cho VieNeu) nên dựng mới mỗi request là nạp lại và
+    # phình bộ nhớ. Từng engine tự khoá luồng — xem `PiperEngine`/`VieneuEngine`.
+    engine = EngineRegistry(models_dir)
 
     def read_catalog() -> Catalog:
         """Đọc catalog mỗi lần gọi thay vì cache lúc khởi động.
@@ -140,11 +143,15 @@ def create_app(config: SidecarConfig) -> FastAPI:
                     quality=entry.quality,
                     sampleRate=entry.sample_rate,
                     license=entry.license,
-                    totalBytes=entry.total_bytes,
-                    installed=is_installed(models_dir, entry),
+                    engine=entry.engine,
+                    # Dung lượng và trạng thái cài lấy theo voice MANG model:
+                    # 14 giọng VieNeu dùng chung một bộ 244 MB, nên hỏi thẳng
+                    # `entry` sẽ ra 0 byte và "đã cài" cho giọng chưa tải gì.
+                    totalBytes=resolve_model_entry(catalog, entry).total_bytes,
+                    installed=is_installed(models_dir, resolve_model_entry(catalog, entry)),
                     files=[
                         VoiceFileInfo(kind=f.kind, sizeBytes=f.size_bytes, sha256=f.sha256)
-                        for f in entry.files
+                        for f in resolve_model_entry(catalog, entry).files
                     ],
                 )
                 for entry in catalog.voices
@@ -163,10 +170,13 @@ def create_app(config: SidecarConfig) -> FastAPI:
                     name=entry.name,
                     quality=entry.quality,
                     sampleRate=entry.sample_rate,
+                    engine=entry.engine,
+                    # Giọng dùng model chung trả 0 — xem `installed_size`. Cộng
+                    # 244 MB cho cả 14 giọng sẽ báo sai gấp 14 lần ở màn Dung lượng.
                     sizeBytes=installed_size(models_dir, entry),
                 )
                 for entry in catalog.voices
-                if is_installed(models_dir, entry)
+                if is_installed(models_dir, resolve_model_entry(catalog, entry))
             ],
         )
 
@@ -180,9 +190,14 @@ def create_app(config: SidecarConfig) -> FastAPI:
         giết oan một tiến trình đang tải dở 63 MB.
         """
         catalog = read_catalog()
-        entry = catalog.find(voice_id)
-        if entry is None:
+        requested = catalog.find(voice_id)
+        if requested is None:
             raise HTTPException(status_code=404, detail=f"Không có voice {voice_id!r} trong catalog")
+
+        # Tải **bộ model**, không tải "giọng": 14 giọng VieNeu dùng chung một bộ
+        # 244 MB. Bấm tải giọng thứ hai khi đã có model thì không tải lại gì.
+        entry = resolve_model_entry(catalog, requested)
+        base_url = voice_base_url(catalog, entry)
 
         # Hàng đợi nối thread tải với vòng lặp async đang phát SSE. `sink` chạy
         # trong thread tải nên phải dùng `call_soon_threadsafe`, không được
@@ -191,12 +206,17 @@ def create_app(config: SidecarConfig) -> FastAPI:
         queue: asyncio.Queue[Progress | None] = asyncio.Queue()
 
         def sink(progress: Progress) -> None:
-            loop.call_soon_threadsafe(queue.put_nowait, progress)
+            # Báo tiến độ dưới `voice_id` **user đã bấm**, không phải id của bộ
+            # model. Với VieNeu hai cái khác nhau, mà UI lọc event theo đúng id
+            # nó gửi đi — báo id khác thì thanh tiến trình đứng im tới lúc xong.
+            loop.call_soon_threadsafe(
+                queue.put_nowait, replace(progress, voice_id=voice_id)
+            )
 
         async def run_download() -> None:
             try:
                 await asyncio.to_thread(
-                    download_voice, entry, models_dir, catalog.base_url, sink
+                    download_voice, entry, models_dir, base_url, sink
                 )
             except DownloadError as exc:
                 queue.put_nowait(
@@ -275,7 +295,10 @@ def create_app(config: SidecarConfig) -> FastAPI:
         spoken = normalized.spoken
 
         def run() -> SynthesisResult:
-            result = engine.synthesize(spoken, entry, request.bitrate)
+            # Đặt phong cách theo request: rẻ (chỉ gán một chuỗi) và không nạp
+            # lại model, nên không cần nhớ giá trị cũ để so.
+            engine.set_style(request.style)
+            result = engine.synthesize(spoken, entry, catalog, request.bitrate)
             # Ghi đĩa trong CÙNG thread với tổng hợp: tách ra thì phải mang cả
             # mảng bytes qua lại giữa các thread mà chẳng được gì.
             write_opus(target, result.audio)
@@ -346,7 +369,8 @@ def create_app(config: SidecarConfig) -> FastAPI:
         normalized = normalize_mapped(request.text, request.lang, {})
 
         def run() -> SynthesisResult:
-            return engine.synthesize(normalized.spoken, entry, request.bitrate)
+            engine.set_style(request.style)
+            return engine.synthesize(normalized.spoken, entry, catalog, request.bitrate)
 
         try:
             result = await asyncio.to_thread(run)

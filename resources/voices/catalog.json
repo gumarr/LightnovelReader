@@ -18,9 +18,16 @@
     "",
     "sampleRate KHÔNG bắt buộc phải là 22050. Engine đọc tần số thật từ file",
     "config của model rồi tự chọn đích Opus (xem audio/resample.py), nên voice",
-    "16 kHz như 25hours chạy đúng mà không phải sửa gì."
+    "16 kHz như 25hours chạy đúng mà không phải sửa gì.",
+    "",
+    "P6.2: them engine thu hai (VieNeu-TTS v3 Turbo, Apache 2.0). Khac Piper o cho",
+    "14 giong DUNG CHUNG mot bo model 244 MB: giong dau mang files, 13 giong con",
+    "lai chi co modelId tro ve no + presetVoice. Tai mot lan dung duoc ca 14 giong.",
+    "",
+    "sha256 tinh tu chinh cac file da chay tong hop thanh cong tren may dev, khong",
+    "chep tu metadata cua HF."
   ],
-  "version": 1,
+  "version": 2,
   "baseUrl": "https://huggingface.co/rhasspy/piper-voices/resolve/main/",
   "voices": [
     {
@@ -43,7 +50,8 @@
           "sizeBytes": 4860,
           "sha256": "fafb9da1354ed4b77c31af228ed41fb41cd825c14cffa105454b25e6ae751ee0"
         }
-      ]
+      ],
+      "engine": "piper"
     },
     {
       "id": "vi_VN-25hours_single-low",
@@ -65,7 +73,8 @@
           "sizeBytes": 4176,
           "sha256": "344b5849f5bc585031a63b9cc75f96e2c469f3d98879d8d3acbc2fce6d470064"
         }
-      ]
+      ],
+      "engine": "piper"
     },
     {
       "id": "en_US-lessac-medium",
@@ -87,7 +96,255 @@
           "sizeBytes": 4885,
           "sha256": "efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0"
         }
+      ],
+      "engine": "piper"
+    },
+    {
+      "id": "vi_VN-vieneu-v3turbo",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Ngọc Linh — Nữ · Bắc · Phong cách kể chuyện",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "baseUrl": "https://huggingface.co/",
+      "presetVoice": "Ngọc Linh",
+      "files": [
+        {
+          "kind": "asset",
+          "path": "pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/onnx_int8/config.json",
+          "saveAs": "onnx_int8/config.json",
+          "sizeBytes": 2152,
+          "sha256": "a9f8d9c4b4736448ab355d1a98cfe48f5e39aecf2916c37b0806c228612e9a2d"
+        },
+        {
+          "kind": "asset",
+          "path": "pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/onnx_int8/tokenizer.json",
+          "saveAs": "onnx_int8/tokenizer.json",
+          "sizeBytes": 22320,
+          "sha256": "6cc6bcbe380b8c37bd9f2514e37c5dfa3e00e122c6e3125dae5c4afe48e39158"
+        },
+        {
+          "kind": "asset",
+          "path": "pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/onnx_int8/vieneu_acoustic_cached.onnx",
+          "saveAs": "onnx_int8/vieneu_acoustic_cached.onnx",
+          "sizeBytes": 7207223,
+          "sha256": "0be6575ffe1c4c2009edb9c9b218c235f09665f630d1840e63c74bef30d462c1"
+        },
+        {
+          "kind": "asset",
+          "path": "pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/onnx_int8/vieneu_backbone_shared.data",
+          "saveAs": "onnx_int8/vieneu_backbone_shared.data",
+          "sizeBytes": 103891968,
+          "sha256": "68c0bd5e75f9cf2d557040201f5465dc03a61206813845f2de1ebe6542652b92"
+        },
+        {
+          "kind": "asset",
+          "path": "pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/onnx_int8/vieneu_decode_step.onnx",
+          "saveAs": "onnx_int8/vieneu_decode_step.onnx",
+          "sizeBytes": 1062040,
+          "sha256": "7907f8e067de22ee88f0912ffc8ccaf7cf90025e1d41351d2a5bb7cec44fc859"
+        },
+        {
+          "kind": "asset",
+          "path": "pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/onnx_int8/vieneu_prefill.onnx",
+          "saveAs": "onnx_int8/vieneu_prefill.onnx",
+          "sizeBytes": 1090823,
+          "sha256": "9d04bd8023c5a003dd60939848bba7e85c5d8448480e607a9ae7aa3ecd6d7494"
+        },
+        {
+          "kind": "asset",
+          "path": "pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/onnx_int8/vieneu_v3_heads.npz",
+          "saveAs": "onnx_int8/vieneu_v3_heads.npz",
+          "sizeBytes": 52219622,
+          "sha256": "c2eadeb5b0b85c3009270352adea8c05a72f31c5a9f189ead9184333fb1becb8"
+        },
+        {
+          "kind": "asset",
+          "path": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX/resolve/main/codec_browser_onnx_meta.json",
+          "saveAs": "moss/codec_browser_onnx_meta.json",
+          "sizeBytes": 17036,
+          "sha256": "3e291c883bb7d11ff2fe8e964e3e495519760358859f35c951254c7741592731"
+        },
+        {
+          "kind": "asset",
+          "path": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX/resolve/main/moss_audio_tokenizer_decode_full.onnx",
+          "saveAs": "moss/moss_audio_tokenizer_decode_full.onnx",
+          "sizeBytes": 681902,
+          "sha256": "0fbbafe3fd4afa2a019af5c5ced204af6e2d1db044fa40f021525d2aee95b4ac"
+        },
+        {
+          "kind": "asset",
+          "path": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX/resolve/main/moss_audio_tokenizer_decode_shared.data",
+          "saveAs": "moss/moss_audio_tokenizer_decode_shared.data",
+          "sizeBytes": 44198912,
+          "sha256": "e69d52e0f4e84ca27850557ee54face46632d3a5a16c89bd246c7c408466dcad"
+        },
+        {
+          "kind": "asset",
+          "path": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX/resolve/main/moss_audio_tokenizer_decode_step.onnx",
+          "saveAs": "moss/moss_audio_tokenizer_decode_step.onnx",
+          "sizeBytes": 351400,
+          "sha256": "9527c86a29e1837edec1f74db57d5eeaadb3a715af3382703566460afed25855"
+        },
+        {
+          "kind": "asset",
+          "path": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX/resolve/main/moss_audio_tokenizer_encode.data",
+          "saveAs": "moss/moss_audio_tokenizer_encode.data",
+          "sizeBytes": 44507136,
+          "sha256": "aa751265b2bab2887eac224484546b194875aa7494b607115439b3dc6b228a2c"
+        },
+        {
+          "kind": "asset",
+          "path": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX/resolve/main/moss_audio_tokenizer_encode.onnx",
+          "saveAs": "moss/moss_audio_tokenizer_encode.onnx",
+          "sizeBytes": 815775,
+          "sha256": "eadea4a645abdcf98714c7aead122ee2ce7da6e080f9f80b977cd1ca8e19473a"
+        }
       ]
+    },
+    {
+      "id": "vi_VN-vieneu-thanh-binh",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Thanh Bình — Nam · Bắc · Phong cách kể chuyện",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Thanh Bình"
+    },
+    {
+      "id": "vi_VN-vieneu-thai-son",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Thái Sơn — Nam · Nam · Phong cách kể chuyện",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Thái Sơn"
+    },
+    {
+      "id": "vi_VN-vieneu-thuc-doan",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Thục Đoan — Nữ · Nam · Phong cách kể chuyện",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Thục Đoan"
+    },
+    {
+      "id": "vi_VN-vieneu-mai-anh",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Mai Anh — Nữ · Bắc · Phong cách tin tức",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Mai Anh"
+    },
+    {
+      "id": "vi_VN-vieneu-minh-triet",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Minh Triết — Nam · Nam · Phong cách tin tức",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Minh Triết"
+    },
+    {
+      "id": "vi_VN-vieneu-minh-duc",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Minh Đức — Nam · Bắc · Phong cách tin tức",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Minh Đức"
+    },
+    {
+      "id": "vi_VN-vieneu-ngoc-tran",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Ngọc Trân — Nữ · Trung · Phong cách tự nhiên",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Ngọc Trân"
+    },
+    {
+      "id": "vi_VN-vieneu-pham-tuyen",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Phạm Tuyên — Nam · Bắc · Phong cách tự nhiên",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Phạm Tuyên"
+    },
+    {
+      "id": "vi_VN-vieneu-quang-son",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Quang Sơn — Nam · Trung · Phong cách tự nhiên",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Quang Sơn"
+    },
+    {
+      "id": "vi_VN-vieneu-thuy-dung",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Thùy Dung — Nữ · Nam · Phong cách tin tức",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Thùy Dung"
+    },
+    {
+      "id": "vi_VN-vieneu-truc-ly",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Trúc Ly — Nữ · Bắc · Phong cách tự nhiên",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Trúc Ly"
+    },
+    {
+      "id": "vi_VN-vieneu-xuan-vinh",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Xuân Vĩnh — Nam · Nam · Phong cách tự nhiên",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Xuân Vĩnh"
+    },
+    {
+      "id": "vi_VN-vieneu-doan-trang",
+      "engine": "vieneu",
+      "lang": "vi",
+      "name": "Đoan Trang — Nữ · Bắc · Phong cách tự nhiên",
+      "quality": "high",
+      "sampleRate": 48000,
+      "license": "Apache-2.0",
+      "modelId": "vi_VN-vieneu-v3turbo",
+      "presetVoice": "Đoan Trang"
     }
   ]
 }

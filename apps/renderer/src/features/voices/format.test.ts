@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { downloadPercent, formatBytes, langLabel, qualityLabel, sidecarLabel } from './format';
+import {
+  downloadPercent,
+  engineNote,
+  formatBytes,
+  langLabel,
+  qualityLabel,
+  sidecarLabel,
+  voiceSpecLabel,
+} from './format';
 
 describe('formatBytes', () => {
   it('voice thật ~63 MB hiện đúng đơn vị', () => {
@@ -88,5 +96,53 @@ describe('sidecarLabel', () => {
 
   it('dừng chủ động không phải lỗi', () => {
     expect(sidecarLabel('stopped', 0).tone).toBe('pending');
+  });
+});
+
+describe('voiceSpecLabel', () => {
+  const piper = {
+    engine: 'piper' as const,
+    quality: 'medium' as const,
+    sampleRate: 22050,
+    totalBytes: 63_206_154,
+  };
+  const vieneu = {
+    engine: 'vieneu' as const,
+    quality: 'high' as const,
+    sampleRate: 48000,
+    totalBytes: 255_800_000,
+  };
+
+  it('giọng Piper vẫn hiện thang chất lượng như cũ', () => {
+    expect(voiceSpecLabel(piper)).toContain('Chất lượng Trung bình');
+  });
+
+  it('giọng VieNeu KHÔNG hiện thang chất lượng của Piper', () => {
+    // `VoiceQuality` (`x_low`…`high`) lấy từ tên file model Piper. VieNeu không
+    // có thang đó — hiện "Chất lượng Cao" cho nó là bịa ra thông tin không có.
+    const label = voiceSpecLabel(vieneu);
+    expect(label).not.toContain('Chất lượng');
+    expect(label).toContain('Giọng tự nhiên');
+  });
+
+  it('cả hai đều hiện dung lượng và tần số', () => {
+    expect(voiceSpecLabel(piper)).toContain('22050 Hz');
+    expect(voiceSpecLabel(vieneu)).toContain('48000 Hz');
+    expect(voiceSpecLabel(vieneu)).toContain('MB');
+  });
+});
+
+describe('engineNote', () => {
+  it('giọng Piper không có ghi chú thừa', () => {
+    expect(engineNote('piper')).toBeUndefined();
+  });
+
+  it('giọng VieNeu nói trước cả cái được lẫn cái mất', () => {
+    // Hai điều user sẽ tự phát hiện nếu ta không nói: model dùng chung (nên chỉ
+    // tải một lần) và highlight kém chính xác hơn.
+    const note = engineNote('vieneu');
+    expect(note).toBeDefined();
+    expect(note).toContain('dùng chung');
+    expect(note).toContain('Highlight');
   });
 });

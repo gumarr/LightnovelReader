@@ -98,6 +98,8 @@ export const themeModeSchema = z.enum(['light', 'dark', 'system']);
 
 export const audioBitrateSchema = z.union([z.literal(16), z.literal(24), z.literal(32)]);
 
+export const voiceStyleSchema = z.enum(['doc_truyen', 'tu_nhien', 'tin_tuc']);
+
 export const appSettingsSchema = z.object({
   theme: themeModeSchema,
   audioDir: z.string().min(1),
@@ -112,6 +114,9 @@ export const appSettingsSchema = z.object({
   subtitleFontSize: z.number().int().min(SUBTITLE_FONT_SIZE_MIN).max(SUBTITLE_FONT_SIZE_MAX),
   playbackRate: z.number().min(PLAYBACK_RATE_MIN).max(PLAYBACK_RATE_MAX),
   autoCheckUpdates: z.boolean(),
+  // Settings cũ trên máy user không có trường này — `.default` để bản cài sẵn
+  // đọc lên vẫn hợp lệ thay vì rơi hết về mặc định toàn bộ.
+  voiceStyle: voiceStyleSchema.default('doc_truyen'),
 });
 
 /** Patch settings — mọi field optional, dùng cho IPC settings:update */
@@ -187,6 +192,8 @@ export const voiceIdSchema = z
   // Trùng `isSafeId` bên main: voiceId thành tên thư mục trên đĩa.
   .regex(/^[A-Za-z0-9_-]+$/, 'voiceId chỉ được chứa chữ, số, gạch ngang và gạch dưới');
 
+export const ttsEngineSchema = z.enum(['piper', 'vieneu']);
+
 export const voiceCatalogEntrySchema = z.object({
   id: voiceIdSchema,
   lang: bookLangSchema,
@@ -194,7 +201,15 @@ export const voiceCatalogEntrySchema = z.object({
   quality: voiceQualitySchema,
   sampleRate: z.number().int().positive(),
   license: z.string().max(200),
-  files: z.array(voiceFileSchema).min(1).max(10),
+  // Catalog cũ không có trường này — mặc định `piper` để bản cài sẵn của user
+  // không hỏng sau khi nâng cấp app.
+  engine: ttsEngineSchema.default('piper'),
+  // Trần 32 chứ không phải 10: Piper cần đúng 2 file, nhưng VieNeu cần 13
+  // (backbone, heads, tokenizer, 5 file codec MOSS…). Trần cũ sẽ **từ chối cả
+  // catalog** và app mất sạch danh sách voice.
+  //
+  // `min(1)` bỏ đi: giọng dùng model chung (`modelId`) không mang file riêng.
+  files: z.array(voiceFileSchema).max(32),
 });
 
 export const voiceCatalogSchema = z.object({

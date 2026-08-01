@@ -102,10 +102,23 @@ describe('appSettingsSchema', () => {
     subtitleFontSize: 18,
     playbackRate: 1,
     autoCheckUpdates: true,
+    voiceStyle: 'doc_truyen',
   };
 
   it('chấp nhận settings hợp lệ', () => {
     expect(appSettingsSchema.parse(base).bitrate).toBe(24);
+  });
+
+  it('settings cũ thiếu voiceStyle vẫn đọc được, rơi về doc_truyen', () => {
+    // Máy user đang chạy bản trước P6.2 không có trường này. Từ chối cả object
+    // sẽ làm user mất sạch cấu hình sau khi nâng cấp.
+    const { voiceStyle: _omit, ...old } = base;
+    const parsed = appSettingsSchema.parse(old);
+    expect(parsed.voiceStyle).toBe('doc_truyen');
+  });
+
+  it('từ chối voiceStyle lạ', () => {
+    expect(appSettingsSchema.safeParse({ ...base, voiceStyle: 'rap' }).success).toBe(false);
   });
 
   it('chỉ cho phép bitrate 16/24/32', () => {

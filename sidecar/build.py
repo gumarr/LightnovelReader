@@ -75,16 +75,37 @@ HIDDEN_IMPORTS = [
     # phoneme. Thiếu thì piper CHỈ ghi log rồi trả `None` — timing âm thầm rơi
     # hết về ước lượng theo ký tự mà không có gì báo.
     "onnx",
+    # P6.2 — engine VieNeu. `vieneu/__init__.py` chỉ export một factory dùng
+    # `match` + import trong hàm, nên PyInstaller **không** dò ra `v3turbo` bằng
+    # phân tích tĩnh; phải khai tay, nếu không `.exe` build xong vẫn chết lúc
+    # user chọn giọng VieNeu.
+    "vieneu",
+    "vieneu.v3turbo",
+    "vieneu._v3_turbo_engine",
+    "vieneu._v3_turbo_engine.onnx_runtime_lite",
+    "vieneu._v3_turbo_engine.speaker.onnx_extractor",
+    "vieneu_utils",
+    "vieneu_utils.phonemize_text",
+    "sea_g2p",
+    "soxr",
+    "tokenizers",
+    "huggingface_hub",
 ]
 
 # Dữ liệu không phải mã Python, PyInstaller không tự mang theo.
 #
 # `espeak-ng-data` là bảng phiên âm của espeak (gồm `vi_dict`) nằm trong wheel
 # piper. Thiếu nó thì model nạp được nhưng không phiên âm nổi chữ nào.
-COLLECT_DATA = ["piper", "soundfile", "onnxruntime"]
+#
+# `vieneu` mang theo `assets/voices_v3_turbo.json` (1.4 MB) chứa **14 giọng
+# preset** — speaker embedding của chúng nằm trong file này, không phải trong
+# model 244 MB tải về. Thiếu nó thì model nạp được nhưng không có giọng nào.
+#
+# `sea_g2p` mang từ điển phiên âm tiếng Việt, thiếu thì không đọc nổi chữ nào.
+COLLECT_DATA = ["piper", "soundfile", "onnxruntime", "vieneu", "sea_g2p"]
 
 # `--collect-binaries` cho DLL native đi kèm wheel.
-COLLECT_BINARIES = ["onnxruntime", "soundfile"]
+COLLECT_BINARIES = ["onnxruntime", "soundfile", "sea_g2p", "tokenizers", "soxr"]
 
 # Không mang theo thứ chỉ dùng lúc test/build — mỗi cái là vài MB.
 EXCLUDES = ["pytest", "PyInstaller", "tkinter", "unittest", "pydoc"]

@@ -22,6 +22,7 @@ const settings: AppSettings = {
   subtitleFontSize: 18,
   playbackRate: 1,
   autoCheckUpdates: true,
+  voiceStyle: 'doc_truyen',
 };
 
 beforeEach(() => {

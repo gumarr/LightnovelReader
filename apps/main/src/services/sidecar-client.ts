@@ -2,6 +2,8 @@ import type {
   AudioBitrate,
   BookLang,
   SynthesisResult,
+  TtsEngine,
+  VoiceStyle,
   VoiceDownloadProgress,
   VoiceQuality,
   WordTiming,
@@ -43,6 +45,7 @@ export type SidecarCatalogVoice = {
   quality: VoiceQuality;
   sampleRate: number;
   license: string;
+  engine: TtsEngine;
   totalBytes: number;
   installed: boolean;
 };
@@ -53,6 +56,7 @@ export type SidecarInstalledVoice = {
   name: string;
   quality: VoiceQuality;
   sampleRate: number;
+  engine: TtsEngine;
   sizeBytes: number;
 };
 
@@ -94,6 +98,8 @@ export type SidecarClient = {
      * Bỏ trống thì sidecar chỉ dùng từ điển ship sẵn + luật romaji.
      */
     pronunciations?: Record<string, string>;
+    /** Phong cách đọc — chỉ có tác dụng với giọng VieNeu (P6.2) */
+    style?: VoiceStyle;
     signal?: AbortSignal;
   }) => Promise<SynthesisResult>;
   /**
@@ -108,6 +114,9 @@ export type SidecarClient = {
     text: string;
     lang: BookLang;
     bitrate: AudioBitrate;
+    /** Nghe thử phải dùng đúng phong cách sẽ generate, không thì nghe một đằng
+     * mà đọc một nẻo */
+    style?: VoiceStyle;
     signal?: AbortSignal;
   }) => Promise<PreviewResult>;
   baseUrl: string;
@@ -440,7 +449,7 @@ export const createSidecarClient = (options: {
     },
 
     synthesize: async (input): Promise<SynthesisResult> => {
-      const { text, voiceId, outPath, bitrate, lang, pronunciations, signal } = input;
+      const { text, voiceId, outPath, bitrate, lang, pronunciations, style, signal } = input;
 
       const raw = await request('/synthesize', {
         method: 'POST',
@@ -456,6 +465,7 @@ export const createSidecarClient = (options: {
           ...(pronunciations === undefined || Object.keys(pronunciations).length === 0
             ? {}
             : { pronunciations }),
+          ...(style === undefined ? {} : { style }),
         },
         timeoutMs: SYNTHESIZE_TIMEOUT_MS,
         ...(signal === undefined ? {} : { signal }),
@@ -479,11 +489,11 @@ export const createSidecarClient = (options: {
     },
 
     preview: async (input): Promise<PreviewResult> => {
-      const { voiceId, text, lang, bitrate, signal } = input;
+      const { voiceId, text, lang, bitrate, style, signal } = input;
 
       const raw = await request('/preview', {
         method: 'POST',
-        body: { voiceId, text, lang, bitrate },
+        body: { voiceId, text, lang, bitrate, ...(style === undefined ? {} : { style }) },
         // Cùng timeout với `/synthesize`: lần nghe thử đầu tiên của một voice
         // cũng phải nạp model 63 MB y hệt.
         timeoutMs: SYNTHESIZE_TIMEOUT_MS,

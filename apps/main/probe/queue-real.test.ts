@@ -147,6 +147,7 @@ const setup = async (bitrate: AudioBitrate = 24): Promise<Harness> => {
     getClient: () => supervisor.getClient(),
     getAudioDir: () => audioDir,
     getBitrate: () => bitrate,
+    getVoiceStyle: () => 'doc_truyen' as const,
     getVoiceId: () => VOICE_ID,
     getBookLang: () => 'vi',
     logger,

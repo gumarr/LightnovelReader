@@ -223,6 +223,7 @@ const start = (): void => {
     // Settings giữa lúc hàng đợi đang chạy.
     getAudioDir: () => settings.getAll().audioDir,
     getBitrate: () => settings.getAll().bitrate,
+    getVoiceStyle: () => settings.getAll().voiceStyle,
     getVoiceId: (lang) => {
       const current = settings.getAll();
       const voiceId = lang === 'vi' ? current.voiceVi : current.voiceEn;
@@ -275,6 +276,7 @@ const start = (): void => {
       mainWindow?.webContents.send('voices:downloadProgress', progress);
     },
     getBitrate: () => settings.getAll().bitrate,
+    getVoiceStyle: () => settings.getAll().voiceStyle,
     logError: (message, detail) => {
       logger.error(message, detail);
     },

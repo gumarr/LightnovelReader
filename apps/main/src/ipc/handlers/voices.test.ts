@@ -296,6 +296,7 @@ describe('preview', () => {
     name: 'VAIS 1000',
     quality: 'medium' as const,
     sampleRate: 22050,
+    engine: 'piper' as const,
     sizeBytes: 63_206_154,
   };
 

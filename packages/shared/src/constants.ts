@@ -75,6 +75,9 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'audioDir'> = {
   // Bật mặc định vì bản cũ không có cách nào biết bản mới tồn tại. Chỉ **kiểm
   // tra** — tải và cài vẫn do user bấm (xem `UpdateState`).
   autoCheckUpdates: true,
+  // App đọc Light Novel — `doc_truyen` là phong cách hợp nhất. Chỉ có tác dụng
+  // với giọng VieNeu; giọng Piper bỏ qua giá trị này.
+  voiceStyle: 'doc_truyen',
 };
 
 export const VIEWER_PANE_RATIO_MIN = 0.2;

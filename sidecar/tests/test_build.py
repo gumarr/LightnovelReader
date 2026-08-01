@@ -128,3 +128,51 @@ class TestPhụThuộc:
         source = build_source()
         assert "COLLECT_DATA" in source
         assert '"piper"' in source
+
+
+class TestĐóngGóiVieNeu:
+    """P6.2 — engine thứ hai. Mọi lỗi ở đây chỉ lộ ra ở bản `.exe`."""
+
+    def test_vieneu_là_dependency_runtime(self) -> None:
+        requirements = (SIDECAR_DIR / "requirements.txt").read_text(encoding="utf-8")
+        for package in ("vieneu", "sea-g2p", "soxr", "tokenizers", "huggingface_hub"):
+            assert package in requirements
+
+    def test_không_kéo_gradio_hay_torch(self) -> None:
+        """`pip install vieneu` trần kéo về 41 package gồm gradio 29 MB, pandas,
+        pillow — và **nâng fastapi 0.115.6 lên 0.141.1**, tức đổi web framework
+        của chính sidecar này. Phải cài `--no-deps` và khai tay.
+        """
+        requirements = (SIDECAR_DIR / "requirements.txt").read_text(encoding="utf-8")
+        for package in ("gradio", "torch", "pandas", "pillow", "peft", "transformers"):
+            assert f"\n{package}==" not in requirements, f"{package} không được vào installer"
+
+    def test_fastapi_không_bị_nâng_phiên_bản(self) -> None:
+        """Ghim đúng bản sidecar đang dùng — `vieneu` yêu cầu fastapi mới hơn,
+        cài không `--no-deps` sẽ âm thầm nâng lên."""
+        requirements = (SIDECAR_DIR / "requirements.txt").read_text(encoding="utf-8")
+        assert "fastapi==0.115.6" in requirements
+
+    def test_v3turbo_được_khai_hidden_import(self) -> None:
+        """`vieneu/__init__.py` chỉ export một factory dùng `match` + import
+        trong hàm, nên PyInstaller không dò ra bằng phân tích tĩnh."""
+        source = build_source()
+        assert "vieneu.v3turbo" in source
+        assert "vieneu._v3_turbo_engine.onnx_runtime_lite" in source
+
+    def test_assets_giọng_preset_được_gom(self) -> None:
+        """`vieneu/assets/voices_v3_turbo.json` chứa speaker embedding của **14
+        giọng preset**. Nó nằm trong wheel, KHÔNG nằm trong model 244 MB tải về
+        — thiếu thì model nạp được nhưng không có giọng nào để chọn.
+        """
+        source = build_source()
+        assert "COLLECT_DATA" in source
+        assert '"vieneu"' in source
+        assert '"sea_g2p"' in source
+
+    def test_thư_viện_native_của_vieneu_được_gom_binaries(self) -> None:
+        """`sea_g2p`/`tokenizers`/`soxr` đều là wheel native (abi3)."""
+        source = build_source()
+        binaries = source.split("COLLECT_BINARIES", 1)[1].split("]", 1)[0]
+        for package in ("sea_g2p", "tokenizers", "soxr"):
+            assert package in binaries

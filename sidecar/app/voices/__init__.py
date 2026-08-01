@@ -7,6 +7,9 @@ nào mà không dựng cái kia.
 """
 
 from .catalog import (
+    ENGINE_PIPER,
+    ENGINE_VIENEU,
+    ENGINES,
     Catalog,
     CatalogError,
     VoiceEntry,
@@ -16,6 +19,8 @@ from .catalog import (
     is_safe_voice_id,
     load_catalog,
     parse_catalog,
+    resolve_model_entry,
+    voice_base_url,
     voice_dir,
 )
 from .download import (
@@ -27,6 +32,9 @@ from .download import (
 )
 
 __all__ = [
+    "ENGINES",
+    "ENGINE_PIPER",
+    "ENGINE_VIENEU",
     "Catalog",
     "CatalogError",
     "DownloadError",
@@ -41,5 +49,7 @@ __all__ = [
     "load_catalog",
     "parse_catalog",
     "remove_voice",
+    "resolve_model_entry",
+    "voice_base_url",
     "voice_dir",
 ]

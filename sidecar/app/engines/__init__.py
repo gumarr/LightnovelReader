@@ -1,5 +1,24 @@
-"""Engine TTS. Chỗ duy nhất trong sidecar import thư viện `piper`."""
+"""Engine TTS. Mỗi engine một file, chỉ file đó import thư viện của nó.
 
-from .piper import EngineError, PiperEngine, SynthesisResult
+`piper.py` là chỗ duy nhất import `piper`; `vieneu.py` là chỗ duy nhất import
+`vieneu`. Nhờ vậy phần còn lại của sidecar test được mà không cần model trên đĩa.
 
-__all__ = ["EngineError", "PiperEngine", "SynthesisResult"]
+`EngineRegistry` là thứ nơi gọi nên dùng — nó chọn engine theo `VoiceEntry`, để
+`main.py` không phải biết voice nào chạy bằng gì.
+"""
+
+from .base import EngineError, SynthesisResult, TTSEngine
+from .piper import PiperEngine
+from .registry import EngineRegistry
+from .vieneu import DEFAULT_STYLE, STYLES, VieneuEngine
+
+__all__ = [
+    "DEFAULT_STYLE",
+    "STYLES",
+    "EngineError",
+    "EngineRegistry",
+    "PiperEngine",
+    "SynthesisResult",
+    "TTSEngine",
+    "VieneuEngine",
+]

@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
-import { errorMessage, JOB_PRIORITY_NORMAL, type AudioBitrate, type BookLang } from '@ln/shared';
+import {
+  errorMessage,
+  JOB_PRIORITY_NORMAL,
+  type AudioBitrate,
+  type BookLang,
+  type VoiceStyle,
+} from '@ln/shared';
 import type { QueueCounts, JobRepository } from '../db/repositories/jobs.js';
 import type { SegmentRepository } from '../db/repositories/segments.js';
 import type { SidecarClient } from './sidecar-client.js';
@@ -78,6 +84,13 @@ export type QueueDeps = {
   getAudioDir: () => string;
   /** Bitrate từ `AppSettings`, user đổi được (16/24/32) */
   getBitrate: () => AudioBitrate;
+  /**
+   * Phong cách đọc từ `AppSettings` — chỉ có tác dụng với giọng VieNeu.
+   *
+   * Đọc lúc chạy như `getBitrate`, không chốt sẵn: user đổi phong cách giữa
+   * chừng thì các segment sinh sau phải theo giá trị mới.
+   */
+  getVoiceStyle: () => VoiceStyle;
   /** Giọng đọc đang chọn. `undefined` khi user chưa cài voice nào. */
   getVoiceId: (lang: BookLang) => string | undefined;
   /** Ngôn ngữ của sách chứa segment — quyết định voice và cách normalize */
@@ -116,6 +129,7 @@ export const createGenerateQueue = (deps: QueueDeps): GenerateQueue => {
     getClient,
     getAudioDir,
     getBitrate,
+    getVoiceStyle,
     getVoiceId,
     getBookLang,
     getPronunciations,
@@ -219,6 +233,7 @@ export const createGenerateQueue = (deps: QueueDeps): GenerateQueue => {
         outPath,
         bitrate: getBitrate(),
         lang,
+        style: getVoiceStyle(),
         ...(pronunciations === undefined ? {} : { pronunciations }),
         signal: abort.signal,
       });

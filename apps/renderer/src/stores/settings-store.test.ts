@@ -108,6 +108,7 @@ describe('applyExternal', () => {
       subtitleFontSize: 20,
       playbackRate: 1.5,
       autoCheckUpdates: false,
+      voiceStyle: 'tin_tuc',
     };
 
     useSettingsStore.getState().applyExternal(next);

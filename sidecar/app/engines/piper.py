@@ -18,16 +18,13 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from ..audio import (
     DEFAULT_BITRATE,
-    EncodedAudio,
     PhonemeChunk,
-    WordTiming,
     encode_opus,
     estimate_word_timings,
     resample,
@@ -35,24 +32,9 @@ from ..audio import (
     word_timings_from_phonemes,
 )
 from ..voices.catalog import VoiceEntry, is_installed, voice_dir
+from .base import EngineError, SynthesisResult
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class EngineError(RuntimeError):
-    """Không tổng hợp được — thông báo đã ở dạng đọc được cho user."""
-
-
-@dataclass(frozen=True)
-class SynthesisResult:
-    """Kết quả tổng hợp một segment."""
-
-    audio: EncodedAudio
-    timings: list[WordTiming]
-    # `phoneme` = alignment thật của Piper, `estimate` = chia theo độ dài ký tự.
-    # Đưa lên tới UI để biết vì sao highlight lệch, thay vì đoán mò.
-    timing_source: str
-    voice_id: str
 
 
 def _model_paths(models_dir: Path, entry: VoiceEntry) -> tuple[Path, Path]:

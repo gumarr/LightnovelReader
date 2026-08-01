@@ -4,6 +4,7 @@ import { useVoiceStore } from '@/stores/voice-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { SidecarBadge } from './SidecarBadge';
 import { VoiceRow } from './VoiceRow';
+import { VoiceStylePicker } from './VoiceStylePicker';
 import { createPreviewPlayer, type PreviewPlayer } from './preview-player';
 
 /**
@@ -133,6 +134,12 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
   // nạp ở P2.4, chặn theo nó thì không bao giờ tải được voice nào.
   const canDownload = sidecar?.state === 'ready';
 
+  // Chỉ hiện ô phong cách khi đã cài giọng VieNeu: với người chỉ dùng Piper thì
+  // đó là một ô bấm vào không đổi gì (PROGRESS 4.71).
+  const hasVieneuInstalled = catalog.some(
+    (voice) => voice.installed && voice.engine === 'vieneu',
+  );
+
   // Có voice đã cài mà ngôn ngữ của nó chưa chọn giọng nào
   const hasInstalledUnselected = catalog.some(
     (voice) => voice.installed && selectedFor(voice.lang) === '',
@@ -181,6 +188,15 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
         "Chưa cài giọng đọc nào" trong khi màn này hiện rõ "Đã cài". Nhắc đúng ở
         chỗ sửa được.
       */}
+      {hasVieneuInstalled && settings !== null && (
+        <VoiceStylePicker
+          value={settings.voiceStyle}
+          onChange={(voiceStyle) => {
+            void updateSettings({ voiceStyle });
+          }}
+        />
+      )}
+
       {hasInstalledUnselected && (
         <p data-testid="voice-unselected-hint" className="text-xs text-fg-muted">
           Đã cài giọng nhưng chưa chọn dùng. Bấm <strong className="text-fg">Dùng giọng này</strong>{' '}

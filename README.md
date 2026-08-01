@@ -15,7 +15,7 @@
 | 3 | Player & subtitle sync | ✅ Xong |
 | 4 | Forced alignment | ⏹️ Đã bỏ |
 | 5 | Polish & ship | ✅ Xong |
-| 6 | Giọng đọc tự nhiên hơn (engine TTS thứ hai) | 📋 Đã lên kế hoạch |
+| 6 | Giọng đọc tự nhiên hơn (engine TTS thứ hai) | ✅ Xong |
 | 7 | EPUB + mở rộng | — |
 
 **Phase 4 bỏ có chủ đích.** Highlight theo từ hiện dùng nội suy theo độ dài từ,
@@ -23,13 +23,27 @@ nghe thật thì bám đúng nhịp. Đổi sang CTC forced alignment là thêm 
 đẩy installer từ 143 MB lên ~450 MB — quá đắt cho thứ không ai thấy thiếu. Lý do
 đầy đủ và **điều kiện mở lại** ở [PROGRESS.md](PROGRESS.md) mục 4.68.
 
-**Phase 6 đang lên kế hoạch: giọng đọc tự nhiên hơn.** Giọng Piper hiện tại chạy
-tốt và nhanh, nhưng nghe khá máy móc với truyện dài. Hướng xử lý là thêm engine
-thứ hai ([VieNeu-TTS](https://github.com/pnnbao97/VieNeu-TTS), Apache 2.0) chạy
-cùng ONNX Runtime đã có sẵn — nhiều giọng hơn, có ngữ điệu kể chuyện, và
-**không** làm installer phình quá 250 MB. Đánh đổi: engine đó không trả mốc thời
-gian từng từ, nên highlight sẽ dựa trên ước lượng. Chi tiết ở [plan.md](plan.md)
-mục 9.
+## Hai loại giọng đọc
+
+| | Giọng nhanh (Piper) | Giọng tự nhiên (VieNeu) |
+|---|---|---|
+| Dung lượng tải | ~63 MB mỗi giọng | **244 MB, dùng chung cho cả 14 giọng** |
+| Số giọng tiếng Việt | 2 | 14 (có 4 giọng phong cách kể chuyện) |
+| Tốc độ tạo audio | Nhanh | Ngang ngửa (chậm hơn ~25%) |
+| Highlight theo từ | Bám sát | Ước lượng, lệch trung bình ~60 ms |
+
+Cả hai đều **chạy hẳn trên máy bạn**, không gửi gì lên mạng. Giọng VieNeu tải
+một lần là dùng được cả 14 giọng; đổi giọng hay đổi phong cách đọc
+(kể chuyện / tự nhiên / tin tức) không phải tải lại gì.
+
+Không muốn tốn 244 MB thì cứ dùng giọng Piper như cũ — app không ép.
+
+**Về highlight theo từ:** giọng VieNeu không trả mốc thời gian thật cho từng từ
+(giới hạn kiến trúc của model, không phải thiếu sót), nên chữ sáng theo ước
+lượng. Đã đo trên câu thật: lệch trung bình ~60 ms, khoảng 8% số từ lệch quá mức
+mắt thấy được. Cần highlight chính xác nhất thì dùng giọng Piper.
+
+Chi tiết kỹ thuật ở [plan.md](plan.md) mục 9 và [PROGRESS.md](PROGRESS.md) mục 4.81.
 
 Chi tiết kế hoạch: [plan.md](plan.md). Trạng thái công việc và ghi chú kỹ thuật:
 [PROGRESS.md](PROGRESS.md).

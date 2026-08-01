@@ -1,5 +1,11 @@
 import type { VoiceCatalogItem, VoiceDownloadProgress } from '@ln/shared';
-import { downloadPercent, formatBytes, langLabel, qualityLabel } from './format';
+import {
+  downloadPercent,
+  engineNote,
+  formatBytes,
+  langLabel,
+  voiceSpecLabel,
+} from './format';
 
 /**
  * Một dòng voice trong danh sách: thông tin + nút tải/xoá + thanh tiến trình.
@@ -44,6 +50,7 @@ export const VoiceRow = ({
     ? progress.totalBytes
     : voice.totalBytes;
   const percent = downloading ? downloadPercent(progress.receivedBytes, total) : 0;
+  const note = engineNote(voice.engine);
 
   return (
     <li
@@ -51,6 +58,7 @@ export const VoiceRow = ({
       data-voice-id={voice.id}
       data-installed={voice.installed}
       data-selected={selected}
+      data-engine={voice.engine}
       className="flex flex-col gap-2 rounded-lg border border-border bg-bg-elevated p-3"
       // Viền nhấn cho giọng đang dùng: đây là thứ quyết định mọi lượt generate
       // sau đó, phải nhìn ra ngay chứ không phải đọc từng dòng chữ.
@@ -62,10 +70,12 @@ export const VoiceRow = ({
             {voice.name}
             <span className="ml-2 text-xs font-normal text-fg-muted">{langLabel(voice.lang)}</span>
           </p>
-          <p className="mt-0.5 text-xs text-fg-muted">
-            Chất lượng {qualityLabel(voice.quality)} · {formatBytes(voice.totalBytes)} ·{' '}
-            {String(voice.sampleRate)} Hz
-          </p>
+          <p className="mt-0.5 text-xs text-fg-muted">{voiceSpecLabel(voice)}</p>
+          {note !== undefined && (
+            <p data-testid="voice-engine-note" className="mt-0.5 text-xs text-fg-muted">
+              {note}
+            </p>
+          )}
           <p className="mt-0.5 truncate text-xs text-fg-muted" title={voice.license}>
             Giấy phép: {voice.license}
           </p>

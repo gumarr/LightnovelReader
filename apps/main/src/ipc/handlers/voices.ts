@@ -4,6 +4,7 @@ import {
   voiceIdSchema,
   VOICE_PREVIEW_TEXT,
   type AudioBitrate,
+  type VoiceStyle,
   type InstalledVoice,
   type Result,
   type VoiceCatalogItem,
@@ -42,6 +43,8 @@ export type VoicesHandlerDeps = {
   onProgress: (progress: VoiceDownloadProgress) => void;
   /** Bitrate hiện tại trong settings — nghe thử phải giống thứ user sẽ nghe thật */
   getBitrate: () => AudioBitrate;
+  /** Phong cách đọc hiện tại — cùng lý do với `getBitrate` */
+  getVoiceStyle?: () => VoiceStyle;
   logError?: (message: string, detail: string) => void;
 };
 
@@ -73,6 +76,9 @@ export const createVoicesHandlers = (deps: VoicesHandlerDeps): VoicesHandlers =>
           quality: voice.quality,
           sampleRate: voice.sampleRate,
           license: voice.license,
+          // Sidecar cũ (bản đang chạy dở lúc nâng cấp) không gửi trường này —
+          // coi là `piper` thay vì để `undefined` lọt xuống UI.
+          engine: voice.engine ?? 'piper',
           totalBytes: voice.totalBytes,
           installed: voice.installed,
         })),
@@ -91,6 +97,7 @@ export const createVoicesHandlers = (deps: VoicesHandlerDeps): VoicesHandlers =>
           name: voice.name,
           quality: voice.quality,
           sampleRate: voice.sampleRate,
+          engine: voice.engine ?? 'piper',
           sizeBytes: voice.sizeBytes,
         })),
       );
@@ -181,11 +188,13 @@ export const createVoicesHandlers = (deps: VoicesHandlerDeps): VoicesHandlers =>
       }
 
       const text = VOICE_PREVIEW_TEXT[voice.lang];
+      const style = deps.getVoiceStyle?.();
       const result = await client.preview({
         voiceId,
         text,
         lang: voice.lang,
         bitrate: deps.getBitrate(),
+        ...(style === undefined ? {} : { style }),
       });
 
       return ok({

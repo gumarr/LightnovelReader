@@ -16,6 +16,7 @@ import type {
   TimingSource,
   UpdateStatus,
   VoiceDownloadProgress,
+  TtsEngine,
   VoiceQuality,
   WordTiming,
 } from './types.js';
@@ -225,7 +226,13 @@ export type VoiceCatalogItem = {
   quality: VoiceQuality;
   sampleRate: number;
   license: string;
-  /** Tổng dung lượng phải tải, hiện cho user trước khi bấm */
+  engine: TtsEngine;
+  /**
+   * Tổng dung lượng phải tải, hiện cho user trước khi bấm.
+   *
+   * Với giọng VieNeu đây là dung lượng **bộ model dùng chung** (244 MB) chứ
+   * không phải của riêng giọng đó: tải một lần là 14 giọng cùng dùng được.
+   */
   totalBytes: number;
   installed: boolean;
 };

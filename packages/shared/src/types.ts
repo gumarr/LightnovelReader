@@ -272,7 +272,29 @@ export type VoiceFile = {
   sha256: string;
 };
 
+/**
+ * Thang chất lượng **riêng của Piper** (`x_low`…`high`), lấy từ tên file model.
+ *
+ * Engine khác không dùng thang này — VieNeu chỉ có một mức. Vì vậy UI **không**
+ * được hiện `quality` như thuộc tính chung của mọi voice; xem `VoiceRow.tsx`.
+ */
 export type VoiceQuality = 'x_low' | 'low' | 'medium' | 'high';
+
+/**
+ * Engine chạy một voice. Thêm engine = thêm một nhánh ở đây + một module bên
+ * `sidecar/app/engines/`.
+ */
+export type TtsEngine = 'piper' | 'vieneu';
+
+/**
+ * Phong cách đọc của engine VieNeu.
+ *
+ * Truyền lúc **tổng hợp**, không phải lúc nạp model — đổi phong cách không phải
+ * tải hay nạp lại gì.
+ */
+export type VoiceStyle = 'doc_truyen' | 'tu_nhien' | 'tin_tuc';
+
+export const VOICE_STYLES: readonly VoiceStyle[] = ['doc_truyen', 'tu_nhien', 'tin_tuc'];
 
 /** Một voice trong catalog — thứ user *có thể* tải */
 export type VoiceCatalogEntry = {
@@ -282,6 +304,7 @@ export type VoiceCatalogEntry = {
   quality: VoiceQuality;
   sampleRate: number;
   license: string;
+  engine: TtsEngine;
   files: VoiceFile[];
 };
 
@@ -305,7 +328,14 @@ export type InstalledVoice = {
   name: string;
   quality: VoiceQuality;
   sampleRate: number;
-  /** Tổng dung lượng đã chiếm trên đĩa */
+  engine: TtsEngine;
+  /**
+   * Tổng dung lượng đã chiếm trên đĩa.
+   *
+   * **0 với giọng dùng model chung.** 14 giọng VieNeu chạy trên cùng một bộ
+   * model 244 MB, nên chỉ giọng mang model mới báo dung lượng — cộng cho từng
+   * giọng sẽ báo gấp 14 lần ở màn Dung lượng.
+   */
   sizeBytes: number;
 };
 
@@ -396,6 +426,16 @@ export type AppSettings = {
    * định im lặng. Tắt cờ này thì không có request mạng nào đi ra.
    */
   autoCheckUpdates: boolean;
+  /**
+   * Phong cách đọc của giọng VieNeu (P6.2).
+   *
+   * Chỉ có tác dụng với engine `vieneu` — Piper không có khái niệm này, và đó
+   * là lý do ô chọn trong Cài đặt nói rõ nó áp cho giọng nào thay vì hiện một
+   * ô vô tác dụng với người đang dùng Piper.
+   *
+   * Mặc định `doc_truyen`: app này để đọc Light Novel.
+   */
+  voiceStyle: VoiceStyle;
 };
 
 /**

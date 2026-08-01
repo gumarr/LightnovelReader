@@ -135,6 +135,7 @@ beforeEach(() => {
     getClient: () => (clientAvailable ? fakeClient() : undefined),
     getAudioDir: () => audioDir,
     getBitrate: () => bitrate,
+    getVoiceStyle: () => 'doc_truyen' as const,
     getVoiceId: () => voiceId,
     getBookLang: () => 'vi',
     onStatusChanged: () => {

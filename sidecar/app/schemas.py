@@ -52,7 +52,9 @@ class ErrorResponse(BaseModel):
 
 
 class VoiceFileInfo(BaseModel):
-    kind: Literal["model", "config"]
+    # `asset` thêm ở P6.2: engine ngoài Piper không chỉ có đúng model + config
+    # (VieNeu có 13 file). Giữ `model`/`config` để catalog Piper không đổi.
+    kind: Literal["model", "config", "asset"]
     sizeBytes: int  # noqa: N815 — khớp TypeScript, xem ghi chú trên
     sha256: str
 
@@ -66,6 +68,9 @@ class CatalogVoice(BaseModel):
     quality: str
     sampleRate: int  # noqa: N815
     license: str
+    # `piper` | `vieneu`. UI cần để hiện nhãn engine và giải thích vì sao giọng
+    # này nặng 244 MB còn giọng kia 63 MB.
+    engine: str
     totalBytes: int  # noqa: N815
     installed: bool
     files: list[VoiceFileInfo]
@@ -82,6 +87,9 @@ class InstalledVoiceInfo(BaseModel):
     name: str
     quality: str
     sampleRate: int  # noqa: N815
+    engine: str
+    # Giọng VieNeu dùng model chung trả 0 — 14 giọng cùng một bộ 244 MB, cộng
+    # cho từng giọng sẽ báo gấp 14 lần ở màn Dung lượng.
     sizeBytes: int  # noqa: N815
 
 
@@ -115,6 +123,12 @@ class SynthesizeRequest(BaseModel):
     # Giới hạn 500 mục: bảng này đi kèm MỌI request synthesize, để user dán
     # vào hàng chục nghìn dòng thì mỗi segment gánh thêm cả trăm KB.
     pronunciations: dict[str, str] = Field(default_factory=dict, max_length=500)
+    # Phong cách đọc, chỉ có tác dụng với engine VieNeu (P6.2). Piper bỏ qua.
+    #
+    # Đi kèm từng request thay vì đặt một lần lúc khởi động: user đổi phong cách
+    # trong Cài đặt mà sidecar giữ giá trị cũ thì phải khởi động lại app mới
+    # thấy đổi — đúng loại "cài đặt chết" mà PROGRESS 4.71 cảnh báo.
+    style: Literal["doc_truyen", "tu_nhien", "tin_tuc"] = "doc_truyen"
 
 
 class PreviewRequest(BaseModel):
@@ -127,6 +141,9 @@ class PreviewRequest(BaseModel):
     text: str = Field(min_length=1, max_length=300)
     lang: str = Field(default="vi", min_length=2, max_length=8)
     bitrate: Literal[16, 24, 32] = 24
+    # Nghe thử phải dùng ĐÚNG phong cách sẽ generate, nếu không user chọn giọng
+    # dựa trên thứ khác với thứ họ sẽ nghe.
+    style: Literal["doc_truyen", "tu_nhien", "tin_tuc"] = "doc_truyen"
 
 
 class PreviewResponse(BaseModel):

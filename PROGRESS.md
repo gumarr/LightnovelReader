@@ -41,9 +41,9 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
 
 **Việc tiếp theo:** Phase 5 xong hết. Hai việc song song:
 1. **Publish release** + kiểm nhánh cập nhật trên bản cài thật (mục 3, mục 8).
-2. **Phase 6 — đổi engine TTS** vì user thấy giọng Piper không hợp đọc LN.
-   **P6.1 đã xong** (`estimate` giảm 52% lệch — mục 3). Tiếp theo là **P6.2**:
-   engine VieNeu-TTS + catalog đa engine. Xem `plan.md` và mục 4.79, 4.80.
+2. **Phase 6 đã xong cả P6.1 lẫn P6.2.** Việc còn lại là **của user**: mở app →
+   Giọng đọc → tải bộ VieNeu (244 MB) → nghe thử 14 giọng và chọn một giọng.
+   Xem mục 4.79–4.81 trước khi định đổi hướng.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
@@ -1320,7 +1320,7 @@ hồi về **sản phẩm**, và nó lớn hơn mọi nợ kỹ thuật còn l�
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
 | P6.1 | Cải tiến `estimate_word_timings` + probe đo lệch so với Piper | ✅ **Xong** — đạt DoD |
-| P6.2 | Engine thứ hai (VieNeu-TTS) + catalog đa engine | ⬅️ **tiếp theo** |
+| P6.2 | Engine thứ hai (VieNeu-TTS) + catalog đa engine | ✅ **Xong** — đã chạy thật bản `.exe` |
 
 **Thứ tự này bắt buộc, không đảo được.** Lý do đầy đủ ở mục 4.79: Piper cho
 alignment `phoneme` thật, nên **bây giờ** là lúc duy nhất còn thước đo khách quan
@@ -1344,6 +1344,14 @@ vị trí" không thể biết. Xem mục 4.80.
 
 **Với P6.2:** DoD đạt nghĩa là **được phép đi tiếp** — mất alignment thật khi đổi
 sang VieNeu thì highlight vẫn ở mức chấp nhận được, không phải hỏng hẳn.
+
+**P6.2 đã xong.** 14 giọng VieNeu (4 giọng `doc_truyen`), tải runtime 244 MB,
+installer chỉ +1.2 MB, RTF ~0.30 ngang Piper. **Giọng Ngọc Huyền không dùng
+được** — nó là LoRA cần PyTorch, xem mục 4.81 để khỏi thử lại.
+
+⚠️ **Việc user cần làm:** nghe thử 14 giọng rồi chọn. Nếu không giọng nào hợp thì
+đọc lại mục 4.81 trước khi tính đường khác — hai đường còn lại đều đã bị chặn
+bằng lý do cứng (license hoặc PyTorch).
 
 ### Phase 3 — đã xong
 
@@ -3507,6 +3515,82 @@ thiện thêm hàm này" thì đọc lại đoạn này trước.
 đầu tôi viết nhánh tách gạch nối — **code chết**, unit test bắt được. Nếu sau này
 `_WORD_PATTERN` đổi để nhận `-` thì phải sửa hàm này cùng lúc.
 
+### 4.81 P6.2 — giọng VieNeu: cái làm được, cái KHÔNG làm được
+
+**Giọng Ngọc Huyền (Vbee) — thứ user muốn — KHÔNG dùng được.** Đây là kết luận
+sau khi tra tận nơi, đừng thử lại:
+
+- Nó là **LoRA adapter** riêng ([`pnnbao-ump/VieNeu-TTS-0.3B-lora-ngoc-huyen`](https://huggingface.co/pnnbao-ump/VieNeu-TTS-0.3B-lora-ngoc-huyen)),
+  repo ghi rõ *"chỉ chứa LoRA adapter, không bao gồm model gốc"*.
+- README của VieNeu nói thẳng: *"denoise, add_voice, and voice cloning currently
+  require the PyTorch (GPU) engine. **Built-in voices work everywhere**"*. Nghĩa
+  là PyTorch không phải chuyện **dung lượng** mà là **điều kiện chạy** — tách
+  model ra khỏi installer cũng không gỡ được.
+- Không có script export LoRA → ONNX. Cách duy nhất tác giả đưa ra cho model đã
+  merge là chạy Docker **có GPU**.
+
+**Cái làm được: 14 giọng preset, chạy ONNX, torch-free.** Trong đó 4 giọng có
+style `doc_truyen`. User chọn phương án C (tải riêng) sau khi biết rõ đánh đổi.
+
+**Ba con số đã đo thật, không phải đọc tài liệu:**
+
+| | |
+|---|---|
+| Model tải runtime | **244 MB** (158 MB VieNeu int8 + 86 MB codec MOSS) |
+| Thêm vào installer | **~1.2 MB** (SDK Python thuần; onnxruntime đã có sẵn cho Piper) |
+| RTF | **~0.30** — ngang Piper (0.24), không phải "chậm gấp nhiều lần" như lo ban đầu |
+
+**Cạm bẫy dependency — đọc trước khi dựng lại venv.** `pip install vieneu` trần
+kéo về **41 package**: gradio 29 MB (web UI không dùng), pandas, pillow… và tệ
+nhất là **nâng fastapi 0.115.6 → 0.141.1**, tức đổi web framework của chính
+sidecar này. Phải cài `--no-deps` và khai tay danh sách trong `requirements.txt`.
+Đã kiểm: `vieneu.v3turbo` không import gradio/torch ở top-level, chúng chỉ nằm
+trong `apps/` (demo Gradio). Có test khoá lại ở `test_build.py`.
+
+**Thiếu `tqdm` thì `import vieneu.v3turbo` chết** — nó là dependency của
+`huggingface_hub`, mà `--no-deps` không kéo theo. Gặp thật lúc dựng.
+
+**Kiến trúc: 14 giọng dùng CHUNG một bộ model.** Khác hẳn Piper (mỗi giọng một
+file 63 MB). Catalog có `modelId` + `presetVoice`; giọng chung không mang `files`.
+Hệ quả phải nhớ:
+- `is_installed` **ném** nếu gọi thẳng với giọng chung (files rỗng → luôn `True`
+  → báo "đã cài" cho thứ chưa tải gì). Phải qua `resolve_model_entry` trước.
+- `installed_size` trả **0** cho giọng chung, nếu không màn Dung lượng báo gấp 14 lần.
+- Event tiến độ tải báo dưới `voice_id` **user đã bấm**, không phải id bộ model —
+  UI lọc theo id nó gửi đi.
+
+**VieNeu luôn `timing_source = 'estimate'`**, và đó là sự thật về engine chứ
+không phải phần chưa làm (codec 12,5 token/s — mục 4.79). Đây chính là lý do
+P6.1 phải làm trước: `estimate` giờ lệch TB 60 ms nên highlight vẫn dùng được.
+
+**Đã ép offline.** SDK gọi `huggingface_hub` kiểm bản mới ở mỗi lần nạp dù model
+nằm sẵn trên đĩa — trên máy không mạng là vài chục giây chờ timeout. Engine đặt
+`HF_HUB_OFFLINE=1` **trước khi import** (biến này đọc lúc import module, không
+phải lúc gọi hàm). Đã xác nhận: bản `.exe` không còn dòng cảnh báo HF nào.
+
+**Đã chạy thật bản đóng gói**, không chỉ pytest: build PyInstaller → 217.8 MB,
+khởi động `.exe`, gọi `/preview` cho **cả ba đường** — Piper, giọng VieNeu mang
+model, và giọng VieNeu dùng model chung + đổi style — đều trả Opus 48 kHz thật.
+
+### 4.82 `ui-check` có một phép kiểm **flaky** do Vite rebuild chen ngang
+
+Chạy `pnpm ui-check` ba lần trên cùng một commit: hai lần đỏ ở *"canvas có pixel
+khác trắng"* (0 pixel), lần thứ ba xanh (103526 pixel). Không sửa một dòng nào
+giữa các lần.
+
+**Nguyên nhân:** vite dev server rebuild renderer (~5–6 giây) **trong lúc** script
+đang đo màn đọc. Rebuild xong thì trang reload, canvas PDF về trắng, và phép kiểm
+đọc đúng khoảnh khắc đó. Log lộ ra: `built in 5631ms` nằm **giữa** các dòng
+kiểm, kèm `(bỏ qua ảnh …: chụp ảnh quá 15s)`.
+
+**Cách phân biệt với lỗi thật** (đừng bỏ qua nhầm một lỗi 4.19 thật):
+- Lỗi thật: canvas **sai kích thước** hoặc 0 pixel ở **mọi** lần chạy.
+- Flaky: kích thước vẫn đúng `864×1296`, chỉ `nonWhite = 0`, và log có dòng
+  `built in …ms` xen giữa phần kiểm.
+
+Chạy lại là cách xác nhận rẻ nhất. Nợ kỹ thuật đã ghi ở mục 8: nên cho script
+chờ vite ổn định trước khi đo, thay vì để người chạy tự đoán.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -3876,6 +3960,9 @@ scripts/
 
 | Việc | Mức | Ghi chú |
 |---|---|---|
+| `ui-check` flaky ở phép kiểm canvas PDF | TB | Vite rebuild chen ngang lúc đo → canvas về trắng. 2/3 lần chạy đỏ oan trên cùng một commit. Cách phân biệt với lỗi thật + cách sửa ở mục **4.82**. Nên cho script chờ vite ổn định trước khi đo |
+| Chưa nghe thử 14 giọng VieNeu bằng tai | TB | Engine đã chạy thật qua bản `.exe` (mục 4.81) nhưng **chất lượng giọng** thì CDP không kiểm hộ được. User phải tự tải 244 MB rồi nghe. Nếu không giọng nào hợp thì cả P6.2 chỉ còn giá trị hạ tầng |
+| Model VieNeu chưa tải thử bằng chính `download.py` | TB | Lúc dựng, 13 file được chép tay từ cache HF vào đúng thư mục `voice_dir` để kiểm engine. Đường tải thật (sha256 + tiến độ + huỷ) đã có unit test và dùng chung code với voice Piper, nhưng **chưa ai bấm nút Tải cho voice VieNeu** — sha256/URL đã đối chiếu thật với HF (200 + đúng `content-length`) |
 | `vitest` v2 kéo Vite 5 trong khi project dùng Vite 6 | Thấp | Đã né bằng cách bỏ `vitest.config.ts` khỏi typecheck của renderer. Nâng vitest lên v3 sẽ sạch hơn |
 | Chưa có icon ứng dụng | Thấp | electron-builder đang dùng icon Electron mặc định |
 | CI job `build` chưa chạy tới nơi | TB | Job `check` đã chạy và lộ 2 lỗi (xem mục 4.14). Job `build` (đóng gói + smoke test) vẫn chưa xác nhận lần nào vì `check` fail trước |

@@ -491,3 +491,57 @@ describe('nghe thử giọng', () => {
     expect(useVoiceStore.getState().playing).toBeNull();
   });
 });
+
+describe('phong cách đọc (P6.2)', () => {
+  it('không hiện ô phong cách khi chỉ có giọng Piper', async () => {
+    // Với người chỉ dùng Piper thì đó là ô bấm vào không đổi gì — đúng loại
+    // "cài đặt chết" mà PROGRESS 4.71 cảnh báo.
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+
+    expect(screen.queryByTestId('voice-style-picker')).not.toBeInTheDocument();
+  });
+
+  it('không hiện ô phong cách khi giọng VieNeu CHƯA cài', async () => {
+    await renderManager({
+      voices: [fakeVoice({ id: 'vi_VN-vieneu-v3turbo', engine: 'vieneu', installed: false })],
+    });
+
+    expect(screen.queryByTestId('voice-style-picker')).not.toBeInTheDocument();
+  });
+
+  it('hiện ô phong cách khi đã cài giọng VieNeu', async () => {
+    await renderManager({
+      voices: [fakeVoice({ id: 'vi_VN-vieneu-v3turbo', engine: 'vieneu', installed: true })],
+    });
+
+    expect(screen.getByTestId('voice-style-picker')).toBeInTheDocument();
+  });
+
+  it('đổi phong cách ghi xuống settings', async () => {
+    // Không ghi thì lần generate sau vẫn dùng phong cách cũ, mà UI đã hiện cái mới.
+    await renderManager({
+      voices: [fakeVoice({ id: 'vi_VN-vieneu-v3turbo', engine: 'vieneu', installed: true })],
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('voice-style-tin_tuc'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(fake.api.settings.update).toHaveBeenCalledWith({ voiceStyle: 'tin_tuc' });
+  });
+
+  it('giọng VieNeu hiện ghi chú model dùng chung', async () => {
+    await renderManager({
+      voices: [fakeVoice({ id: 'vi_VN-vieneu-v3turbo', engine: 'vieneu', installed: true })],
+    });
+
+    expect(screen.getByTestId('voice-engine-note')).toHaveTextContent('dùng chung');
+  });
+
+  it('giọng Piper không có ghi chú engine', async () => {
+    await renderManager({ voices: [fakeVoice({ installed: true })] });
+
+    expect(screen.queryByTestId('voice-engine-note')).not.toBeInTheDocument();
+  });
+});

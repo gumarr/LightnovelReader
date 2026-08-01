@@ -606,7 +606,29 @@ lối `apps/main/probe/`) chạy trên voice thật đã cài:
 vẫn kém nghĩa là đổi giọng sẽ làm hỏng tính năng highlight — lúc đó cân nhắc giữ
 Piper, hoặc chấp nhận rằng giọng mới đi kèm highlight kém hơn hẳn.
 
-### P6.2 — Engine thứ hai (VieNeu-TTS)
+### P6.2 — Engine thứ hai (VieNeu-TTS) ✅ **ĐÃ XONG**
+
+> **Một giả định lớn của kế hoạch này hoá ra SAI.** Kế hoạch viết như thể chọn
+> VieNeu là có được giọng user muốn (Ngọc Huyền). Tra tận nơi thì **không**:
+>
+> - Ngọc Huyền là **LoRA adapter** riêng, không nằm trong VieNeu.
+> - README VieNeu: *"voice cloning currently require the PyTorch (GPU) engine.
+>   **Built-in voices work everywhere**"* → PyTorch là **điều kiện chạy**, không
+>   phải chuyện dung lượng. Tách model ra khỏi installer cũng không gỡ được.
+> - Không có script export LoRA → ONNX.
+>
+> Cái giao được là **14 giọng preset** (4 giọng style `doc_truyen`) — cùng dòng
+> model với Ngọc Huyền. User đã chọn phương án tải riêng sau khi biết đánh đổi.
+>
+> **Số đo thật:** model runtime **244 MB**, installer chỉ **+1.2 MB**, RTF
+> **~0.30** (ngang Piper 0.24 — không hề "chậm gấp mấy lần").
+>
+> **Khác kế hoạch: 14 giọng dùng CHUNG một bộ model** (Piper mỗi giọng một file).
+> Catalog phải có `modelId` + `presetVoice`, và `is_installed`/`installed_size`
+> phải quy về voice mang model. Chi tiết ở PROGRESS mục **4.81**.
+>
+> Đã build PyInstaller và chạy thật `.exe`: cả ba đường (Piper, VieNeu mang
+> model, VieNeu dùng model chung + đổi style) đều trả Opus 48 kHz.
 
 **P6.1 đã có số và đạt DoD → được phép đi tiếp.** Mất alignment thật khi đổi
 sang VieNeu thì highlight rơi về `estimate`, mà `estimate` giờ lệch trung bình

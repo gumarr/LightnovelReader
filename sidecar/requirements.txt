@@ -32,3 +32,34 @@ soundfile==0.14.0
 # kém đi mà không có gì báo. Đó là lý do `test_engine.py` khoá lại việc onnx
 # phải import được.
 onnx==1.22.0
+
+# --- P6.2: engine thứ hai (VieNeu-TTS v3 Turbo) ---------------------------
+#
+# Giọng tự nhiên hơn Piper, chạy **cùng onnxruntime đã có** nên KHÔNG kéo
+# PyTorch. Model 244 MB tải runtime như voice Piper, không vào installer.
+#
+# BẮT BUỘC cài với `--no-deps` cho `vieneu`, hoặc giữ đúng danh sách dưới đây:
+# khai `vieneu` trần sẽ kéo về 41 package trong đó có **gradio** (29 MB, web UI
+# không dùng tới), pandas, pillow — và tệ nhất là **nâng fastapi 0.115.6 lên
+# 0.141.1**, tức đổi phiên bản web framework của chính sidecar này mà không ai
+# yêu cầu. Đã kiểm: đường ONNX (`vieneu.v3turbo`) không import gradio/torch ở
+# top-level, chúng chỉ nằm trong `apps/` (demo Gradio) nên bỏ đi vẫn chạy.
+vieneu==3.2.3
+# Phiên âm tiếng Việt cho VieNeu. Wheel **native** (`cp310-abi3-win_amd64`) —
+# đúng loại PyInstaller hay bỏ sót, xem cảnh báo đầu file.
+sea-g2p==0.7.20
+# Resample chất lượng cao, VieNeu dùng nội bộ.
+soxr==1.1.0
+# Tokenizer text của VieNeu (wheel native của HuggingFace).
+tokenizers==0.23.1
+# `vieneu` import `huggingface_hub` ở top-level của `base.py` nên bắt buộc phải
+# có, DÙ ta không dùng nó để tải (model đi qua `voices/download.py` để user thấy
+# tiến độ và Storage manager đếm được).
+huggingface_hub==1.26.0
+# Ba thứ dưới là dependency của `huggingface_hub`, phải khai tường minh vì
+# `vieneu` cài bằng `--no-deps`. Thiếu `tqdm` thì `import vieneu.v3turbo` chết
+# với `ModuleNotFoundError` — đã gặp thật lúc dựng P6.2.
+tqdm==4.70.0
+filelock==3.32.2
+fsspec==2026.7.0
+PyYAML==6.0.3

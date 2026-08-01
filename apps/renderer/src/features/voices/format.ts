@@ -1,4 +1,4 @@
-import type { SidecarState, VoiceQuality } from '@ln/shared';
+import type { SidecarState, TtsEngine, VoiceQuality } from '@ln/shared';
 
 /**
  * Hàm thuần đổi dữ liệu voice thành chữ hiện cho user. Tách khỏi component để
@@ -40,6 +40,46 @@ export const langLabel = (lang: string): string => {
   if (lang === 'vi') return 'Tiếng Việt';
   if (lang === 'en') return 'Tiếng Anh';
   return lang;
+};
+
+/** Tên engine hiện cho user. Không dùng chữ "engine" — user không cần biết. */
+export const engineLabel = (engine: TtsEngine): string =>
+  engine === 'vieneu' ? 'Giọng tự nhiên' : 'Giọng nhanh';
+
+/**
+ * Dòng mô tả kỹ thuật của một voice.
+ *
+ * **`quality` và `sampleRate` chỉ có nghĩa với Piper.** `VoiceQuality`
+ * (`x_low`…`high`) lấy từ tên file model Piper; VieNeu không có thang đó, hiện
+ * "Chất lượng Cao" cho nó là bịa ra một thông tin không tồn tại. Nên mỗi engine
+ * mô tả theo cách riêng của nó.
+ */
+export const voiceSpecLabel = (voice: {
+  engine: TtsEngine;
+  quality: VoiceQuality;
+  sampleRate: number;
+  totalBytes: number;
+}): string => {
+  if (voice.engine === 'vieneu') {
+    return `${engineLabel(voice.engine)} · ${formatBytes(voice.totalBytes)} · ${String(
+      voice.sampleRate,
+    )} Hz`;
+  }
+  return `Chất lượng ${qualityLabel(voice.quality)} · ${formatBytes(voice.totalBytes)} · ${String(
+    voice.sampleRate,
+  )} Hz`;
+};
+
+/**
+ * Ghi chú riêng của engine, hiện dưới dòng mô tả.
+ *
+ * Với VieNeu phải nói **trước** hai điều user sẽ gặp, thay vì để họ tự phát hiện:
+ * một bộ model dùng chung cho mọi giọng (nên chỉ tải một lần), và highlight
+ * theo từ kém chính xác hơn Piper (engine không trả mốc thời gian thật).
+ */
+export const engineNote = (engine: TtsEngine): string | undefined => {
+  if (engine !== 'vieneu') return undefined;
+  return 'Giọng tự nhiên hơn, đọc chậm hơn một chút. Mọi giọng loại này dùng chung một bộ model — tải một lần là dùng được hết. Highlight theo từ kém chính xác hơn giọng nhanh.';
 };
 
 /**

@@ -4,6 +4,12 @@ import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import Store from 'electron-store';
+// Import tĩnh chứ không `require()` trong hàm: `vite.config.ts` đặt
+// `noExternal: true` để **bundle** mọi dependency vào `index.cjs`, vì bản đóng
+// gói asar không có `node_modules` đầy đủ. Vite chỉ bundle được thứ nó phân
+// tích tĩnh — một `require('electron-updater')` trần sẽ lọt nguyên vào bundle
+// rồi crash "Cannot find module" ở bản cài, trong khi bản dev chạy tốt.
+import { autoUpdater } from 'electron-updater';
 import type { AppSettings } from '@ln/shared';
 import { closeDatabase, initDatabase } from './db/connection.js';
 import { createFileLogger } from './services/logger.js';
@@ -39,6 +45,8 @@ import { createQueueHandlers, toQueueStatusInfo } from './ipc/handlers/queue.js'
 import { createStorageHandlers } from './ipc/handlers/storage.js';
 import { createStorageService } from './services/storage.js';
 import { createWindowHandlers, readWindowState } from './ipc/handlers/window.js';
+import { createUpdateHandlers } from './ipc/handlers/update.js';
+import { createUpdateService } from './services/update-service.js';
 import { createMainWindow, resolvePreloadPath, resolveRendererFile } from './window.js';
 import { createNodeParserRegistry, nodeDocxConverter } from '@ln/parsers/node';
 
@@ -286,6 +294,25 @@ const start = (): void => {
     now: () => Date.now(),
   });
 
+  // Auto-update (P5.5b).
+  //
+  // `app-update.yml` nằm ở `resources/`, chỉ bản NSIS đã cài mới có. Bản
+  // portable không có → `updateBlockReason` trả `'portable'`, không phải lỗi.
+  const updateConfigPath = join(process.resourcesPath, 'app-update.yml');
+  const updateService = createUpdateService({
+    updater: autoUpdater,
+    currentVersion: app.getVersion(),
+    support: {
+      isPackaged: app.isPackaged,
+      hasUpdateConfig: existsSync(updateConfigPath),
+    },
+    logger,
+    onStatusChanged: (status) => {
+      mainWindow?.webContents.send('update:statusChanged', status);
+    },
+  });
+  const updateHandlers = createUpdateHandlers({ service: updateService });
+
   registerHandler('app:getInfo', getAppInfo, logger);
   registerHandler('settings:getAll', settingsHandlers.getAll, logger);
   registerHandler('settings:update', settingsHandlers.update, logger);
@@ -337,6 +364,10 @@ const start = (): void => {
   registerHandler('storage:deleteBookAudio', storageHandlers.deleteBookAudio, logger);
   registerHandler('storage:deleteReadAudio', storageHandlers.deleteReadAudio, logger);
   registerHandler('storage:deleteOrphans', storageHandlers.deleteOrphans, logger);
+  registerHandler('update:getStatus', updateHandlers.getStatus, logger);
+  registerHandler('update:check', updateHandlers.check, logger);
+  registerHandler('update:download', updateHandlers.download, logger);
+  registerHandler('update:quitAndInstall', updateHandlers.quitAndInstall, logger);
   registerHandler('window:minimize', windowHandlers.minimize, logger);
   registerHandler('window:toggleMaximize', windowHandlers.toggleMaximize, logger);
   registerHandler('window:close', windowHandlers.close, logger);
@@ -387,6 +418,19 @@ const start = (): void => {
   // vài giây nạp Python, chờ nó xong mới vẽ cửa sổ thì app trông như bị treo.
   // Trạng thái đẩy xuống renderer qua `sidecar:statusChanged` khi sẵn sàng.
   void supervisor.start();
+
+  // Kiểm bản mới ở nền. `silent: true` vì không có mạng là chuyện thường với
+  // app offline — lượt này user không yêu cầu nên lỗi của nó không đáng ghi
+  // mức error mỗi lần khởi động.
+  //
+  // Chờ 5s thay vì gọi ngay: lúc khởi động main còn đang mở DB, spawn sidecar
+  // và dựng cửa sổ. Thêm một request mạng vào đúng lúc đó chỉ làm khung hình
+  // đầu tiên tới chậm hơn, mà kết quả thì không ai cần trong 5 giây đầu.
+  if (settings.getAll().autoCheckUpdates) {
+    setTimeout(() => {
+      void updateService.check({ silent: true });
+    }, 5_000);
+  }
 
   logger.info('App khởi động xong');
 };

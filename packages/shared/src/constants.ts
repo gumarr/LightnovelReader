@@ -72,6 +72,9 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'audioDir'> = {
   viewerPaneRatio: 2 / 3,
   subtitleFontSize: 18,
   playbackRate: 1,
+  // Bật mặc định vì bản cũ không có cách nào biết bản mới tồn tại. Chỉ **kiểm
+  // tra** — tải và cài vẫn do user bấm (xem `UpdateState`).
+  autoCheckUpdates: true,
 };
 
 export const VIEWER_PANE_RATIO_MIN = 0.2;

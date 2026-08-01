@@ -129,3 +129,16 @@ PNG nối đuôi. PNG thì chỉ là vài chunk bọc quanh `zlib.deflate`, có 
 - **Sóng âm tự rụng ở cỡ < 32 px**: vạch chỉ còn ~1 px, vẽ ra thành vệt xám làm
   bẩn icon. Cỡ nhỏ ưu tiên đọc được khối lớn (sách mở).
 - Sinh lại cho ra **đúng từng byte** — commit file nhị phân vẫn tái lập được.
+
+## Bẫy khi tự viết script chạy app dev
+
+Script nào tự `spawn` app dev (thay vì gọi `ui-check.mjs`) đều phải làm hai việc
+sau, nếu không sẽ mất thời gian đi tìm lỗi ở nhầm chỗ:
+
+- **Tráo ABI trước** (`node scripts/sqlite-abi.mjs electron`). `pnpm test` để lại
+  `better-sqlite3` ở ABI Node; Electron cần ABI khác. Quên bước này thì app chết
+  ở `initDatabase`, `/json/version` **vẫn trả lời** mà `/json/list` rỗng — từ
+  ngoài trông hệt như "renderer nạp chậm". Đã mất một lượt chẩn đoán vì việc này
+  ở P5.5b.
+- **Đọc `crash.log` khi hết giờ chờ**, như `findPageTarget()` đang làm. Lý do
+  thật luôn nằm ở `%APPDATA%/LN Reader/logs/crash.log`, không nằm ở CDP.

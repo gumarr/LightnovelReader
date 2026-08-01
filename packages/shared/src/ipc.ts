@@ -14,6 +14,7 @@ import type {
   SidecarStatus,
   ThemeMode,
   TimingSource,
+  UpdateStatus,
   VoiceDownloadProgress,
   VoiceQuality,
   WordTiming,
@@ -509,6 +510,25 @@ export type IpcContract = {
   /** Dọn file `.ogg`/`.json` của sách không còn trong thư viện */
   'storage:deleteOrphans': { in: void; out: Result<DeleteAudioResultInfo> };
 
+  /**
+   * Auto-update (P5.5b). Renderer **không** tự tải hay tự cài được: mọi bước
+   * đều là lệnh gửi xuống main, còn tiến độ đi ngược lên bằng event.
+   */
+  'update:getStatus': { in: void; out: Result<UpdateStatus> };
+  /** Hỏi GitHub xem có bản mới. Đây là lượt do **user bấm**, không phải lượt nền */
+  'update:check': { in: void; out: Result<UpdateStatus> };
+  /**
+   * Bắt đầu tải. Trả về **ngay** khi đã nhận lệnh chứ không chờ tải xong —
+   * cùng lý do với `voices:download`: bản cài ~150 MB, giữ `invoke` treo suốt
+   * lượt tải thì renderer reload một cái là mất đường theo dõi.
+   */
+  'update:download': { in: void; out: Result<UpdateStatus> };
+  /**
+   * Thoát app và cài. `false` = chưa tải xong nên không làm gì — renderer phải
+   * xử lý nhánh đó chứ không giả định app sắp thoát.
+   */
+  'update:quitAndInstall': { in: void; out: Result<boolean> };
+
   'window:minimize': { in: void; out: Result<void> };
   'window:toggleMaximize': { in: void; out: Result<WindowState> };
   'window:close': { in: void; out: Result<void> };
@@ -549,6 +569,14 @@ export type IpcEventContract = {
    * danh sách segment.
    */
   'queue:segmentUpdated': Segment;
+  /**
+   * Tiến trình cập nhật đổi trạng thái (P5.5b).
+   *
+   * Đẩy chủ động vì tải bản cài ~150 MB sinh ra hàng trăm mốc tiến độ, và vì
+   * lượt kiểm tự động lúc khởi động xảy ra **không** do renderer yêu cầu — hỏi
+   * vòng thì UI không bao giờ thấy kết quả lượt đó.
+   */
+  'update:statusChanged': UpdateStatus;
 };
 
 export type IpcEventName = keyof IpcEventContract;
@@ -610,6 +638,10 @@ export const IPC_CHANNELS = [
   'storage:deleteBookAudio',
   'storage:deleteReadAudio',
   'storage:deleteOrphans',
+  'update:getStatus',
+  'update:check',
+  'update:download',
+  'update:quitAndInstall',
   'window:minimize',
   'window:toggleMaximize',
   'window:close',
@@ -623,6 +655,7 @@ export const IPC_EVENTS = [
   'voices:downloadProgress',
   'queue:statusChanged',
   'queue:segmentUpdated',
+  'update:statusChanged',
 ] as const satisfies readonly IpcEventName[];
 
 /**

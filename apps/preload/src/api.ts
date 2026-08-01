@@ -43,6 +43,7 @@ import {
   type PronunciationOverride,
   type SavePronunciationRequest,
   type UpdateBookmarkNoteRequest,
+  type UpdateStatus,
   type VoicePreview,
   type WindowState,
 } from '@ln/shared';
@@ -230,6 +231,18 @@ export const api = {
       invoke('storage:deleteReadAudio', bookId),
     deleteOrphans: (): Promise<Result<DeleteAudioResultInfo>> =>
       invoke('storage:deleteOrphans', undefined),
+  },
+
+  update: {
+    getStatus: (): Promise<Result<UpdateStatus>> => invoke('update:getStatus', undefined),
+    /** Lượt kiểm do **user bấm**. Lượt nền lúc khởi động do main tự chạy */
+    check: (): Promise<Result<UpdateStatus>> => invoke('update:check', undefined),
+    /** Trả về ngay khi nhận lệnh — tiến độ đi qua `onStatusChanged` */
+    download: (): Promise<Result<UpdateStatus>> => invoke('update:download', undefined),
+    /** `false` = chưa tải xong nên không làm gì. Phải xử lý nhánh này */
+    quitAndInstall: (): Promise<Result<boolean>> => invoke('update:quitAndInstall', undefined),
+    onStatusChanged: (listener: (status: UpdateStatus) => void): (() => void) =>
+      subscribe('update:statusChanged', listener),
   },
 
   window: {

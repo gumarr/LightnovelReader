@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-07-31 · commit `a796300`
+> **Cập nhật lần cuối:** 2026-08-01 · commit `_______`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -1134,12 +1134,58 @@ thước (2 MB), giữ 5 file, và **đã nối thật** vào `logsDir(userData)
 tin "chưa có" mà không tra). Chỉ thiếu test cho **giới hạn 5 file** (phần chặn
 log phình vô hạn) và cho việc **lỗi fs khác ENOENT phải nổi lên**; đã bổ sung.
 
+### Phase 5 — P5.5b Auto-update: `electron-updater` + IPC contract ✅
+
+| Việc | Kết quả |
+|---|---|
+| `electron-updater` 6.8.9 | Dependency mới của `@ln/main` — **đã hỏi user trước khi thêm** |
+| `services/update-policy.ts` | Phần **thuần**: chặn dev/portable, so version, kẹp phần trăm. 19 test |
+| `services/update-service.ts` | Máy trạng thái + 6 sự kiện, cùng khuôn `sidecar-supervisor.ts`. 20 test |
+| `ipc/handlers/update.ts` | 4 channel, mỏng có chủ ý. 6 test |
+| `packages/shared` | `UpdateStatus`/`UpdateState`, 4 channel + 1 event, `autoCheckUpdates` |
+| `apps/preload/src/api.ts` | `window.api.update.*` — 4 hàm + `onStatusChanged` |
+
+**`autoDownload` và `autoInstallOnAppQuit` đều TẮT.** Mặc định của
+`electron-updater` là tải ngay khi thấy bản mới rồi cài lúc thoát. Bản cài này
+~150 MB — tự tải nền cho một app đọc sách **offline** là ngốn băng thông của user
+mà không hỏi, và thay app sau lưng họ. Chỉ **kiểm tra** là tự động; tải và cài
+đều do user bấm. Có test khoá riêng cả hai cờ này.
+
+**Chặn tụt phiên bản — `shouldOfferUpdate`.** Không tin thẳng sự kiện
+`update-available`: nó bắn theo `latest.yml`, mà file đó là thứ **người** upload.
+Publish nhầm một release cũ đè lên (`latest.yml` của 0.1.0 ghi lên chỗ của 0.2.0)
+sẽ đẩy **toàn bộ** user đang ở bản mới lùi về bản cũ, và họ không có cách nào
+quay lại ngoài tải tay. Một phép so ở main chặn hẳn ca đó.
+
+**`unsupported` là trạng thái riêng, không phải `error`.** Bản portable và bản
+dev không cài đè được — file gốc user tải về nằm chỗ khác hẳn, ghi đè thư mục tạm
+không đổi được gì. Gộp vào `error` thì UI hiện chữ đỏ cho một tình huống hoàn
+toàn bình thường mà user không làm gì được để "sửa". Phân biệt portable với NSIS
+bằng **sự có mặt của `app-update.yml`** trong `resources/`, không phải
+`app.isPackaged` — cả hai bản đều `isPackaged === true`.
+
+**Bẫy bundle: `require()` trần lọt qua vite mà không ai báo.** Bản đầu tôi
+`require('electron-updater')` trong hàm (định nạp muộn). Build xanh, nhưng
+`grep` bundle cho thấy nó **lọt nguyên vào `index.cjs` dưới dạng `require` trần**
+— vite chỉ bundle được thứ nó phân tích **tĩnh**, mà `vite.config.ts` đặt
+`noExternal: true` chính vì asar **không có `node_modules` đầy đủ`**. Kiểm asar
+của bản build trước: `electron-updater` không có trong đó → bản cài sẽ crash
+"Cannot find module" trong khi bản dev chạy tốt. Đổi sang `import` tĩnh: 815 →
+1043 module, bundle +570 KB, `NsisUpdater` xuất hiện 15 chỗ trong bundle.
+`autoUpdater` là **lazy getter** nên instance vẫn chỉ dựng lúc `start()` chạy,
+sau `app.setName()` — đã đọc mã thư viện và kiểm lại trong bundle đã build.
+
+✅ **Đã chạy trên app thật** (CDP, không phải unit test): `window.api.update` đủ 5
+hàm; `getStatus()` trả `state: 'unsupported'` với đúng câu cho bản dev;
+`quitAndInstall()` trả `false` chứ không ném. Chứng minh `electron-updater` nạp
+được trong Electron thật và cả chuỗi main → preload → renderer thông suốt.
+
 ### Số liệu hiện tại
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **2138 passed** (+7 ở P5.5a — resolver icon 5, log rotate 2) |
-| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.5a — phần này không đụng sidecar) |
+| Unit test TypeScript | **2184 passed** (+46 ở P5.5b — policy 19, service 20, handler 6, schema 1) |
+| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.5b — phần này không đụng sidecar) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
 | **Kiểm UI thật (`pnpm ui-check`)** | **73 phép kiểm** — lần chạy gần nhất **sau P5.4: 71/73 đạt**, và 2 phép đỏ đều là **đỏ giả của chính phép kiểm** (mục 4.74, đã sửa). Toàn bộ P5.3 + P5.4 xanh. P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Icon app | **7 cỡ** (16→256) trong `resources/icon.ico`, sinh từ `pnpm build:icon`, tái lập đúng byte |
@@ -1175,16 +1221,20 @@ commit và dừng phiên):
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
 | P5.5a | Icon app + metadata installer; `latest.yml` sinh ra đúng; log rotate | ✅ Xong |
-| P5.5b | Auto-update: `electron-updater` ở main + IPC contract | ⬅️ **tiếp theo** |
-| P5.5c | UI auto-update (báo có bản mới, tải, cài lại) + README qua SmartScreen | ⏳ Chờ |
+| P5.5b | Auto-update: `electron-updater` ở main + IPC contract | ✅ Xong |
+| P5.5c | UI auto-update (báo có bản mới, tải, cài lại) + README qua SmartScreen | ⬅️ **tiếp theo** |
 
-⚠️ **P5.5a chưa chạy `pnpm build:win` lần nào.** Icon đã kiểm bằng decoder độc
-lập (Pillow đọc đủ 7 cỡ) và bằng mắt ở cỡ thật trên cả hai nền, preflight đã kiểm
-đủ 4 cách hỏng. Nhưng **hai thứ chỉ bản đóng gói thật mới trả lời được**: (1)
-electron-builder có nhúng icon vào `.exe` không, (2) `artifactName` mới có sinh ra
-`latest.yml` **khớp tên file thật** không — chính lỗi 4.75. Cần một lượt
-`pnpm build:win`, mà bước đó lại đòi build lại sidecar trước (preflight đang chặn
-vì `.exe` cũ hơn mã Python 5 ngày).
+✅ **P5.5a đã qua `pnpm build:win` thật (user chạy 2026-07-31).** Cả hai câu treo
+đều có lời đáp: icon **có** nhúng vào `.exe` (thấy trong Explorer), và `latest.yml`
+ghi `LN-Reader-0.1.0-x64.exe` **khớp đúng** tên file thật, size 149993965 khớp
+từng byte — **lỗi 4.75 đã đóng, xác nhận trên bản đóng gói thật.**
+
+⚠️ **`release/` còn bộ file cũ, phải xoá trước khi publish.** electron-builder
+**không dọn thư mục output**, nó chỉ ghi đè file trùng tên. P5.5a đổi
+`artifactName` nên bộ mới (`LN-Reader-…`) không trùng tên bộ cũ (`LN Reader-…`,
+có dấu cách) → cả hai cùng nằm đó. `latest.yml` chỉ trỏ bộ mới; upload nhầm file
+có dấu cách là updater 404 trở lại. Xoá tay `release/` trước khi build bản phát
+hành.
 
 ✅ **`pnpm ui-check` đã chạy sau P5.4 — 71/73 đạt.** Toàn bộ P5.3 **và P5.4**
 xanh: mỗi tab panel cao 664 px thật, hai thanh tiến độ ra màu thật,
@@ -3199,6 +3249,65 @@ buộc mọi kênh phải có mặt trong `api.ts`. Nó bắt được kênh thi
 không bắt được hàm bọc mà không component nào gọi** — đó chính là chỗ
 `listPending` nằm im ba phase.
 
+### 4.76 `require()` trần lọt qua vite: bản dev chạy, bản đóng gói crash
+
+P5.5b thêm `electron-updater`. Bản đầu tôi cố ý gọi `require('electron-updater')`
+**trong hàm** để nạp muộn. Build **xanh**, typecheck xanh, test xanh.
+
+Nhưng `vite.config.ts` của `apps/main` đặt `noExternal: true` để **bundle mọi
+dependency vào `index.cjs`** — có ghi rõ lý do ngay tại đó: *"bản đóng gói asar
+không có node_modules đầy đủ → app crash với Cannot find module"*. Mà vite chỉ
+bundle được thứ nó phân tích **tĩnh**. Một `require()` trần đi thẳng vào bundle
+nguyên dạng:
+
+```bash
+grep -c 'require("electron-updater")' apps/main/dist/index.cjs   # 1  ← lọt
+grep -c "NsisUpdater" apps/main/dist/index.cjs                   # 0  ← không bundle
+```
+
+Kiểm tiếp asar của bản build trước cho câu trả lời dứt điểm: nó **có**
+`node_modules` (307 mục — electron-builder tự thêm dependency của `external`),
+nhưng **không có `electron-updater`**, vì package này không nằm trong `external`
+nên không được coi là dependency runtime. Bản cài sẽ crash ngay lúc khởi động,
+trong khi `pnpm dev` chạy hoàn hảo.
+
+Đổi sang `import` tĩnh: 815 → **1043 module**, bundle +570 KB, `NsisUpdater` xuất
+hiện 15 chỗ, không còn `require` trần nào.
+
+**Lý do "nạp muộn" ban đầu cũng sai.** Tôi sợ `electron-updater` đọc
+`app.getVersion()` lúc nạp module, trước `app.setName()` ở đầu `index.ts`. Đọc mã
+thư viện thì `autoUpdater` là **lazy getter** (`Object.defineProperty` + `get`),
+instance chỉ dựng khi truy cập lần đầu — và bundle đã build cho thấy vite giữ
+nguyên tính chất đó: `mainExports.autoUpdater` được đọc **tại chỗ dùng** trong
+`start()`, không phải lúc nạp.
+
+**Bài học:** với package mới ở `apps/main`, `pnpm build` xanh **không** chứng minh
+gì. Phải grep bundle:
+
+```bash
+grep -o 'require("[^"]*")' apps/main/dist/index.cjs | sort -u
+```
+
+Mọi tên **không phải** builtin Node hoặc `electron`/`better-sqlite3` (hai thứ duy
+nhất trong `external`) đều là một crash chờ sẵn ở bản đóng gói.
+
+### 4.77 Script tự chạy app dev phải tráo ABI trước — nếu không sẽ chẩn đoán nhầm
+
+Probe CDP của tôi ở P5.5b treo 60 s rồi báo *"Không thấy target CDP"*. Trông y
+hệt "renderer nạp chậm" hoặc "`electron-updater` làm chết app" — tức là đổ tội
+cho đúng thứ vừa thêm.
+
+Lý do thật nằm ở `crash.log`: `pnpm test` chạy `abi:node` nên `better_sqlite3.node`
+đang ở **NODE_MODULE_VERSION 127**, còn Electron cần **130**. App chết ở
+`initDatabase`, không liên quan gì tới P5.5b.
+
+Cái khiến nó khó đoán: tiến trình browser **vẫn sống**, `/json/version` vẫn trả
+lời, chỉ `/json/list` rỗng. Từ ngoài không phân biệt được với renderer chậm.
+
+`ui-check.mjs` đã giải bài này từ trước — có `ensureElectronAbi()` **và**
+`printCrashLog()` khi hết giờ chờ. Script mới của tôi bỏ cả hai. Đã ghi lại vào
+`scripts/README.md` để lần sau không mất thêm một lượt.
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -3417,6 +3526,12 @@ apps/main/src/
   services/settings.ts     electron-store, file hỏng → rơi về mặc định từng field
   services/logger.ts       Log file + xoay vòng (2 MB × 5 file)
   services/icon-paths.ts   Tìm icon.ico: repo (dev) vs resources/ (đóng gói)
+  services/update-policy.ts  Phần THUẦN của auto-update: chặn dev/portable, so
+                           version (chặn tụt bản), kẹp phần trăm. Không import
+                           electron nên vitest chạy thẳng
+  services/update-service.ts Máy trạng thái auto-update + 6 sự kiện của
+                           electron-updater. autoDownload/autoInstallOnAppQuit
+                           đều TẮT — tải và cài do user bấm (mục P5.5b)
 
 apps/preload/src/
   api.ts                   window.api.* — không lộ ipcRenderer
@@ -3637,7 +3752,9 @@ scripts/
 | Câu nghe thử cố định, user không tự gõ được | Thấp | `VOICE_PREVIEW_TEXT` chọn sẵn theo `lang`, có tên riêng Nhật + chữ số để phủ đúng hai đường chuẩn hoá dễ sai. Cho user gõ câu riêng sẽ hữu ích để thử tên nhân vật cụ thể trong sách họ đang đọc — nhưng phải giới hạn độ dài và chặn đường dùng nó thay hàng đợi generate |
 | Dấu trang không sửa được từ ngoài trình đọc | Thấp | Chỉ xem/sửa được khi đang mở sách. Màn chi tiết sách không có tab dấu trang — muốn xem lại chỗ đã đánh dấu phải vào đọc trước. Đủ dùng vì dấu trang vốn để **quay lại chỗ đọc**, mà quay lại thì đằng nào cũng phải mở sách |
 | Đánh dấu lại đoạn cũ mà bỏ trống ghi chú thì **xoá** ghi chú | Thấp | `upsert` ghi `note = NULL` khi không truyền. Đúng với đường UI hiện tại (`BookmarkButton` luôn điền sẵn ghi chú cũ vào ô nên user thấy trước khi lưu), nhưng nếu sau này có đường gọi `bookmarks:add` không qua ô đó thì nó xoá ghi chú lặng lẽ. Cả bản thật lẫn bản giả trong test đều hành xử giống nhau — đã khoá lại |
-| **P5.5a chưa qua `pnpm build:win`** | **TB** | Icon đã kiểm bằng decoder độc lập + nhìn mắt ở cỡ thật; preflight chặn đủ 4 cách hỏng. Nhưng **chỉ bản đóng gói thật mới trả lời được** hai câu: icon có nhúng vào `.exe` không, và `artifactName` mới có làm `latest.yml` khớp tên file thật không (lỗi 4.75). Vướng: preflight đang chặn vì sidecar `.exe` cũ hơn mã Python 5 ngày → phải `pnpm build:sidecar` trước, mất vài phút |
+| ~~P5.5a chưa qua `pnpm build:win`~~ | ~~TB~~ | ✅ **Đóng 2026-07-31** — user chạy `build:win` thật. Icon **có** nhúng vào `.exe`; `latest.yml` ghi `LN-Reader-0.1.0-x64.exe` khớp đúng tên file thật, size khớp từng byte. Lỗi 4.75 xác nhận đã sửa trên bản đóng gói |
+| **P5.5b chưa chạy trên bản NSIS đã cài** | **TB** | Đã kiểm CDP trên **bản dev** (ra `unsupported`, đúng) và kiểm bundle có `NsisUpdater` (mục 4.76). Nhưng nhánh **cập nhật được** — `checking` → `available` → tải → cài — chỉ chạy khi có `app-update.yml`, tức **chỉ bản NSIS đã cài** mới đi tới. Kiểm đầy đủ cần: publish một release thật lên GitHub rồi cài bản cũ hơn và bấm cập nhật. Không có đường tắt nào chứng minh được nhánh này |
+| **`release/` không tự dọn giữa các lần build** | **Thấp** | electron-builder chỉ ghi đè file trùng tên. Đổi `artifactName` ở P5.5a nên bộ cũ (`LN Reader-…`, có dấu cách) vẫn nằm cạnh bộ mới. Vô hại khi build thử, **nguy khi publish**: upload nhầm file có dấu cách là updater 404 trở lại (lỗi 4.75). Cách xử: xoá tay `release/` trước khi build bản phát hành. Chưa tự động hoá vì xoá thư mục output tự động là thao tác phá huỷ, cần user quyết |
 | Bảng hàng đợi hiện `segmentId` chứ không hiện text đoạn | Thấp | Job chỉ mang id; tra text cho tới 200 hàng là 200 lượt truy vấn cho một bảng chẩn đoán. Id đủ để đối chiếu với danh sách đoạn, nhưng không đọc được bằng mắt. Sửa được bằng một truy vấn JOIN trả kèm text nếu thấy cần |
 | ~~P5.4 chưa chạy trên app thật~~ | ✅ **đã đóng** | Đã chạy `pnpm ui-check` thật: 10 phép kiểm P5.4 **xanh hết**. Xác nhận trong Chromium: mỗi tab panel cao 664 px thật (không dựng lại 4.43), hai thanh tiến độ ra màu thật (`rgb(129,140,248)` / `rgb(113,113,122)` — không rơi vào bẫy `bg-success` của 4.23), `queue:listPending` trả lời được |
 | ~~Màn Cài đặt chưa chạy trên app thật~~ | ✅ **đã đóng** | Cùng lượt chạy trên: 5 phép kiểm P5.3 xanh. Cỡ chữ preview khớp thanh trượt (18 px vs 18 px), chữ preview không trong suốt, cả dark lẫn light đều ra màu khác nhau thật |

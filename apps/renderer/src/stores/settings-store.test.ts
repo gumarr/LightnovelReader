@@ -107,6 +107,7 @@ describe('applyExternal', () => {
       viewerPaneRatio: 0.5,
       subtitleFontSize: 20,
       playbackRate: 1.5,
+      autoCheckUpdates: false,
     };
 
     useSettingsStore.getState().applyExternal(next);

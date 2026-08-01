@@ -101,6 +101,7 @@ describe('appSettingsSchema', () => {
     viewerPaneRatio: 0.66,
     subtitleFontSize: 18,
     playbackRate: 1,
+    autoCheckUpdates: true,
   };
 
   it('chấp nhận settings hợp lệ', () => {
@@ -138,5 +139,12 @@ describe('appSettingsSchema', () => {
   it('kẹp viewerPaneRatio trong 0.2–0.8', () => {
     expect(appSettingsSchema.safeParse({ ...base, viewerPaneRatio: 0.1 }).success).toBe(false);
     expect(appSettingsSchema.safeParse({ ...base, viewerPaneRatio: 0.9 }).success).toBe(false);
+  });
+
+  it('autoCheckUpdates phải là boolean, không nhận chuỗi', () => {
+    // Cờ này quyết định app có gọi mạng lúc khởi động hay không. `'false'` là
+    // chuỗi truthy — lọt qua thì tắt trong Settings xong app vẫn cứ gọi.
+    expect(appSettingsSchema.safeParse({ ...base, autoCheckUpdates: false }).success).toBe(true);
+    expect(appSettingsSchema.safeParse({ ...base, autoCheckUpdates: 'false' }).success).toBe(false);
   });
 });

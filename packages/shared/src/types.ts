@@ -388,4 +388,51 @@ export type AppSettings = {
   viewerPaneRatio: number;
   subtitleFontSize: number;
   playbackRate: number;
+  /**
+   * Tự kiểm tra bản mới lúc khởi động (P5.5b).
+   *
+   * Bật mặc định, nhưng **chỉ kiểm tra** — tải và cài luôn do user bấm. Tự tải
+   * 150 MB nền cho một app đọc sách offline là chuyện phải hỏi, không phải mặc
+   * định im lặng. Tắt cờ này thì không có request mạng nào đi ra.
+   */
+  autoCheckUpdates: boolean;
+};
+
+/**
+ * Trạng thái tiến trình cập nhật mà UI cần phân biệt (P5.5b).
+ *
+ * `idle`        → chưa kiểm, hoặc vừa kiểm xong và đang ở bản mới nhất.
+ * `checking`    → đang hỏi `latest.yml`.
+ * `available`   → có bản mới, **chưa** tải. Chờ user bấm.
+ * `downloading` → đang tải, xem `percent`.
+ * `downloaded`  → tải xong, đã kiểm sha512. Chờ user bấm cài lại.
+ * `error`       → hỏng, xem `message`. KHÔNG chặn app — đọc sách vẫn chạy.
+ *
+ * `unsupported` là ca riêng, không phải lỗi: bản portable và bản dev không cài
+ * đè được. Gộp vào `error` thì UI hiện chữ đỏ cho một tình huống hoàn toàn bình
+ * thường, mà user portable thì không làm gì được để "sửa".
+ */
+export type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  | 'unsupported';
+
+export type UpdateStatus = {
+  state: UpdateState;
+  /** Phiên bản đang chạy, luôn có — UI hiện cả khi không có bản mới */
+  currentVersion: string;
+  /** Phiên bản trên GitHub. Chỉ có từ `available` trở đi */
+  availableVersion?: string;
+  /** 0–100. Chỉ có khi `state === 'downloading'` */
+  percent?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  /** Lý do hỏng (`error`) hoặc lý do không hỗ trợ (`unsupported`) */
+  message?: string;
+  /** Thời điểm kiểm gần nhất, để UI hiện "đã kiểm lúc ..." */
+  checkedAt?: number;
 };

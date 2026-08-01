@@ -111,6 +111,7 @@ export const appSettingsSchema = z.object({
   viewerPaneRatio: z.number().min(VIEWER_PANE_RATIO_MIN).max(VIEWER_PANE_RATIO_MAX),
   subtitleFontSize: z.number().int().min(SUBTITLE_FONT_SIZE_MIN).max(SUBTITLE_FONT_SIZE_MAX),
   playbackRate: z.number().min(PLAYBACK_RATE_MIN).max(PLAYBACK_RATE_MAX),
+  autoCheckUpdates: z.boolean(),
 });
 
 /** Patch settings — mọi field optional, dùng cho IPC settings:update */

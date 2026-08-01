@@ -21,6 +21,7 @@ const settings: AppSettings = {
   viewerPaneRatio: 0.66,
   subtitleFontSize: 18,
   playbackRate: 1,
+  autoCheckUpdates: true,
 };
 
 beforeEach(() => {
@@ -96,6 +97,10 @@ const invokedChannels = async (): Promise<Set<string>> => {
     () => api.storage.deleteBookAudio('book-1'),
     () => api.storage.deleteReadAudio('book-1'),
     () => api.storage.deleteOrphans(),
+    () => api.update.getStatus(),
+    () => api.update.check(),
+    () => api.update.download(),
+    () => api.update.quitAndInstall(),
     () => api.window.minimize(),
     () => api.window.toggleMaximize(),
     () => api.window.close(),
@@ -140,6 +145,7 @@ describe('bề mặt window.api', () => {
       'settings',
       'sidecar',
       'storage',
+      'update',
       'voices',
       'window',
     ]);
@@ -168,6 +174,7 @@ describe('đăng ký event', () => {
     api.voices.onDownloadProgress(() => {});
     api.queue.onStatusChanged(() => {});
     api.queue.onSegmentUpdated(() => {});
+    api.update.onStatusChanged(() => {});
 
     const registered = ipcRenderer.on.mock.calls.map((c) => c[0]);
     for (const event of registered) {

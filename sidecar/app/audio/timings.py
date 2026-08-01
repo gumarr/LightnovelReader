@@ -5,8 +5,15 @@ Hai đường, cùng một đầu ra (khớp `WordTiming` ở `packages/shared/s
 1. **`word_timings_from_phonemes`** — dùng alignment thật của Piper. Piper 1.6
    trả về số mẫu audio cho **từng phoneme**, gộp lại theo ranh giới từ là ra
    mốc thời gian sát thực tế.
-2. **`estimate_word_timings`** — chia đều theo độ dài ký tự. Kém chính xác hơn
-   rõ rệt, nhưng luôn chạy được.
+2. **`estimate_word_timings`** — chia theo **số âm tiết**. Kém chính xác hơn,
+   nhưng luôn chạy được.
+
+**P6.1 đã đổi (2) từ đếm ký tự sang đếm âm tiết.** Đo bằng
+`sidecar/probe/timing_probe.py` trên voice thật, lấy đường (1) làm chuẩn vàng:
+lệch trung bình **126.6 → 60.4 ms (−52%)**, tỉ lệ từ lệch quá 150 ms
+**27.4% → 8.4%**. Sàn lý thuyết của mô hình chỉ-đếm-âm-tiết là ~55 ms, nên
+đường (2) hiện đã sát giới hạn — muốn tốt hơn nữa phải biết nội dung ngữ âm của
+từng từ, tức là quay lại forced alignment (đã loại, xem plan.md).
 
 **Vì sao vẫn giữ đường (2).** Alignment cần model được vá (`include_alignments`)
 và package `onnx`. Piper **không ném lỗi** khi thiếu — nó chỉ ghi log rồi trả
@@ -21,6 +28,7 @@ mới được nâng lên `'aligned'` — đường (1) chính xác hơn (2) nhi
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from app.text.mapping import NormalizedText
@@ -70,30 +78,127 @@ def split_words(text: str) -> list[WordSpan]:
     ]
 
 
-def estimate_word_timings(text: str, duration_ms: int) -> list[WordTiming]:
-    """Chia thời lượng theo **độ dài ký tự** của từng từ.
+def count_syllables_vi(word: str) -> int:  # noqa: ARG001 — giữ cho khớp `Estimator`
+    """Số âm tiết của một từ tiếng Việt — gần như luôn là 1.
 
-    Lưới an toàn khi không có alignment. Phân bổ theo số ký tự của từ chứ không
-    chia đều số từ: "Chitose" và "à" rõ ràng không mất cùng một khoảng thời gian.
+    Tiếng Việt là ngôn ngữ **đơn âm tiết**: mỗi từ chính tả là một âm tiết, đọc
+    hết gần như cùng một khoảng thời gian bất kể viết ra mấy chữ cái. `nghiêng`
+    (7 ký tự) và `à` (1 ký tự) mất thời gian đọc xấp xỉ nhau.
 
-    Khoảng trắng và dấu câu giữa các từ được tính vào từ **đứng trước** — nhờ
-    vậy các mốc nối liền nhau, không có khe hở làm highlight nhấp nháy.
+    **Gần như luôn trả 1**, và đó là chủ ý chứ không phải hàm chưa làm xong.
+
+    Không xử lý gạch nối ở đây: `_WORD_PATTERN` **không** nhận `-`, nên
+    `"Tô-ki-ô"` đã bị `split_words` tách sẵn thành ba từ trước khi tới đây, mỗi
+    từ một âm tiết — đúng như mong muốn. Thêm nhánh tách gạch nối sẽ là code
+    chết. Dấu nháy thì ngược lại: `_WORD_PATTERN` giữ `"don't"` thành một token,
+    nhưng với tiếng Việt đó vẫn là một âm tiết.
+    """
+    return 1
+
+
+def count_syllables_en(word: str) -> int:
+    """Ước lượng âm tiết tiếng Anh bằng cụm nguyên âm.
+
+    Đếm số **cụm** nguyên âm liền nhau: `international` → in-ter-na-tio-nal.
+    Không chính xác tuyệt đối (`queue` đếm 2, thực tế 1) nhưng bám sát thời gian
+    đọc hơn hẳn đếm ký tự, và không cần từ điển phát âm.
+
+    `e` câm cuối từ bị trừ đi (`make` → 1, không phải 2), trừ khi trừ xong còn 0.
+    """
+    lowered = word.lower()
+    groups = re.findall(r"[aeiouy]+", lowered)
+    count = len(groups)
+    if count > 1 and lowered.endswith("e") and not lowered.endswith(("le", "ee", "ye")):
+        count -= 1
+    return max(count, 1)
+
+
+# Trọng số âm tiết theo ngôn ngữ. Thêm ngôn ngữ = thêm một dòng, khớp cách
+# `app/text/__init__.py` đăng ký normalizer.
+_SYLLABLE_COUNTERS: dict[str, Callable[[str], int]] = {
+    "vi": count_syllables_vi,
+    "en": count_syllables_en,
+}
+
+# Từ **cuối segment** đọc dài hơn các từ giữa. Đây là hiện tượng ngữ âm có thật
+# (phrase-final lengthening): người đọc — và model học theo người — kéo dài âm
+# cuối trước khi ngắt hơi.
+#
+# Trên 10 segment thật, tỉ lệ "thời lượng từ cuối / trung bình từ giữa" nằm
+# trong khoảng 1.08–1.49 (trung bình 1.32) và **không segment nào** đi ngược
+# chiều — hiện tượng có thật, không phải nhiễu.
+#
+# Nhưng giá trị dùng ở đây là **1.22**, không phải 1.32. Hai con số trả lời hai
+# câu hỏi khác nhau: 1.32 là tỉ lệ trung bình quan sát được, còn 1.22 là hệ số
+# **cực tiểu hoá sai số thực tế** khi quét toàn dải trên cùng tập segment. Lấy
+# trung bình quan sát nghe hợp lý hơn nhưng đo ra tệ hơn, vì sai số bị lệch bởi
+# vài segment có từ cuối rất dài. Ta tối ưu cho cái đo được, không cho cái nghe
+# xuôi tai.
+#
+# Bỏ hệ số này thì mọi từ giữa segment bị cấp dư một chút, cộng dồn lại đẩy phần
+# cuối segment sớm dần — đúng kiểu lỗi trôi mà mắt bắt được.
+_FINAL_WORD_STRETCH = 1.22
+
+# **KHÔNG có trọng số nghỉ cho dấu câu.** Đây là kết luận từ phép đo, không
+# phải thiếu sót — đừng "bổ sung" lại.
+#
+# Trực giác nói dấu phẩy nghỉ ~100–200 ms, và bản đầu của P6.1 có cấp thêm
+# thời lượng cho dấu câu. Đo trên alignment thật của Piper (10 segment, 12 dấu
+# phẩy, cùng các dấu kết câu) thì khoảng nghỉ **luôn đúng bằng 0 ms**.
+#
+# Lý do là cấu trúc: `group_phonemes_by_word` gộp khoảng lặng vào từ liền kề,
+# nên thời gian nghỉ **đã nằm trong** thời lượng của chính từ đó và không bao
+# giờ hiện ra thành khe hở. Cấp thêm một lần nữa là tính hai lần — nó ăn bớt
+# thời lượng của các từ còn lại và đẩy toàn bộ phần sau của segment sớm dần.
+#
+# Đo được: bản có trọng số nghỉ làm 11/95 từ tệ đi quá 50 ms so với bản cũ, tệ
+# nhất −242 ms, dù trung bình vẫn đẹp. Bỏ nó đi thì còn 0 từ.
+def estimate_word_timings(
+    text: str, duration_ms: int, lang: str = "vi"
+) -> list[WordTiming]:
+    """Chia thời lượng theo **số âm tiết** của từng từ.
+
+    Lưới an toàn khi không có alignment thật.
+
+    **Vì sao âm tiết chứ không phải ký tự.** Bản trước chia theo độ dài ký tự,
+    đúng về mặt "từ dài đọc lâu hơn" nhưng sai đơn vị với tiếng Việt: `nghiêng`
+    được cấp 13% thời lượng segment trong khi `à` chỉ được 1.9%, dù thực tế hai
+    từ đọc gần bằng nhau (~7%). Trên segment 10 giây đó là lệch ~580 ms cho một
+    từ — mắt thấy rõ. Đo bằng `sidecar/probe/timing_probe.py`.
+
+    **Vì sao vẫn nhận `lang`.** Đếm âm tiết ≈ đếm từ chỉ đúng với ngôn ngữ đơn
+    âm tiết. Tiếng Anh `"international"` (5 âm tiết) và `"a"` (1) thì áp trọng số
+    1-1 sẽ tệ hơn hẳn đếm ký tự, nên mỗi ngôn ngữ có hàm đếm riêng.
+
+    Ba tính chất của bản cũ **giữ nguyên** (đã đúng, đừng "sửa"):
+
+    - Khoảng trắng và dấu câu thuộc về từ **đứng trước** → mốc nối liền nhau,
+      không có khe hở làm highlight nhấp nháy.
+    - Từ cuối chốt đúng `duration_ms` → sai số không tích luỹ.
+    - Trả `[]` khi không có từ nào hoặc `duration_ms <= 0`.
     """
     words = split_words(text)
     if not words or duration_ms <= 0:
         return []
 
-    total_chars = sum(len(w.word) for w in words)
-    if total_chars == 0:
+    counter = _SYLLABLE_COUNTERS.get(lang.lower(), count_syllables_vi)
+
+    # Trọng số mỗi từ = số âm tiết của nó. Không cộng gì cho dấu câu đi kèm —
+    # xem chú thích "KHÔNG có trọng số nghỉ cho dấu câu" phía trên.
+    weights = [float(counter(span.word)) for span in words]
+    # Từ cuối kéo dài hơn — xem `_FINAL_WORD_STRETCH`.
+    weights[-1] *= _FINAL_WORD_STRETCH
+    total_weight = sum(weights)
+    if total_weight <= 0:
         return []
 
     timings: list[WordTiming] = []
     elapsed = 0.0
-    per_char = duration_ms / total_chars
+    per_weight = duration_ms / total_weight
 
     for index, span in enumerate(words):
         start_ms = int(round(elapsed))
-        elapsed += len(span.word) * per_char
+        elapsed += weights[index] * per_weight
         # Từ cuối chốt đúng `duration_ms` để không thừa/thiếu vài ms do làm tròn.
         end_ms = duration_ms if index == len(words) - 1 else int(round(elapsed))
         timings.append(

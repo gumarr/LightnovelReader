@@ -513,7 +513,31 @@ Cộng thêm: chạy aligner sau mỗi segment làm generate chậm ít nhất g
 
 ---
 
-### P6.1 — Cải tiến `estimate_word_timings` (làm TRƯỚC, độc lập)
+### P6.1 — Cải tiến `estimate_word_timings` ✅ **ĐÃ XONG — đạt DoD**
+
+> **Kết quả đo thật** (10 segment VI, `vi_VN-vais1000-medium`):
+>
+> | Bản | Lệch TB | Max | Từ lệch > 150 ms |
+> |---|---|---|---|
+> | cũ — đếm ký tự | 126.6 ms | 335 ms | 27.4% |
+> | **mới — đếm âm tiết** | **60.4 ms** | **177 ms** | **8.4%** |
+>
+> Giảm **52%** (DoD ≥ 30%). 59 từ tốt lên > 50 ms so với 10 từ tệ đi > 50 ms.
+>
+> **Hai điểm dưới đây trong kế hoạch gốc hoá ra SAI khi đo** — giữ nguyên phần
+> kế hoạch bên dưới để đối chiếu, nhưng đọc mục 4.80 của PROGRESS trước khi tin:
+>
+> - **"Dấu câu tạo pause ~100–200 ms"** — sai. Đo được **0 ms**, 12/12 dấu phẩy.
+>   `group_phonemes_by_word` đã gộp khoảng lặng vào từ liền kề nên cấp thêm là
+>   tính hai lần; bản có pause weight làm 11/95 từ **tệ đi**.
+> - **"Kẹp theo câu"** (việc số 3) — **không cần làm**. `estimate` đã ở 60.4 ms
+>   so với sàn lý thuyết ~55 ms của mọi mô hình chỉ biết "âm tiết + vị trí".
+>   Phần lệch còn lại là phương sai ngữ âm, không tinh chỉnh được.
+>
+> Thứ **thay thế** cho pause weight là hệ số kéo dài từ cuối segment
+> (phrase-final lengthening, 1.22) — hiện tượng có thật, 10/10 segment cùng chiều.
+>
+> Chi tiết + cách chạy lại: [sidecar/probe/README.md](sidecar/probe/README.md).
 
 **Làm trước khi đụng engine, và đây là điểm quan trọng nhất của cả Phase 6.**
 Piper cho `phoneme` alignment thật, nên lúc này ta có **thước đo khách quan**:
@@ -584,7 +608,10 @@ Piper, hoặc chấp nhận rằng giọng mới đi kèm highlight kém hơn h�
 
 ### P6.2 — Engine thứ hai (VieNeu-TTS)
 
-Chỉ bắt đầu **sau khi P6.1 có số**.
+**P6.1 đã có số và đạt DoD → được phép đi tiếp.** Mất alignment thật khi đổi
+sang VieNeu thì highlight rơi về `estimate`, mà `estimate` giờ lệch trung bình
+60.4 ms — ở mức chấp nhận được, không phải hỏng hẳn. Đây chính là điều kiện mà
+P6.1 sinh ra để trả lời.
 
 | Việc | Ghi chú |
 |---|---|
@@ -627,7 +654,7 @@ chấp nhận được, installer ≤ 250 MB.
 | Aligner model 300MB tải chậm | TB | Optional; app dùng estimated timing vẫn chạy |
 | Antivirus flag sidecar `.exe` | TB | Không code sign → README hướng dẫn; dùng python.exe + script thay PyInstaller onefile nếu bị flag nặng |
 | ~~Giọng VI Piper chưa thật tự nhiên~~ | **Cao — đã xảy ra** | User xác nhận Piper "không phù hợp" để đọc LN. Hướng xử: **Phase 6** thêm VieNeu-TTS. Giả định cũ ("catalog cho phép thêm voice" là đủ) **sai**: catalog hiện khoá cứng cấu trúc Piper (đúng 2 file, một `baseUrl` chung, thang `quality` riêng) |
-| Đổi engine làm mất word alignment | **Cao** | VieNeu không trả mốc từng từ và **không thể** trả (codec 12,5 token/s, xem Phase 6). Giảm thiểu: **P6.1 cải tiến `estimate` trước, đo bằng Piper làm chuẩn vàng** — cơ hội đo này mất hẳn sau khi đổi engine. Có DoD định lượng; không đạt thì xem lại P6.2 |
+| Đổi engine làm mất word alignment | ~~**Cao**~~ → **TB — đã giảm thiểu** | VieNeu không trả mốc từng từ và **không thể** trả (codec 12,5 token/s, xem Phase 6). **P6.1 đã xong và đạt DoD**: `estimate` giảm lệch 52% (126.6 → 60.4 ms), tỉ lệ từ lệch quá 150 ms còn 8.4%. Nên khi rơi về `estimate` toàn phần, highlight vẫn ở mức chấp nhận được. Đo bằng Piper làm chuẩn vàng — cơ hội này đã dùng đúng lúc, sau P6.2 là mất hẳn |
 | Engine mới kéo PyTorch làm installer phình | TB | Chỉ nhận engine chạy ONNX Runtime (đã có sẵn trong sidecar 145 MB). VieNeu torch-free trên CPU. Model tải runtime như voice hiện nay, không bundle |
 | Sidecar chết giữa chừng | TB | Supervisor retry 3 lần, báo UI, queue persist SQLite |
 | 600 file/chương gây chậm | Thấp | Đo trước; nếu chậm → container `.ogg` ở Phase 6 |

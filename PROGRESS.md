@@ -41,8 +41,9 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
 
 **Việc tiếp theo:** Phase 5 xong hết. Hai việc song song:
 1. **Publish release** + kiểm nhánh cập nhật trên bản cài thật (mục 3, mục 8).
-2. **Phase 6 — đổi engine TTS** vì user thấy giọng Piper không hợp đọc LN. Bắt
-   đầu bằng **P6.1** (cải tiến `estimate`), xem `plan.md` và mục 4.79.
+2. **Phase 6 — đổi engine TTS** vì user thấy giọng Piper không hợp đọc LN.
+   **P6.1 đã xong** (`estimate` giảm 52% lệch — mục 3). Tiếp theo là **P6.2**:
+   engine VieNeu-TTS + catalog đa engine. Xem `plan.md` và mục 4.79, 4.80.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
@@ -1318,14 +1319,31 @@ hồi về **sản phẩm**, và nó lớn hơn mọi nợ kỹ thuật còn l�
 
 | Mã | Nội dung | Trạng thái |
 |---|---|---|
-| P6.1 | Cải tiến `estimate_word_timings` + probe đo lệch so với Piper | ⬅️ **tiếp theo** |
-| P6.2 | Engine thứ hai (VieNeu-TTS) + catalog đa engine | Chờ số liệu P6.1 |
+| P6.1 | Cải tiến `estimate_word_timings` + probe đo lệch so với Piper | ✅ **Xong** — đạt DoD |
+| P6.2 | Engine thứ hai (VieNeu-TTS) + catalog đa engine | ⬅️ **tiếp theo** |
 
 **Thứ tự này bắt buộc, không đảo được.** Lý do đầy đủ ở mục 4.79: Piper cho
 alignment `phoneme` thật, nên **bây giờ** là lúc duy nhất còn thước đo khách quan
 để biết `estimate` tốt tới đâu. Đổi engine trước là tự bịt mắt.
 
 Kế hoạch chi tiết + DoD định lượng ở [plan.md](plan.md) mục 9, Phase 6.
+
+**Kết quả P6.1 (đo thật, 10 segment VI, `vi_VN-vais1000-medium`):**
+
+| Bản | Lệch TB | Max | Từ lệch > 150 ms |
+|---|---|---|---|
+| cũ — đếm ký tự | 126.6 ms | 335 ms | 27.4% |
+| **mới — đếm âm tiết** | **60.4 ms** | **177 ms** | **8.4%** |
+
+Giảm **52%** (DoD ≥ 30%). Chia theo từng từ: **59 từ tốt lên** > 50 ms so với
+**10 từ tệ đi** > 50 ms. Chi tiết + cách chạy lại: [sidecar/probe/README.md](sidecar/probe/README.md).
+
+⚠️ **`estimate` đã sát sàn lý thuyết (~55 ms) — đừng tinh chỉnh thêm.** Phần lệch
+còn lại là phương sai ngữ âm giữa các từ, thứ mà mô hình chỉ biết "số âm tiết +
+vị trí" không thể biết. Xem mục 4.80.
+
+**Với P6.2:** DoD đạt nghĩa là **được phép đi tiếp** — mất alignment thật khi đổi
+sang VieNeu thì highlight vẫn ở mức chấp nhận được, không phải hỏng hẳn.
 
 ### Phase 3 — đã xong
 
@@ -3444,6 +3462,50 @@ vs `"a"` (1) thì độ dài ký tự lại là xấp xỉ **tốt hơn**. Hàm 
 **Ghi chú về `vivos`:** đừng đề xuất lại "thêm speakerId để có 65 giọng VI". Mục
 4.70 đã đo F0 thật trên sáu thanh: `vivos` ép biên độ thanh điệu còn ~1/3 so với
 `vais1000`. User đã quyết bỏ. Đường đó đóng rồi.
+
+### 4.80 P6.1 — ba thứ đo được lật lại chính kế hoạch của nó
+
+P6.1 xong, đạt DoD: lệch trung bình **126.6 → 60.4 ms (−52%)**, từ lệch quá
+150 ms **27.4% → 8.4%**. Nhưng ba phát hiện khi đo **mâu thuẫn với plan**, và đó
+mới là phần đáng ghi.
+
+**1. Dấu câu KHÔNG tạo khoảng nghỉ nào.** plan.md viết "dấu phẩy tạo pause
+~100–200 ms" và tôi đã cài đúng thế. Đo thật: **12/12 dấu phẩy có khe hở đúng
+bằng 0 ms**, dấu chấm giữa segment cũng vậy. Lý do là cấu trúc, không phải voice
+này đọc lạ — `group_phonemes_by_word` **gộp khoảng lặng vào từ liền kề**, nên
+thời gian nghỉ đã nằm sẵn trong thời lượng của chính từ đó. Cấp thêm trọng số
+nghỉ là **tính hai lần**: nó ăn bớt thời lượng các từ còn lại và đẩy toàn bộ
+phần sau của segment sớm dần, làm **11/95 từ tệ đi > 50 ms** (tệ nhất −242 ms)
+*trong khi trung bình vẫn đẹp*. Đừng cài lại. Đã khoá bằng unit test.
+
+**2. Nửa sau của DoD mới là thứ bắt được lỗi.** "Giảm ≥ 30% lệch trung bình" thì
+bản có pause weight **đạt thoải mái** (−43%). Chỉ có vế "không từ nào tệ hơn bản
+cũ quá 50 ms" mới lộ ra 11 từ hỏng. Bài học chung: với thay đổi kiểu phân bổ lại
+một tổng cố định, **chỉ tiêu trung bình luôn giấu được lỗi cục bộ** — vì lấy bớt
+của chỗ này là cho thêm chỗ kia. Mọi DoD sau này cho loại thay đổi này phải có
+vế per-item.
+
+**3. Số ký tự gần như không tương quan với thời lượng.** Từ 2 ký tự đọc trung
+bình 194 ms, từ 7 ký tự 218 ms, trong khi độ lệch chuẩn giữa các từ là 49 ms.
+Không chỉ "sai đơn vị" như plan nói — tiền đề của bản cũ gần như **vô hiệu** với
+tiếng Việt.
+
+**Thứ có thật và giữ lại:** từ cuối segment đọc dài hơn (phrase-final
+lengthening), tỉ lệ 1.08–1.49, trung bình 1.32, **10/10 segment cùng chiều**.
+Nhưng hệ số dùng là **1.22** — số cực tiểu hoá sai số đo được, không phải trung
+bình quan sát. Hai câu hỏi khác nhau; tối ưu cho cái đo được.
+
+**⚠️ `estimate` đã sát sàn — đừng tinh chỉnh thêm.** Quét toàn dải hệ số, dùng
+chính thời lượng thật, tốt nhất đạt được là **~55 ms**. Bản hiện tại 60.4 ms.
+Phần còn lại là **phương sai ngữ âm giữa các từ** (sd 49 ms), thứ mà mô hình chỉ
+biết "số âm tiết + vị trí" về nguyên tắc không thể biết. Muốn tốt hơn phải quay
+lại forced alignment — đã loại hai lần (Phase 4, và mục 4.79). Ai định "cải
+thiện thêm hàm này" thì đọc lại đoạn này trước.
+
+**`count_syllables_vi` trả hằng 1, và đó là đúng.** `_WORD_PATTERN` không nhận
+`-`, nên `"Tô-ki-ô"` đã bị `split_words` tách thành ba từ trước khi tới nơi. Bản
+đầu tôi viết nhánh tách gạch nối — **code chết**, unit test bắt được. Nếu sau này
+`_WORD_PATTERN` đổi để nhận `-` thì phải sửa hàm này cùng lúc.
 
 ---
 

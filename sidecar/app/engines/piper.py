@@ -194,7 +194,10 @@ class PiperEngine:
         if not timings:
             # Rơi về ước lượng: chữ số đọc thành nhiều từ, hoặc model không hỗ
             # trợ alignment. Vẫn dùng được, chỉ kém chính xác hơn.
-            timings = estimate_word_timings(text, duration_ms)
+            # `entry.lang` chứ không phải mặc định: cách đếm âm tiết khác hẳn
+            # giữa VI (đơn âm tiết) và EN (đếm cụm nguyên âm). Bỏ tham số này
+            # thì sách tiếng Anh bị tính theo luật tiếng Việt mà không báo gì.
+            timings = estimate_word_timings(text, duration_ms, entry.lang)
             timing_source = "estimate"
 
         dst_rate = target_rate_for_opus(src_rate)

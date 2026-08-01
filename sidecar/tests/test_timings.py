@@ -75,13 +75,65 @@ class TestEstimateWordTimings:
         for before, after in zip(timings, timings[1:], strict=False):
             assert before.end_ms == after.start_ms
 
-    def test_tu_dai_hon_duoc_nhieu_thoi_gian_hon(self) -> None:
-        """Chia đều theo số từ sẽ cho 'Chitose' và 'à' cùng thời lượng — sai rõ."""
-        timings = estimate_word_timings("Chitose à", 2000)
+    def test_tu_nhieu_ky_tu_khong_duoc_nhieu_thoi_gian_hon_khi_cung_am_tiet(
+        self,
+    ) -> None:
+        """Tiếng Việt đơn âm tiết: `nghiêng` và `à` đọc gần bằng nhau.
+
+        Đây là **đảo ngược có chủ ý** so với bản trước P6.1. Bản cũ chia theo độ
+        dài ký tự nên cấp cho `nghiêng` gấp 7 lần `à`; đo trên alignment thật của
+        Piper thì hai từ chênh nhau không đáng kể. Xem `sidecar/probe/`.
+        """
+        timings = estimate_word_timings("nghiêng à", 2000)
 
         dai = timings[0].end_ms - timings[0].start_ms
         ngan = timings[1].end_ms - timings[1].start_ms
-        assert dai > ngan
+        # Chỉ chênh do hệ số kéo dài từ cuối, không do số ký tự.
+        assert ngan > dai
+
+    def test_tu_phien_am_co_gach_noi_thanh_nhieu_tu(self) -> None:
+        """`Tô-ki-ô` được `split_words` tách sẵn thành 3 từ, mỗi từ 1 âm tiết.
+
+        Khoá lại hành vi này vì `count_syllables_vi` **dựa vào** nó: nếu sau này
+        `_WORD_PATTERN` nhận thêm `-` thì cả ba âm tiết dồn vào một từ và bị cấp
+        thời lượng của một âm tiết — highlight sẽ lệch ở mọi tên riêng phiên âm.
+        """
+        timings = estimate_word_timings("Tô-ki-ô à", 2000)
+
+        assert [t.w for t in timings] == ["Tô", "ki", "ô", "à"]
+
+    def test_tieng_anh_dem_theo_cum_nguyen_am(self) -> None:
+        """EN không đơn âm tiết: `international` phải dài hơn `a` nhiều."""
+        timings = estimate_word_timings("international a", 2000, "en")
+
+        dai = timings[0].end_ms - timings[0].start_ms
+        ngan = timings[1].end_ms - timings[1].start_ms
+        assert dai > ngan * 2
+
+    def test_dau_cau_khong_duoc_cap_them_thoi_luong(self) -> None:
+        """Piper gộp khoảng lặng vào chính từ — cấp thêm là tính hai lần.
+
+        Đo trên 12 dấu phẩy trong audio thật: khe hở luôn đúng bằng 0 ms.
+        Khoá lại vì đây là thứ trực giác rất muốn "sửa" ngược lại.
+        """
+        co_dau = estimate_word_timings("một, hai ba", 3000)
+        khong_dau = estimate_word_timings("một hai ba", 3000)
+
+        assert [t.start_ms for t in co_dau] == [t.start_ms for t in khong_dau]
+
+    def test_tu_cuoi_duoc_keo_dai_hon(self) -> None:
+        """Phrase-final lengthening: từ cuối segment đọc dài hơn từ giữa."""
+        timings = estimate_word_timings("một hai ba", 3000)
+
+        giua = timings[1].end_ms - timings[1].start_ms
+        cuoi = timings[2].end_ms - timings[2].start_ms
+        assert cuoi > giua
+
+    def test_ngon_ngu_la_roi_ve_vi(self) -> None:
+        """Ngôn ngữ chưa hỗ trợ vẫn phải chạy, không ném lỗi."""
+        assert estimate_word_timings("một hai", 2000, "de") == estimate_word_timings(
+            "một hai", 2000, "vi"
+        )
 
     def test_thoi_luong_khong_hop_le(self) -> None:
         assert estimate_word_timings("một hai", 0) == []

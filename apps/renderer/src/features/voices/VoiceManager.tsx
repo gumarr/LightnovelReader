@@ -146,12 +146,25 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
   );
 
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
+    /*
+      `overflow-y-auto` là BẮT BUỘC, không phải trang trí: `<main>` bọc ngoài là
+      flex container có `overflow-hidden` (App.tsx), nên thiếu nó thì phần tràn
+      khỏi khung bị **cắt cụt và không cuộn được** — danh sách dài bao nhiêu cũng
+      chỉ xem được phần đầu.
+
+      Cùng lối với `StorageManager` và `SettingsScreen`. Màn này thiếu từ P2.3
+      nhưng chỉ lộ ra ở P6.2, khi danh sách nhảy từ 3 lên 17 giọng.
+    */
+    <section
+      data-testid="voice-manager"
+      className="mx-auto flex w-full max-w-3xl flex-col gap-4 overflow-y-auto p-6"
+    >
       <header className="flex items-start justify-between gap-4">
         <div>
           <button
             type="button"
             onClick={onBack}
+            data-testid="voices-back"
             className="text-xs text-fg-muted transition-colors hover:text-fg"
           >
             ← Quay lại

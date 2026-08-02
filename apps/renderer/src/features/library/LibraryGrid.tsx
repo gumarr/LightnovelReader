@@ -69,6 +69,7 @@ export const LibraryGrid = ({
           <button
             type="button"
             onClick={onManageVoices}
+            data-testid="open-voices"
             className="rounded border border-border px-3 py-1.5 text-sm text-fg transition-colors hover:bg-bg-subtle"
           >
             Giọng đọc

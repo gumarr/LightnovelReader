@@ -1239,12 +1239,12 @@ ngay. Mất biến đó ở một theme là **mất chữ toàn app**, không ri
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **2253 passed** (+69 ở P5.5c — format 21, store 17, panel 11, banner 10, App 6, SettingsScreen 4) |
-| Unit test sidecar (pytest) | **646 passed** (không đổi ở P5.5c — phần này không đụng sidecar) |
+| Unit test TypeScript | **2271 passed** (+18 ở P6.2 — format engine 6, VoiceStylePicker 5, VoiceManager đa engine 5, schema voiceStyle 2) |
+| Unit test sidecar (pytest) | **698 passed** (+52 ở P6.1/P6.2 — timing âm tiết 11, catalog đa engine 19, engine VieNeu + registry 22) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
-| **Kiểm UI thật (`pnpm ui-check`)** | **87 phép kiểm** — lần chạy gần nhất **sau P5.5c: 87/87 đạt, không phép nào đỏ**. Hai phép đỏ giả của lượt P5.4 đã đóng (mục 4.74). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| **Kiểm UI thật (`pnpm ui-check`)** | **92 phép kiểm** — lần chạy gần nhất **sau P6.2: 92/92 đạt, không phép nào đỏ**. +5 ở P6.2 cho màn Giọng đọc, trong đó hai phép khoá lỗi cuộn (mục 4.83). Phép kiểm canvas PDF hết flaky (mục 4.82). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Icon app | **7 cỡ** (16→256) trong `resources/icon.ico`, sinh từ `pnpm build:icon`, tái lập đúng byte |
-| Giọng đọc trong catalog | **3** (2 VI + 1 EN) — xem mục 8 về giọng nhiều người nói |
+| Giọng đọc trong catalog | **17** — 3 Piper (2 VI + 1 EN) + 14 VieNeu (VI, dùng chung một bộ model 244 MB) |
 | Schema DB | **v3** — P5.4 **không** thêm migration, xem lý do ở mục 4.73 |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
@@ -3588,8 +3588,47 @@ kiểm, kèm `(bỏ qua ảnh …: chụp ảnh quá 15s)`.
 - Flaky: kích thước vẫn đúng `864×1296`, chỉ `nonWhite = 0`, và log có dòng
   `built in …ms` xen giữa phần kiểm.
 
-Chạy lại là cách xác nhận rẻ nhất. Nợ kỹ thuật đã ghi ở mục 8: nên cho script
-chờ vite ổn định trước khi đo, thay vì để người chạy tự đoán.
+**ĐÃ SỬA (cùng lượt P6.2).** Phép kiểm nay đo qua `waitFor('canvas PDF vẽ xong')`
+thay vì đọc một phát rồi kết luận. Hết flaky.
+
+Đáng ghi vì **cách nó lộ ra**: thêm màn Giọng đọc vào trước phần đọc làm phép
+kiểm canvas đỏ **3/3 lần**, không còn là thỉnh thoảng. Tức là nó **vốn đã đua từ
+đầu** — trước đó xanh chỉ vì các bước phía trên tình cờ đủ chậm để pdfjs kịp vẽ.
+Đúng loại "xanh vì may" của mục 4.74: một phép kiểm không chờ thứ nó đo thì
+không kiểm chứng gì cả, nó chỉ đang đánh cược vào thời gian.
+
+Hai điều rút ra:
+- Chẩn đoán cũ ("vite rebuild chen ngang") **đúng một nửa**: rebuild làm nó đỏ
+  thường xuyên hơn, nhưng gốc là thiếu `waitFor`. Sửa gốc thì rebuild không còn
+  làm đỏ nữa.
+- Chụp ảnh cũng là tải: `cdp.screenshot` một danh sách cao ~2500 px ngốn đủ lâu
+  để pdfjs phía sau trượt hạn chờ. Màn Giọng đọc vì vậy **không chụp ảnh** — mọi
+  thứ cần khẳng định ở đó đều đã là con số đo được.
+
+### 4.83 Màn Giọng đọc không cuộn được — lỗi có sẵn từ P2.3, P6.2 mới làm lộ
+
+User báo: *"trang Giọng đọc không có thanh scroll, tôi không lăn chuột xuống
+được"*. Đúng ngay sau khi P6.2 nâng danh sách từ 3 lên **17 giọng**.
+
+**Nguyên nhân.** `<main>` bọc ngoài là flex container `overflow-hidden`
+(`App.tsx`). Khối con phải tự khai `overflow-y-auto`, nếu không phần tràn khỏi
+khung bị **cắt cụt và không có thanh cuộn** — không phải "cuộn khó", mà là
+*không thể với tới*. `StorageManager` và `SettingsScreen` đều có sẵn dòng đó;
+`VoiceManager` thì không, từ P2.3.
+
+**Vì sao ba phase trôi qua mà không ai thấy.** Ba giọng Piper chỉ cao ~600 px,
+lọt gọn trong khung 864 px. Lỗi có từ đầu nhưng **không quan sát được** cho tới
+khi nội dung vượt khung. Đo được sau khi sửa: nội dung **2474 px / khung 864 px**.
+
+**Vì sao 2271 unit test không bắt được.** jsdom không tính layout —
+`scrollHeight`/`clientHeight` đều là 0, nên không có gì để so. Đây đúng loại lỗi
+mục **4.43** đã ghi và là lý do `ui-check` tồn tại. Nay đã khoá bằng hai phép
+kiểm tách nhau: một cái bắt *"quên khai `overflow-y`"*, một cái bắt *"khai rồi
+nhưng khung không có chiều cao nên vẫn không cuộn"*.
+
+**Bài học chung:** mọi màn hình mới nằm trong `<main>` phải có `overflow-y-auto`
+ở khối gốc. Không có nó thì màn hình chỉ *trông* đúng chừng nào nội dung còn
+ngắn — và nội dung dài ra là chuyện sớm muộn.
 
 ---
 
@@ -3960,7 +3999,7 @@ scripts/
 
 | Việc | Mức | Ghi chú |
 |---|---|---|
-| `ui-check` flaky ở phép kiểm canvas PDF | TB | Vite rebuild chen ngang lúc đo → canvas về trắng. 2/3 lần chạy đỏ oan trên cùng một commit. Cách phân biệt với lỗi thật + cách sửa ở mục **4.82**. Nên cho script chờ vite ổn định trước khi đo |
+| ~~`ui-check` flaky ở phép kiểm canvas PDF~~ | ~~TB~~ **đã sửa** | Gốc không phải vite mà là **thiếu `waitFor`**: phép kiểm đo canvas ngay khi tới, trong khi pdfjs gắn `<canvas>` đúng kích thước **trước** khi vẽ. Nay chờ `nonWhite > 1000` mới kết luận. Xem mục **4.82** |
 | Chưa nghe thử 14 giọng VieNeu bằng tai | TB | Engine đã chạy thật qua bản `.exe` (mục 4.81) nhưng **chất lượng giọng** thì CDP không kiểm hộ được. User phải tự tải 244 MB rồi nghe. Nếu không giọng nào hợp thì cả P6.2 chỉ còn giá trị hạ tầng |
 | Model VieNeu chưa tải thử bằng chính `download.py` | TB | Lúc dựng, 13 file được chép tay từ cache HF vào đúng thư mục `voice_dir` để kiểm engine. Đường tải thật (sha256 + tiến độ + huỷ) đã có unit test và dùng chung code với voice Piper, nhưng **chưa ai bấm nút Tải cho voice VieNeu** — sha256/URL đã đối chiếu thật với HF (200 + đúng `content-length`) |
 | `vitest` v2 kéo Vite 5 trong khi project dùng Vite 6 | Thấp | Đã né bằng cách bỏ `vitest.config.ts` khỏi typecheck của renderer. Nâng vitest lên v3 sẽ sạch hơn |

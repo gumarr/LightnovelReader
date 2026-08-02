@@ -1208,6 +1208,18 @@ const run = async (cdp) => {
     fail('mở màn dung lượng', 'không thấy nút [data-testid="open-storage"]');
   }
 
+  /* --- Màn giọng đọc (P2.3 + đa engine P6.2) -------------------------- */
+
+  await waitFor('về thư viện trước khi mở màn giọng đọc', async () => {
+    const onLibrary = await cdp.evaluate(
+      `document.querySelector('[data-testid="book-card"]') !== null`,
+    );
+    if (onLibrary === true) return true;
+    await cdp.evaluate(clickTestId('storage-back'));
+    return undefined;
+  });
+  await checkVoices(cdp);
+
   /* --- Trình đọc: bố cục + canvas ------------------------------------- */
 
   // Về thư viện rồi mở sách đầu tiên.
@@ -1284,7 +1296,23 @@ const run = async (cdp) => {
 
   await cdp.screenshot(packaged ? 'packaged-reader-dark' : 'dev-reader-dark');
 
-  const canvas = await cdp.evaluate(measurePdfCanvas);
+  // Chờ pdfjs vẽ xong, không đo ngay: `<canvas>` được gắn vào DOM với đúng kích
+  // thước **trước** khi có nét mực nào, nên đo ngay là đọc trúng khung trắng.
+  //
+  // Trước P6.2 phép kiểm này đo thẳng và vẫn xanh — nhưng chỉ vì các bước phía
+  // trên tình cờ đủ chậm. Thêm màn giọng đọc vào trước đó làm nó đỏ ngay, tức
+  // nó **vốn đã đua**, chỉ chưa lộ. Đây đúng loại "xanh vì may" mà mục 4.74 nói.
+  //
+  // Bọc trong sentinel `{ value }`: `waitFor` coi `null` là "chưa xong" và
+  // **ném** khi hết giờ, nên trả `null` trần cho sách DOCX sẽ treo 30 giây rồi
+  // làm hỏng cả lượt chạy thay vì rẽ sang nhánh DOCX.
+  const canvas = (
+    await waitFor('canvas PDF vẽ xong', async () => {
+      const measured = await cdp.evaluate(measurePdfCanvas);
+      if (measured === null) return { value: null };
+      return measured.nonWhite > 1000 ? { value: measured } : undefined;
+    })
+  ).value;
   if (canvas === null) {
     log('Sách đang mở không phải PDF — bỏ qua phép kiểm canvas.');
     const docx = await cdp.evaluate(`
@@ -1306,6 +1334,90 @@ const run = async (cdp) => {
   }
 
   await checkPlayer(cdp);
+};
+
+/**
+ * Màn Giọng đọc (P2.3, mở rộng đa engine ở P6.2).
+ *
+ * **Vì sao phải đo ở đây.** Danh sách giọng nhảy từ 3 lên 17 mục ở P6.2, và
+ * `<main>` bọc ngoài là flex container `overflow-hidden`. Thiếu `overflow-y-auto`
+ * ở khối con thì nội dung bị **cắt cụt, không cuộn được** — user chỉ xem được
+ * phần đầu danh sách. jsdom không tính layout nên vitest xanh hết; đây là đúng
+ * loại lỗi mục 4.43 đã ghi, và nó đã xảy ra thật một lần ở P6.2.
+ */
+const checkVoices = async (cdp) => {
+  // Vào từ **thư viện**, không từ thanh player: nút ở player chỉ hiện khi CHƯA
+  // chọn giọng (`needsVoice`), nên trên máy đã chọn giọng thì nó không tồn tại
+  // và phép kiểm đỏ giả — đã dính đúng bẫy này một lượt chạy.
+  const opened = await cdp.evaluate(clickTestId('open-voices'));
+  if (opened !== true) {
+    fail('mở màn giọng đọc', 'không thấy [data-testid="open-voices"]');
+    return;
+  }
+
+  const measured = await waitFor('màn giọng đọc nạp xong', async () =>
+    cdp.evaluate(`
+      (() => {
+        const root = document.querySelector('[data-testid="voice-manager"]');
+        if (root === null) return undefined;
+        const rows = document.querySelectorAll('[data-testid="voice-row"]');
+        if (rows.length === 0) return undefined;
+        const style = getComputedStyle(root);
+        const engines = {};
+        rows.forEach((r) => {
+          const e = r.getAttribute('data-engine') ?? 'không rõ';
+          engines[e] = (engines[e] ?? 0) + 1;
+        });
+        return {
+          rows: rows.length,
+          engines,
+          overflowY: style.overflowY,
+          // Chiều cao nội dung so với chiều cao khung: > 1 nghĩa là có phần
+          // nằm ngoài tầm nhìn, tức BẮT BUỘC phải cuộn được.
+          scrollHeight: root.scrollHeight,
+          clientHeight: root.clientHeight,
+          note: document.querySelector('[data-testid="voice-engine-note"]') !== null,
+        };
+      })()
+    `),
+  );
+
+  log('Màn giọng đọc:');
+  check('hiện danh sách giọng', measured.rows > 0, `${measured.rows} giọng`);
+  check(
+    'có cả giọng piper lẫn vieneu',
+    (measured.engines.piper ?? 0) > 0 && (measured.engines.vieneu ?? 0) > 0,
+    JSON.stringify(measured.engines),
+  );
+
+  // Hai phép kiểm tách nhau có chủ ý: cái đầu bắt lỗi "quên khai overflow",
+  // cái sau bắt lỗi "khai rồi nhưng khung không có chiều cao nên vẫn không cuộn".
+  check(
+    'khối danh sách cuộn được theo chiều dọc',
+    measured.overflowY === 'auto' || measured.overflowY === 'scroll',
+    `overflow-y: ${measured.overflowY}`,
+  );
+  const overflowing = measured.scrollHeight > measured.clientHeight;
+  check(
+    'nội dung dài hơn khung thì vẫn với tới được',
+    !overflowing || measured.clientHeight > 0,
+    `nội dung ${measured.scrollHeight} px / khung ${measured.clientHeight} px`,
+  );
+
+  check('ghi chú riêng của engine vieneu hiện ra', measured.note === true);
+
+  // KHÔNG chụp ảnh màn này: danh sách 17 giọng cao ~2500 px, chụp nó ngốn đủ
+  // lâu để pdfjs phía sau không kịp vẽ xong trong hạn chờ — đã làm phép kiểm
+  // canvas đỏ một lượt. Mọi thứ cần khẳng định ở đây đều là con số đo được.
+
+  await waitFor('về được thư viện từ màn giọng đọc', async () => {
+    const back = await cdp.evaluate(
+      `document.querySelector('[data-testid="book-card"]') !== null`,
+    );
+    if (back === true) return true;
+    await cdp.evaluate(clickTestId('voices-back'));
+    return undefined;
+  });
 };
 
 /**

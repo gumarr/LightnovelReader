@@ -136,9 +136,7 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
 
   // Chỉ hiện ô phong cách khi đã cài giọng VieNeu: với người chỉ dùng Piper thì
   // đó là một ô bấm vào không đổi gì (PROGRESS 4.71).
-  const hasVieneuInstalled = catalog.some(
-    (voice) => voice.installed && voice.engine === 'vieneu',
-  );
+  const hasVieneuInstalled = catalog.some((voice) => voice.installed && voice.engine === 'vieneu');
 
   // Có voice đã cài mà ngôn ngữ của nó chưa chọn giọng nào
   const hasInstalledUnselected = catalog.some(
@@ -147,103 +145,113 @@ export const VoiceManager = ({ onBack }: VoiceManagerProps): JSX.Element => {
 
   return (
     /*
-      `overflow-y-auto` là BẮT BUỘC, không phải trang trí: `<main>` bọc ngoài là
-      flex container có `overflow-hidden` (App.tsx), nên thiếu nó thì phần tràn
-      khỏi khung bị **cắt cụt và không cuộn được** — danh sách dài bao nhiêu cũng
-      chỉ xem được phần đầu.
+      HAI tầng, không gộp làm một:
 
-      Cùng lối với `StorageManager` và `SettingsScreen`. Màn này thiếu từ P2.3
-      nhưng chỉ lộ ra ở P6.2, khi danh sách nhảy từ 3 lên 17 giọng.
+      - Tầng ngoài giữ `overflow-y-auto` và rộng hết khung. `<main>` bọc ngoài là
+        flex container có `overflow-hidden` (App.tsx), nên thiếu nó thì phần tràn
+        bị **cắt cụt và không cuộn được**.
+      - Tầng trong giữ `mx-auto max-w-3xl` để nội dung vẫn nằm giữa.
+
+      Gộp hai tầng (`mx-auto max-w-3xl overflow-y-auto`) vẫn cuộn được, nhưng
+      thanh cuộn bám mép phải của **khối 768 px** nên trôi vào giữa màn hình —
+      trên cửa sổ rộng nó nằm cách mép cả trăm pixel, trông như thanh cuộn của
+      một khung con nào đó. Tách ra thì thanh cuộn về sát mép phải cửa sổ, đúng
+      chỗ tay người ta đưa chuột tới.
+
+      Cùng lối với `StorageManager` và `SettingsScreen`.
     */
-    <section
-      data-testid="voice-manager"
-      className="mx-auto flex w-full max-w-3xl flex-col gap-4 overflow-y-auto p-6"
-    >
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <button
-            type="button"
-            onClick={onBack}
-            data-testid="voices-back"
-            className="text-xs text-fg-muted transition-colors hover:text-fg"
+    <div data-testid="voice-manager-scroll" className="h-full overflow-y-auto">
+      <section
+        data-testid="voice-manager"
+        className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6"
+      >
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <button
+              type="button"
+              onClick={onBack}
+              data-testid="voices-back"
+              className="text-xs text-fg-muted transition-colors hover:text-fg"
+            >
+              ← Quay lại
+            </button>
+            <h1 className="mt-1 text-lg font-semibold text-fg">Giọng đọc</h1>
+            <p className="mt-0.5 text-xs text-fg-muted">
+              Model tải từ Hugging Face khi cần, không đi kèm bộ cài.
+            </p>
+          </div>
+          <SidecarBadge status={sidecar} />
+        </header>
+
+        {error !== null && (
+          <div
+            role="alert"
+            data-testid="voice-error"
+            className="flex items-start justify-between gap-3 rounded-lg border border-danger p-3 text-sm text-danger"
+            style={{ backgroundColor: 'rgb(var(--danger) / 0.08)' }}
           >
-            ← Quay lại
-          </button>
-          <h1 className="mt-1 text-lg font-semibold text-fg">Giọng đọc</h1>
-          <p className="mt-0.5 text-xs text-fg-muted">
-            Model tải từ Hugging Face khi cần, không đi kèm bộ cài.
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={clearError}
+              aria-label="Đóng thông báo lỗi"
+              className="shrink-0 text-xs underline"
+            >
+              Đóng
+            </button>
+          </div>
+        )}
+
+        {/*
+          Cài rồi mà chưa bấm chọn là cái bẫy dễ gặp nhất: hàng đợi dừng ngay với
+          "Chưa cài giọng đọc nào" trong khi màn này hiện rõ "Đã cài". Nhắc đúng ở
+          chỗ sửa được.
+        */}
+        {hasVieneuInstalled && settings !== null && (
+          <VoiceStylePicker
+            value={settings.voiceStyle}
+            onChange={(voiceStyle) => {
+              void updateSettings({ voiceStyle });
+            }}
+          />
+        )}
+
+        {hasInstalledUnselected && (
+          <p data-testid="voice-unselected-hint" className="text-xs text-fg-muted">
+            Đã cài giọng nhưng chưa chọn dùng. Bấm{' '}
+            <strong className="text-fg">Dùng giọng này</strong> ở giọng bạn muốn, nếu không mọi lượt
+            tạo audio sẽ dừng ngay.
           </p>
-        </div>
-        <SidecarBadge status={sidecar} />
-      </header>
+        )}
 
-      {error !== null && (
-        <div
-          role="alert"
-          data-testid="voice-error"
-          className="flex items-start justify-between gap-3 rounded-lg border border-danger p-3 text-sm text-danger"
-          style={{ backgroundColor: 'rgb(var(--danger) / 0.08)' }}
-        >
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={clearError}
-            aria-label="Đóng thông báo lỗi"
-            className="shrink-0 text-xs underline"
-          >
-            Đóng
-          </button>
-        </div>
-      )}
-
-      {/*
-        Cài rồi mà chưa bấm chọn là cái bẫy dễ gặp nhất: hàng đợi dừng ngay với
-        "Chưa cài giọng đọc nào" trong khi màn này hiện rõ "Đã cài". Nhắc đúng ở
-        chỗ sửa được.
-      */}
-      {hasVieneuInstalled && settings !== null && (
-        <VoiceStylePicker
-          value={settings.voiceStyle}
-          onChange={(voiceStyle) => {
-            void updateSettings({ voiceStyle });
-          }}
-        />
-      )}
-
-      {hasInstalledUnselected && (
-        <p data-testid="voice-unselected-hint" className="text-xs text-fg-muted">
-          Đã cài giọng nhưng chưa chọn dùng. Bấm <strong className="text-fg">Dùng giọng này</strong>{' '}
-          ở giọng bạn muốn, nếu không mọi lượt tạo audio sẽ dừng ngay.
-        </p>
-      )}
-
-      {loading && catalog.length === 0 ? (
-        <p className="text-sm text-fg-muted">Đang tải danh sách giọng đọc…</p>
-      ) : catalog.length === 0 ? (
-        <p className="text-sm text-fg-muted">
-          Chưa có giọng đọc nào trong danh mục.
-          {sidecar?.state !== 'ready' && ' Danh mục chỉ đọc được khi dịch vụ TTS đã chạy.'}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {catalog.map((voice) => (
-            <VoiceRow
-              key={voice.id}
-              voice={voice}
-              progress={progress[voice.id]}
-              canDownload={canDownload}
-              selected={selectedFor(voice.lang) === voice.id}
-              previewing={previewing === voice.id}
-              playing={playing === voice.id}
-              onDownload={() => void download(voice.id)}
-              onCancel={() => void cancel(voice.id)}
-              onRemove={() => removeVoice(voice.lang, voice.id)}
-              onSelect={() => selectVoice(voice.lang, voice.id)}
-              onPreview={() => previewVoice(voice.id)}
-            />
-          ))}
-        </ul>
-      )}
-    </section>
+        {loading && catalog.length === 0 ? (
+          <p className="text-sm text-fg-muted">Đang tải danh sách giọng đọc…</p>
+        ) : catalog.length === 0 ? (
+          <p className="text-sm text-fg-muted">
+            Chưa có giọng đọc nào trong danh mục.
+            {sidecar?.state !== 'ready' && ' Danh mục chỉ đọc được khi dịch vụ TTS đã chạy.'}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {catalog.map((voice) => (
+              <VoiceRow
+                key={voice.id}
+                voice={voice}
+                progress={progress[voice.id]}
+                canDownload={canDownload}
+                selected={selectedFor(voice.lang) === voice.id}
+                previewing={previewing === voice.id}
+                playing={playing === voice.id}
+                onDownload={() => void download(voice.id)}
+                onCancel={() => void cancel(voice.id)}
+                onRemove={() => removeVoice(voice.lang, voice.id)}
+                onSelect={() => selectVoice(voice.lang, voice.id)}
+                onPreview={() => previewVoice(voice.id)}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 };

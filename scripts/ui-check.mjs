@@ -1306,13 +1306,37 @@ const run = async (cdp) => {
   // Bọc trong sentinel `{ value }`: `waitFor` coi `null` là "chưa xong" và
   // **ném** khi hết giờ, nên trả `null` trần cho sách DOCX sẽ treo 30 giây rồi
   // làm hỏng cả lượt chạy thay vì rẽ sang nhánh DOCX.
-  const canvas = (
-    await waitFor('canvas PDF vẽ xong', async () => {
-      const measured = await cdp.evaluate(measurePdfCanvas);
-      if (measured === null) return { value: null };
-      return measured.nonWhite > 1000 ? { value: measured } : undefined;
-    })
-  ).value;
+  //
+  // Hết giờ thì **không để `waitFor` ném ra ngoài**: nó sẽ thổi bay cả lượt chạy,
+  // mất luôn `checkPlayer` phía sau chỉ vì một lần pdfjs vẽ chậm. Bắt lại và báo
+  // như một phép kiểm đỏ bình thường — biết canvas hỏng vẫn tốt hơn là mất sạch
+  // kết quả của các phần không liên quan.
+  let lastCanvas;
+  let canvas = null;
+  try {
+    canvas = (
+      await waitFor('canvas PDF vẽ xong', async () => {
+        const measured = await cdp.evaluate(measurePdfCanvas);
+        if (measured === null) return { value: null };
+        if (measured.nonWhite > 1000) return { value: measured };
+        // Ghi lại số đo mới nhất để thông báo nói được canvas đang **trắng** hay
+        // **chưa có** — hai nguyên nhân khác hẳn nhau. Vẫn trả `undefined` để
+        // `waitFor` chờ tiếp: trả số 0 sẽ bị coi là truthy và thoát ngay.
+        lastCanvas = measured;
+        return undefined;
+      }, 60_000)
+    ).value;
+  } catch {
+    log('Viewer PDF:');
+    fail(
+      'canvas PDF vẽ xong trong 60s',
+      lastCanvas === undefined
+        ? 'không thấy [data-testid="pdf-page"] canvas'
+        : `canvas ${lastCanvas.width}×${lastCanvas.height} nhưng chỉ ${lastCanvas.nonWhite} pixel khác trắng`,
+    );
+    await checkPlayer(cdp);
+    return;
+  }
   if (canvas === null) {
     log('Sách đang mở không phải PDF — bỏ qua phép kiểm canvas.');
     const docx = await cdp.evaluate(`
@@ -1358,11 +1382,14 @@ const checkVoices = async (cdp) => {
   const measured = await waitFor('màn giọng đọc nạp xong', async () =>
     cdp.evaluate(`
       (() => {
-        const root = document.querySelector('[data-testid="voice-manager"]');
-        if (root === null) return undefined;
+        // Đo ở ô CUỘN, không ở \`voice-manager\`: từ lượt sửa vị trí thanh cuộn,
+        // \`voice-manager\` chỉ còn là khối 768 px căn giữa, \`overflowY\` của nó
+        // là 'visible'. Đo nhầm chỗ thì phép kiểm xanh giả.
+        const scroll = document.querySelector('[data-testid="voice-manager-scroll"]');
+        if (scroll === null) return undefined;
         const rows = document.querySelectorAll('[data-testid="voice-row"]');
         if (rows.length === 0) return undefined;
-        const style = getComputedStyle(root);
+        const style = getComputedStyle(scroll);
         const engines = {};
         rows.forEach((r) => {
           const e = r.getAttribute('data-engine') ?? 'không rõ';
@@ -1374,8 +1401,11 @@ const checkVoices = async (cdp) => {
           overflowY: style.overflowY,
           // Chiều cao nội dung so với chiều cao khung: > 1 nghĩa là có phần
           // nằm ngoài tầm nhìn, tức BẮT BUỘC phải cuộn được.
-          scrollHeight: root.scrollHeight,
-          clientHeight: root.clientHeight,
+          scrollHeight: scroll.scrollHeight,
+          clientHeight: scroll.clientHeight,
+          // Khoảng hở từ mép phải ô cuộn tới mép phải cửa sổ. Thanh cuộn nằm ở
+          // mép phải ô cuộn, nên số này CHÍNH LÀ độ lệch của thanh cuộn.
+          gapRight: window.innerWidth - scroll.getBoundingClientRect().right,
           note: document.querySelector('[data-testid="voice-engine-note"]') !== null,
         };
       })()
@@ -1402,6 +1432,16 @@ const checkVoices = async (cdp) => {
     'nội dung dài hơn khung thì vẫn với tới được',
     !overflowing || measured.clientHeight > 0,
     `nội dung ${measured.scrollHeight} px / khung ${measured.clientHeight} px`,
+  );
+
+  // Cuộn được nhưng thanh cuộn nằm giữa màn hình vẫn là lỗi user báo: ô cuộn
+  // phải rộng hết khung chứ không phải chỉ khối 768 px căn giữa. Ngưỡng 2 px
+  // cho sai số làm tròn — nếu ai đó chuyển `overflow-y-auto` ngược vào khối
+  // `max-w-3xl`, số này nhảy lên hàng trăm px và phép kiểm đỏ.
+  check(
+    'thanh cuộn sát mép phải cửa sổ',
+    measured.gapRight <= 2,
+    `cách mép ${Math.round(measured.gapRight)} px`,
   );
 
   check('ghi chú riêng của engine vieneu hiện ra', measured.note === true);

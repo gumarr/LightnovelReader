@@ -92,191 +92,206 @@ export const StorageManager = ({ onBack }: StorageManagerProps): JSX.Element => 
   };
 
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
-      <header>
-        <button
-          type="button"
-          data-testid="storage-back"
-          onClick={onBack}
-          className="text-xs text-fg-muted transition-colors hover:text-fg"
-        >
-          ← Quay lại
-        </button>
-        <h1 className="mt-1 text-lg font-semibold text-fg">Dung lượng</h1>
-        <p className="mt-0.5 text-xs text-fg-muted">
-          Xoá audio giữ nguyên tiến độ đọc và cấu trúc chương.
-        </p>
-      </header>
-
-      {error !== null && (
-        <div
-          role="alert"
-          data-testid="storage-error"
-          className="flex items-start justify-between gap-3 rounded-lg border border-danger p-3 text-sm text-danger"
-          style={{ backgroundColor: 'rgb(var(--danger) / 0.08)' }}
-        >
-          <span>{error}</span>
+    /*
+      Hai tầng, không gộp: tầng ngoài cuộn và rộng hết khung, tầng trong giữ
+      `mx-auto max-w-3xl` để nội dung nằm giữa. Gộp lại thì thanh cuộn bám mép
+      phải của khối 768 px nên trôi vào giữa màn hình thay vì sát mép cửa sổ.
+      Xem chú thích dài ở `VoiceManager`.
+    */
+    <div data-testid="storage-manager-scroll" className="h-full overflow-y-auto">
+      <section className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
+        <header>
           <button
             type="button"
-            onClick={clearError}
-            aria-label="Đóng thông báo lỗi"
-            className="shrink-0 text-xs underline"
+            data-testid="storage-back"
+            onClick={onBack}
+            className="text-xs text-fg-muted transition-colors hover:text-fg"
           >
-            Đóng
+            ← Quay lại
           </button>
-        </div>
-      )}
+          <h1 className="mt-1 text-lg font-semibold text-fg">Dung lượng</h1>
+          <p className="mt-0.5 text-xs text-fg-muted">
+            Xoá audio giữ nguyên tiến độ đọc và cấu trúc chương.
+          </p>
+        </header>
 
-      {lastDeleted !== null && lastDeleted.freedBytes > 0 && (
-        <p data-testid="storage-freed" className="text-xs text-fg-muted">
-          Đã giải phóng {formatBytes(lastDeleted.freedBytes)} ({lastDeleted.filesDeleted} file).
-        </p>
-      )}
-
-      {usage === null ? (
-        <p className="text-sm text-fg-muted">
-          {loading ? 'Đang đo dung lượng…' : 'Chưa đọc được dung lượng.'}
-        </p>
-      ) : (
-        <>
-          <div className="rounded-lg border border-border bg-bg-elevated p-3">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-xs text-fg-muted">Tổng audio</span>
-              <span data-testid="storage-total" className="tabular-nums text-lg font-semibold text-fg">
-                {formatBytes(usage.audioBytes)}
-              </span>
-            </div>
-
-            {usage.warnBytes > 0 && (
-              <>
-                {/* Thanh mức dùng: màu lấy từ biến CSS chứ không hardcode hex —
-                    `rgb(var(--danger))` để dùng được trong style thường. */}
-                <div
-                  role="progressbar"
-                  aria-valuenow={warnPercent(usage)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label="Mức dùng so với ngưỡng cảnh báo"
-                  data-testid="storage-bar"
-                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-subtle"
-                >
-                  <div
-                    className="h-full transition-all"
-                    style={{
-                      width: `${String(warnPercent(usage))}%`,
-                      backgroundColor:
-                        level === 'ok' ? 'rgb(var(--accent))' : 'rgb(var(--danger))',
-                    }}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-fg-muted">
-                  {warnPercent(usage)}% của ngưỡng {formatBytes(usage.warnBytes)}
-                </p>
-              </>
-            )}
-
-            {level === 'over' && (
-              <p role="alert" data-testid="storage-over-warning" className="mt-2 text-xs text-danger">
-                Đã vượt ngưỡng cảnh báo. Xoá audio chương đã đọc hoặc nâng ngưỡng.
-              </p>
-            )}
-            {level === 'near' && (
-              <p data-testid="storage-near-warning" className="mt-2 text-xs text-fg-muted">
-                Gần tới ngưỡng cảnh báo.
-              </p>
-            )}
-          </div>
-
-          {orphans !== undefined && (
-            <div
-              data-testid="storage-orphans"
-              className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+        {error !== null && (
+          <div
+            role="alert"
+            data-testid="storage-error"
+            className="flex items-start justify-between gap-3 rounded-lg border border-danger p-3 text-sm text-danger"
+            style={{ backgroundColor: 'rgb(var(--danger) / 0.08)' }}
+          >
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={clearError}
+              aria-label="Đóng thông báo lỗi"
+              className="shrink-0 text-xs underline"
             >
-              <span className="text-xs text-fg-muted">Rác còn sót: {orphans}</span>
-              <button
-                type="button"
-                onClick={() => void deleteOrphans()}
-                disabled={deleting}
-                data-testid="storage-delete-orphans"
-                className="shrink-0 rounded border border-border px-2 py-1 text-xs text-fg transition-colors hover:bg-bg-subtle disabled:opacity-40"
-              >
-                Dọn
-              </button>
+              Đóng
+            </button>
+          </div>
+        )}
+
+        {lastDeleted !== null && lastDeleted.freedBytes > 0 && (
+          <p data-testid="storage-freed" className="text-xs text-fg-muted">
+            Đã giải phóng {formatBytes(lastDeleted.freedBytes)} ({lastDeleted.filesDeleted} file).
+          </p>
+        )}
+
+        {usage === null ? (
+          <p className="text-sm text-fg-muted">
+            {loading ? 'Đang đo dung lượng…' : 'Chưa đọc được dung lượng.'}
+          </p>
+        ) : (
+          <>
+            <div className="rounded-lg border border-border bg-bg-elevated p-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs text-fg-muted">Tổng audio</span>
+                <span
+                  data-testid="storage-total"
+                  className="tabular-nums text-lg font-semibold text-fg"
+                >
+                  {formatBytes(usage.audioBytes)}
+                </span>
+              </div>
+
+              {usage.warnBytes > 0 && (
+                <>
+                  {/* Thanh mức dùng: màu lấy từ biến CSS chứ không hardcode hex —
+                      `rgb(var(--danger))` để dùng được trong style thường. */}
+                  <div
+                    role="progressbar"
+                    aria-valuenow={warnPercent(usage)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Mức dùng so với ngưỡng cảnh báo"
+                    data-testid="storage-bar"
+                    className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-subtle"
+                  >
+                    <div
+                      className="h-full transition-all"
+                      style={{
+                        width: `${String(warnPercent(usage))}%`,
+                        backgroundColor:
+                          level === 'ok' ? 'rgb(var(--accent))' : 'rgb(var(--danger))',
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-fg-muted">
+                    {warnPercent(usage)}% của ngưỡng {formatBytes(usage.warnBytes)}
+                  </p>
+                </>
+              )}
+
+              {level === 'over' && (
+                <p
+                  role="alert"
+                  data-testid="storage-over-warning"
+                  className="mt-2 text-xs text-danger"
+                >
+                  Đã vượt ngưỡng cảnh báo. Xoá audio chương đã đọc hoặc nâng ngưỡng.
+                </p>
+              )}
+              {level === 'near' && (
+                <p data-testid="storage-near-warning" className="mt-2 text-xs text-fg-muted">
+                  Gần tới ngưỡng cảnh báo.
+                </p>
+              )}
             </div>
-          )}
 
-          {settings !== null && (
-            <StorageSettings
-              audioDir={settings.audioDir}
-              bitrate={settings.bitrate}
-              warnBytes={settings.storageWarnBytes}
-              onPickAudioDir={() => void window.api.settings.pickAudioDir()}
-              onChangeBitrate={(bitrate: AudioBitrate) => void updateSettings({ bitrate })}
-              onChangeWarnBytes={(bytes) => {
-                void updateSettings({ storageWarnBytes: bytes });
-                // Ngưỡng nằm trong `usage` (main trả về) nên phải nạp lại, nếu
-                // không thanh mức dùng vẫn tính theo ngưỡng cũ.
-                void load();
-              }}
-            />
-          )}
+            {orphans !== undefined && (
+              <div
+                data-testid="storage-orphans"
+                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+              >
+                <span className="text-xs text-fg-muted">Rác còn sót: {orphans}</span>
+                <button
+                  type="button"
+                  onClick={() => void deleteOrphans()}
+                  disabled={deleting}
+                  data-testid="storage-delete-orphans"
+                  className="shrink-0 rounded border border-border px-2 py-1 text-xs text-fg transition-colors hover:bg-bg-subtle disabled:opacity-40"
+                >
+                  Dọn
+                </button>
+              </div>
+            )}
 
-          {usage.books.length === 0 ? (
-            <p className="text-sm text-fg-muted">Thư viện chưa có sách nào.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {usage.books.map((book) => (
-                <StorageBookRow
-                  key={book.bookId}
-                  book={book}
-                  expanded={expandedBookId === book.bookId}
-                  chapters={expandedBookId === book.bookId ? chapters : []}
-                  busy={deleting}
-                  onToggle={() =>
-                    void expandBook(expandedBookId === book.bookId ? null : book.bookId)
-                  }
-                  onDeleteBook={() =>
-                    setPending({
-                      kind: 'book',
-                      id: book.bookId,
-                      title: book.title,
-                      bytes: book.audioBytes,
-                      // Không biết số segment chính xác mà chưa mở chương ra;
-                      // hộp thoại chỉ cần con số để user hình dung quy mô.
-                      segments: chapters
-                        .filter(() => expandedBookId === book.bookId)
-                        .reduce((sum, c) => sum + c.readySegments, 0),
-                    })
-                  }
-                  onDeleteRead={() =>
-                    setPending({
-                      kind: 'read',
-                      id: book.bookId,
-                      title: book.title,
-                      // Không dùng tới ở ca này — `scopeNote` thay chỗ hai con số.
-                      bytes: 0,
-                      segments: 0,
-                    })
-                  }
-                  onDeleteChapter={askDeleteChapter}
-                />
-              ))}
-            </ul>
-          )}
-        </>
-      )}
+            {settings !== null && (
+              <StorageSettings
+                audioDir={settings.audioDir}
+                bitrate={settings.bitrate}
+                warnBytes={settings.storageWarnBytes}
+                onPickAudioDir={() => void window.api.settings.pickAudioDir()}
+                onChangeBitrate={(bitrate: AudioBitrate) => void updateSettings({ bitrate })}
+                onChangeWarnBytes={(bytes) => {
+                  void updateSettings({ storageWarnBytes: bytes });
+                  // Ngưỡng nằm trong `usage` (main trả về) nên phải nạp lại, nếu
+                  // không thanh mức dùng vẫn tính theo ngưỡng cũ.
+                  void load();
+                }}
+              />
+            )}
 
-      {pending !== null && (
-        <DeleteAudioDialog
-          title={pending.title}
-          bytes={pending.bytes}
-          segments={pending.segments}
-          {...(pending.kind === 'read' ? { scopeNote: READ_SCOPE_NOTE } : {})}
-          busy={deleting}
-          onConfirm={() => void confirmDelete()}
-          onCancel={() => setPending(null)}
-        />
-      )}
-    </section>
+            {usage.books.length === 0 ? (
+              <p className="text-sm text-fg-muted">Thư viện chưa có sách nào.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {usage.books.map((book) => (
+                  <StorageBookRow
+                    key={book.bookId}
+                    book={book}
+                    expanded={expandedBookId === book.bookId}
+                    chapters={expandedBookId === book.bookId ? chapters : []}
+                    busy={deleting}
+                    onToggle={() =>
+                      void expandBook(expandedBookId === book.bookId ? null : book.bookId)
+                    }
+                    onDeleteBook={() =>
+                      setPending({
+                        kind: 'book',
+                        id: book.bookId,
+                        title: book.title,
+                        bytes: book.audioBytes,
+                        // Không biết số segment chính xác mà chưa mở chương ra;
+                        // hộp thoại chỉ cần con số để user hình dung quy mô.
+                        segments: chapters
+                          .filter(() => expandedBookId === book.bookId)
+                          .reduce((sum, c) => sum + c.readySegments, 0),
+                      })
+                    }
+                    onDeleteRead={() =>
+                      setPending({
+                        kind: 'read',
+                        id: book.bookId,
+                        title: book.title,
+                        // Không dùng tới ở ca này — `scopeNote` thay chỗ hai con số.
+                        bytes: 0,
+                        segments: 0,
+                      })
+                    }
+                    onDeleteChapter={askDeleteChapter}
+                  />
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {pending !== null && (
+          <DeleteAudioDialog
+            title={pending.title}
+            bytes={pending.bytes}
+            segments={pending.segments}
+            {...(pending.kind === 'read' ? { scopeNote: READ_SCOPE_NOTE } : {})}
+            busy={deleting}
+            onConfirm={() => void confirmDelete()}
+            onCancel={() => setPending(null)}
+          />
+        )}
+      </section>
+    </div>
   );
 };

@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-08-02 · commit `9863baa`
+> **Cập nhật lần cuối:** 2026-08-02 · commit `<điền sau khi commit>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -1242,7 +1242,7 @@ ngay. Mất biến đó ở một theme là **mất chữ toàn app**, không ri
 | Unit test TypeScript | **2271 passed** (+18 ở P6.2 — format engine 6, VoiceStylePicker 5, VoiceManager đa engine 5, schema voiceStyle 2) |
 | Unit test sidecar (pytest) | **698 passed** (+52 ở P6.1/P6.2 — timing âm tiết 11, catalog đa engine 19, engine VieNeu + registry 22) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
-| **Kiểm UI thật (`pnpm ui-check`)** | **92 phép kiểm** — lần chạy gần nhất **sau P6.2: 92/92 đạt, không phép nào đỏ**. +5 ở P6.2 cho màn Giọng đọc, trong đó hai phép khoá lỗi cuộn (mục 4.83). Phép kiểm canvas PDF hết flaky (mục 4.82). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| **Kiểm UI thật (`pnpm ui-check`)** | **93 phép kiểm** — lần chạy gần nhất **93/93 đạt, không phép nào đỏ**. +6 ở P6.2 cho màn Giọng đọc: hai phép khoá lỗi cuộn (mục 4.83), một phép khoá **vị trí thanh cuộn** (mục 4.84). Phép kiểm canvas PDF nay hạn 60s và không còn giết cả lượt chạy khi hết giờ (mục 4.85 — đính chính 4.82). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Icon app | **7 cỡ** (16→256) trong `resources/icon.ico`, sinh từ `pnpm build:icon`, tái lập đúng byte |
 | Giọng đọc trong catalog | **17** — 3 Piper (2 VI + 1 EN) + 14 VieNeu (VI, dùng chung một bộ model 244 MB) |
 | Schema DB | **v3** — P5.4 **không** thêm migration, xem lý do ở mục 4.73 |
@@ -3589,7 +3589,11 @@ kiểm, kèm `(bỏ qua ảnh …: chụp ảnh quá 15s)`.
   `built in …ms` xen giữa phần kiểm.
 
 **ĐÃ SỬA (cùng lượt P6.2).** Phép kiểm nay đo qua `waitFor('canvas PDF vẽ xong')`
-thay vì đọc một phát rồi kết luận. Hết flaky.
+thay vì đọc một phát rồi kết luận.
+
+⚠️ **"Hết flaky" ở đây là nói sớm** — xem mục **4.85**. `waitFor` có rồi nhưng hạn
+30s vẫn quá ngắn trên máy này, và nó còn *ném* khi hết giờ nên giết luôn phần
+kiểm phía sau. Phải tới 4.85 mới thật sự xong.
 
 Đáng ghi vì **cách nó lộ ra**: thêm màn Giọng đọc vào trước phần đọc làm phép
 kiểm canvas đỏ **3/3 lần**, không còn là thỉnh thoảng. Tức là nó **vốn đã đua từ
@@ -3629,6 +3633,56 @@ nhưng khung không có chiều cao nên vẫn không cuộn"*.
 **Bài học chung:** mọi màn hình mới nằm trong `<main>` phải có `overflow-y-auto`
 ở khối gốc. Không có nó thì màn hình chỉ *trông* đúng chừng nào nội dung còn
 ngắn — và nội dung dài ra là chuyện sớm muộn.
+
+### 4.84 Thanh cuộn đúng chỗ: ô cuộn phải rộng hết khung, không phải khối căn giữa
+
+Lượt sửa 4.83 làm màn Giọng đọc cuộn được, nhưng user báo tiếp: thanh cuộn **nằm
+lọt giữa màn hình** chứ không sát mép phải cửa sổ.
+
+**Nguyên nhân.** Cả ba màn (`VoiceManager`, `StorageManager`, `SettingsScreen`)
+gộp hai vai trò vào **một** thẻ: `mx-auto max-w-3xl` (căn giữa, rộng 768 px) +
+`overflow-y-auto` (cuộn). Thanh cuộn luôn bám mép phải của **chính ô cuộn**, nên
+nó nằm ở mép khối 768 px — trên cửa sổ 2000 px là cách mép thật hơn 500 px, trông
+như thanh cuộn của một khung con nào đó.
+
+**Cách sửa.** Tách hai tầng: `<div class="h-full overflow-y-auto">` rộng hết khung
+bọc ngoài, `<section class="mx-auto max-w-3xl">` căn giữa bên trong. Đã đo lại:
+**cách mép 0 px**.
+
+**Phép kiểm mới đo đúng thứ user nhìn thấy**, không chỉ "có cuộn được không":
+`window.innerWidth - scroll.getBoundingClientRect().right <= 2`. Ai lỡ chuyển
+`overflow-y-auto` ngược vào khối `max-w-3xl` là số này nhảy lên hàng trăm px.
+
+⚠️ Phép kiểm cũ đo `[data-testid="voice-manager"]` — sau khi tách tầng thì thẻ đó
+không còn là ô cuộn nữa (`overflowY` của nó là `visible`), đo ở đấy sẽ **xanh
+giả**. Nay đo ở `voice-manager-scroll`. Đây là bẫy chung khi tách tầng: **phép
+kiểm phải dời theo vai trò, không dính theo tên cũ.**
+
+### 4.85 `waitFor` hết giờ **thổi bay cả lượt ui-check** — và hạn 30s là quá ngắn
+
+Trong lúc kiểm 4.84, `pnpm ui-check` đỏ ở *"canvas PDF vẽ xong"* với
+`lần cuối: undefined`. Nhưng stash hết thay đổi rồi chạy lại thì **baseline cũng
+đỏ y hệt** — tức không phải do sửa gì, và mục 4.82 tuyên bố "hết flaky" là **nói
+sớm**.
+
+**Hai lỗi thật, đều là của lượt P6.2:**
+
+1. **Hạn 30s không đủ trên máy này.** Cùng lượt chạy có cả dòng `(bỏ qua ảnh
+   dev-reader-dark: chụp ảnh quá 15s)` — renderer đang bị bóp, pdfjs vẽ chậm hơn
+   30s. Nâng lên **60s** là xanh, và canvas vẽ thật `103526` pixel. Không phải
+   lỗi render, chỉ là chờ chưa đủ.
+2. **Hết giờ thì `waitFor` *ném*, giết luôn phần còn lại.** `checkPlayer` và mọi
+   phép kiểm sau nó không chạy — mất ~27 phép kiểm chỉ vì một canvas vẽ chậm.
+   Nay bắt lại và báo như một phép kiểm đỏ bình thường.
+
+**Thông báo lỗi cũ vô dụng.** `lần cuối: undefined` không phân biệt được *"canvas
+chưa có trong DOM"* với *"canvas có nhưng trắng"* — hai nguyên nhân khác hẳn nhau.
+Nay giữ số đo cuối và in ra `canvas 864×1296 nhưng chỉ 0 pixel khác trắng`.
+
+⚠️ Cạm bẫy khi sửa chỗ này: `waitFor` coi mọi giá trị không phải
+`undefined`/`null`/`false` là "xong". Trả thẳng `measured.nonWhite` khi chưa đạt
+sẽ **thoát vòng lặp ngay** vì `0` vẫn là truthy theo luật đó. Phải trả `undefined`
+và ghi số đo ra biến ngoài.
 
 ---
 

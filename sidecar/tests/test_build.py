@@ -114,6 +114,30 @@ class TestPhụThuộc:
         source = build_source()
         assert '"numpy"' not in source
 
+    def test_KHÔNG_kéo_torch_vào_bản_đóng_gói(self) -> None:
+        """Torch bản CPU chiếm **527 MB** — đo thật, nhiều hơn cả installer.
+
+        Bẫy cụ thể: `vieneu._v3_turbo_engine.speaker.onnx_extractor` có chữ
+        "onnx" trong tên nhưng `import torch` ở top-level. Khai nó làm hidden
+        import là PyInstaller đi tìm torch. Giọng nhân bản KHÔNG cần module đó —
+        `app/audio/fbank.py` tự tính fbank bằng numpy.
+        """
+        source = build_source()
+        assert "speaker.onnx_extractor" not in source
+        assert '"torch"' in source, "torch phải nằm trong EXCLUDES"
+
+    def test_torch_không_phải_dependency(self) -> None:
+        """Chốt ở tầng requirements luôn: cài vào là hỏng ngân sách dung lượng."""
+        for name in ("requirements.txt", "requirements-dev.txt"):
+            text = (SIDECAR_DIR / name).read_text(encoding="utf-8")
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("#") or not stripped:
+                    continue
+                assert not stripped.lower().startswith(("torch", "torchaudio")), (
+                    f"{name} khai {stripped!r} — xem chú thích ở app/audio/fbank.py"
+                )
+
     def test_thu_viện_native_được_gom_binaries(self) -> None:
         """onnxruntime và soundfile nạp DLL native, PyInstaller không tự thấy."""
         source = build_source()

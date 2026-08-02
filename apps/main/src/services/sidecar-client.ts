@@ -48,6 +48,8 @@ export type SidecarCatalogVoice = {
   engine: TtsEngine;
   totalBytes: number;
   installed: boolean;
+  /** Giọng nhân bản từ mẫu thu. Sidecar cũ không gửi → `undefined`. */
+  cloned?: boolean;
 };
 
 export type SidecarInstalledVoice = {

@@ -1,4 +1,4 @@
-"""Engine TTS VieNeu — 14 giọng preset chạy ONNX, không cần PyTorch.
+"""Engine TTS VieNeu — 14 giọng preset + giọng nhân bản, chạy ONNX, không PyTorch.
 
 Đây là chỗ **duy nhất** trong sidecar import `vieneu`, y như `piper.py` với
 `piper`. Mọi thứ khác (resample, mã hoá, timing) dùng chung.
@@ -26,6 +26,17 @@ và **vẫn chạy ONNX Runtime** — thứ đã có sẵn cho Piper, nên khôn
    SDK mặc định tự tải về `~/.cache/huggingface`, ở ngoài thư mục app: user
    không thấy tiến độ, không huỷ được, Storage manager không đếm, gỡ app không
    xoá. Nên ta trỏ `onnx_dir` vào thư mục voice do `download.py` ghi ra.
+
+## Hai cách chỉ định giọng
+
+- `preset_voice` — tên một trong 14 giọng dựng sẵn trong model.
+- `speaker_emb` — vector 192 chiều của giọng **nhân bản**, nhúng trong catalog.
+
+Catalog đã chặn việc khai cả hai. Đường clone không cần thêm file nào ngoài
+`speaker_encoder.onnx` (28 MB, nằm trong bộ model dùng chung) và **không** kéo
+torch: hàm dựng đặc trưng của SDK gọi `torchaudio.compliance.kaldi`, nên ta tự
+tính fbank bằng numpy ở `app/audio/fbank.py` — xem chú thích ở đó để biết vì sao
+đánh đổi này là đúng (đo thật: torch CPU chiếm 527 MB).
 """
 
 from __future__ import annotations
@@ -203,9 +214,17 @@ class VieneuEngine:
             raise EngineError("Không có nội dung để đọc")
 
         provider = model_entry or entry
-        preset = entry.preset_voice
-        if not preset:
-            raise EngineError(f"Voice {entry.id} thiếu presetVoice trong catalog")
+        # Giọng nhân bản đưa thẳng vector vào SDK dưới dạng dict; giọng preset
+        # đưa tên. Catalog đã chặn khai cả hai, nên ở đây chỉ cần chọn nhánh.
+        voice: str | dict[str, Any]
+        if entry.is_cloned:
+            voice = {"speaker_emb": np.asarray(entry.speaker_emb, dtype=np.float32)}
+        elif entry.preset_voice:
+            voice = entry.preset_voice
+        else:
+            raise EngineError(
+                f"Voice {entry.id} thiếu cả presetVoice lẫn speakerEmb trong catalog"
+            )
 
         with self._lock:
             self._load_locked(provider)
@@ -216,13 +235,17 @@ class VieneuEngine:
             try:
                 audio = tts.infer(
                     text,
-                    voice=preset,
+                    voice=voice,
                     style=self._style,
                     # Không đóng dấu chìm: đây là audio user tự sinh trên máy
                     # mình để nghe, không phải nội dung phát tán.
                     apply_watermark=False,
                     # `denoise` cần PyTorch — bật lên là ném ở máy user.
                     denoise=False,
+                    # Giọng nhân bản chỉ có embedding, KHÔNG có `codes`. Để mặc
+                    # định `True` thì SDK đi tìm `codes` trong dict và ném
+                    # `KeyError`. Giọng preset thì vẫn dùng codes như cũ.
+                    use_ref_codes=not entry.is_cloned,
                 )
             except Exception as exc:
                 raise EngineError(f"VieNeu tổng hợp thất bại: {exc}") from exc

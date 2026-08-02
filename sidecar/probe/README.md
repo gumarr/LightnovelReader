@@ -1,17 +1,23 @@
-# probe (sidecar) — đo trên voice Piper thật
+# probe (sidecar) — đo trên model thật
 
-**Không phải test sản phẩm.** Script ở đây nạp model 63 MB thật và sinh audio
-thật để lấy **con số**, không phải để pass/fail. Đã tách khỏi `pytest` (nằm
-ngoài `testpaths` trong [pytest.ini](../pytest.ini)) vì cần voice đã cài và mất
-vài giây mỗi lần chạy.
+**Không phải test sản phẩm.** Script ở đây nạp model thật và sinh audio thật để
+lấy **con số**, không phải để pass/fail. Đã tách khỏi `pytest` (nằm ngoài
+`testpaths` trong [pytest.ini](../pytest.ini)) vì cần voice đã cài và mất vài
+giây mỗi lần chạy.
 
 ```bash
 # chạy từ thư mục sidecar/
 .venv/Scripts/python.exe -m probe.timing_probe
 .venv/Scripts/python.exe -m probe.timing_probe --json
+
+# P6.3 — trích lại speakerEmb của giọng nhân bản trong catalog
+.venv/Scripts/python.exe -m probe.speaker_probe --extract
 ```
 
 Chưa cài voice thì báo rõ rồi thoát, không ném traceback.
+
+File tạm (audio mẫu tải về, embedding trích ra) nằm ở `probe/_work/`, **không
+commit** — dataset là CC BY-NC và mọi thứ trong đó sinh lại được.
 
 ## `timing_probe.py` — P6.1
 
@@ -78,3 +84,43 @@ ESTIMATORS["tên bản"] = ham_cua_ban  # (text, duration_ms, lang) -> list[Word
 Bản cũ (`_legacy_estimate`) được **chép** vào probe chứ không giữ trong `app/`:
 code sản phẩm không nên mang hai thuật toán làm cùng một việc, còn probe thì cần
 cả hai để so. Xoá nó đi là mất luôn cột đối chứng.
+
+## `speaker_probe.py` — P6.3
+
+Trích `speakerEmb` (192 chiều) cho **giọng nhân bản** trong catalog, và đối chiếu
+`app/audio/fbank.py` với `torchaudio.compliance.kaldi`.
+
+### Vì sao giọng Ngọc Huyền phải đi đường clone
+
+Bản gốc là **LoRA adapter** cho backbone PyTorch, chạy được duy nhất qua đường
+PyTorch/Gradio. File `voices.json` trong repo LoRA **không** tái dùng được cho
+ONNX: `codes` của nó là mảng 1 chiều 227 phần tử, giá trị tới 64214 — token của
+LLM 0.3B, khác hẳn `(T, 16)` giá trị 0–1023 của codec MOSS mà preset ONNX dùng.
+Nạp thẳng vào là `KeyError: 'speaker_emb'`.
+
+Đường đi được: clone từ audio thật trong dataset `pnnbao-ump/ngochuyen_voice`
+(CC BY-NC-4.0, công khai, không gated).
+
+### Con số đo được — đừng kỳ vọng hơn
+
+| So sánh | cos |
+|---|---|
+| Audio sinh ra vs Ngọc Huyền thật | **0.71 – 0.79** |
+| Hai clip THẬT của chính cô ấy | 0.93 |
+| Giọng preset nữ có sẵn vs Ngọc Huyền | 0.33 – 0.48 |
+
+Clone đi được **khoảng hai phần ba** quãng đường từ giọng preset tới giọng thật.
+Giống rõ rệt, **không phải bản sao** — UI nói thẳng điều này với user.
+
+### Sai số của fbank numpy so với torchaudio
+
+| Đại lượng | Kết quả |
+|---|---|
+| Tương quan hệ số fbank | 0.987 |
+| cos(embedding numpy, embedding torch) | **0.954 – 0.982** |
+
+Dòng thứ hai là thứ quyết định: sai số do numpy gây ra **nhỏ hơn** dao động tự
+nhiên giữa hai đoạn thu khác nhau của cùng người (0.930). Đổi lại, không phải
+cài torch — đo thật: **527 MB** site-packages, nhiều hơn cả installer.
+
+`--verify` cần torch nên phải dựng venv riêng; hướng dẫn ở đầu `speaker_probe.py`.

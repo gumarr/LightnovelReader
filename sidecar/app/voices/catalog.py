@@ -34,6 +34,10 @@ REQUIRED_KINDS: dict[str, tuple[str, ...]] = {
     ENGINE_VIENEU: (),
 }
 
+# Số chiều embedding giọng của `speaker_encoder.onnx` (khớp `EMBED_DIM` trong
+# SDK VieNeu). Sai số chiều là ONNX ném lúc chạy — bắt ở catalog rõ ràng hơn.
+SPEAKER_EMB_DIM = 192
+
 _SHA256_LENGTH = 64
 _HEX_DIGITS = frozenset("0123456789abcdef")
 
@@ -90,6 +94,15 @@ class VoiceEntry:
     preset_voice: str = ""
     # `id` của voice mang bộ model dùng chung. Rỗng = voice tự mang model.
     model_id: str = ""
+    # Embedding giọng 192 chiều cho voice **nhân bản** (clone), thay cho
+    # `preset_voice`. Rỗng = không phải voice clone.
+    #
+    # Vì sao nhúng thẳng con số vào catalog thay vì tính trên máy user: tính lại
+    # cần audio mẫu (dataset CC BY-NC, không đóng gói kèm được) cộng thêm một
+    # lượt chạy `speaker_encoder.onnx`. Nhúng 192 số float là ~4 KB JSON và cho
+    # kết quả y hệt mọi máy. Xem `sidecar/probe/speaker_probe.py` để biết con số
+    # này tái lập thế nào.
+    speaker_emb: tuple[float, ...] = ()
 
     @property
     def total_bytes(self) -> int:
@@ -99,6 +112,11 @@ class VoiceEntry:
     def is_shared_model(self) -> bool:
         """Voice này dùng model của voice khác (`model_id`) chứ không tự mang."""
         return bool(self.model_id)
+
+    @property
+    def is_cloned(self) -> bool:
+        """Voice dựng từ embedding giọng, không phải giọng preset của model."""
+        return bool(self.speaker_emb)
 
 
 @dataclass(frozen=True)
@@ -136,6 +154,26 @@ def _require_int(raw: dict[str, object], key: str, where: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise CatalogError(f"{where}: {key!r} phải là số nguyên dương")
     return value
+
+
+def _parse_speaker_emb(raw: object, where: str) -> tuple[float, ...]:
+    """Đọc `speakerEmb` — mảng 192 số của voice nhân bản. Thiếu = tuple rỗng."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise CatalogError(f"{where}: speakerEmb phải là mảng số")
+    if len(raw) != SPEAKER_EMB_DIM:
+        raise CatalogError(
+            f"{where}: speakerEmb phải có đúng {SPEAKER_EMB_DIM} phần tử, nhận {len(raw)}"
+        )
+
+    values: list[float] = []
+    for i, item in enumerate(raw):
+        # `bool` là con của `int` — loại sớm, y như `_require_int`.
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise CatalogError(f"{where}: speakerEmb[{i}] phải là số")
+        values.append(float(item))
+    return tuple(values)
 
 
 def _parse_file(raw: object, where: str) -> VoiceFile:
@@ -201,6 +239,14 @@ def _parse_voice(raw: object, index: int) -> VoiceEntry:
     if not isinstance(preset_voice, str):
         raise CatalogError(f"{where}: presetVoice phải là chuỗi")
 
+    speaker_emb = _parse_speaker_emb(raw.get("speakerEmb"), where)
+    # Hai cách chỉ định giọng, loại trừ nhau. Khai cả hai thì engine phải đoán
+    # cái nào thắng — thà chặn ở catalog còn hơn để chạy ra giọng sai âm thầm.
+    if speaker_emb and preset_voice:
+        raise CatalogError(f"{where}: không được khai cả speakerEmb lẫn presetVoice")
+    if speaker_emb and engine != ENGINE_VIENEU:
+        raise CatalogError(f"{where}: speakerEmb chỉ dùng được với engine {ENGINE_VIENEU}")
+
     raw_files = raw.get("files")
     # Voice dùng model chung (`modelId`) **không** mang file riêng — nó chỉ là
     # một cái tên giọng trong bộ model đã tải. Bắt buộc có `files` ở đây sẽ đẩy
@@ -239,6 +285,7 @@ def _parse_voice(raw: object, index: int) -> VoiceEntry:
         base_url=base_url,
         preset_voice=preset_voice,
         model_id=model_id,
+        speaker_emb=speaker_emb,
     )
 
 

@@ -145,4 +145,20 @@ describe('engineNote', () => {
     expect(note).toContain('dùng chung');
     expect(note).toContain('Highlight');
   });
+
+  it('giọng nhân bản nói rõ là KHÔNG giống hệt', () => {
+    // Đo thật: giọng clone đạt cosine 0.71–0.79 với giọng gốc, trong khi hai
+    // đoạn thu thật của cùng người đạt 0.93. Hứa "y hệt" là hứa sai.
+    const note = engineNote('vieneu', true);
+    expect(note).toContain('nhân bản');
+    expect(note).toContain('không giống hệt');
+  });
+
+  it('giọng VieNeu thường KHÔNG dính câu nhân bản', () => {
+    expect(engineNote('vieneu', false)).not.toContain('nhân bản');
+  });
+
+  it('cờ nhân bản không làm giọng Piper mọc ghi chú', () => {
+    expect(engineNote('piper', true)).toBeUndefined();
+  });
 });

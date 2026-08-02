@@ -87,6 +87,22 @@ def _shared_entry(voice_id: str = "vi_VN-vieneu-truc-ly") -> VoiceEntry:
     )
 
 
+def _cloned_entry(voice_id: str = "vi_VN-vieneu-ngoc-huyen") -> VoiceEntry:
+    """Giọng **nhân bản**: mang embedding 192 chiều thay cho tên giọng preset."""
+    return VoiceEntry(
+        id=voice_id,
+        lang="vi",
+        name="VieNeu — Ngọc Huyền",
+        quality="high",
+        sample_rate=SAMPLE_RATE,
+        license="CC BY-NC 4.0",
+        engine="vieneu",
+        model_id="vi_VN-vieneu-v3turbo",
+        files=(),
+        speaker_emb=tuple(float(i) / 100.0 for i in range(192)),
+    )
+
+
 def _piper_entry(voice_id: str = "vi_VN-test-medium") -> VoiceEntry:
     return VoiceEntry(
         id=voice_id,
@@ -269,16 +285,63 @@ class TestVieneuEngine:
         with pytest.raises(EngineError, match="Không có nội dung"):
             engine.synthesize("   ", entry)
 
-    def test_thiếu_presetVoice_bị_từ_chối(
+    def test_thiếu_cả_presetVoice_lẫn_speakerEmb_bị_từ_chối(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Không có tên giọng thì SDK đọc bằng giọng mặc định — sai giọng mà
-        không báo gì còn tệ hơn ném lỗi."""
+        """Không có cách nào chỉ định giọng thì SDK đọc bằng giọng mặc định —
+        sai giọng mà không báo gì còn tệ hơn ném lỗi."""
         engine, entry, _ = _engine_with(tmp_path, monkeypatch)
         broken = VoiceEntry(**{**entry.__dict__, "preset_voice": ""})
 
         with pytest.raises(EngineError, match="presetVoice"):
             engine.synthesize("Xin chào", broken)
+
+    def test_giọng_nhân_bản_truyền_embedding_thay_vì_tên(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Giọng clone đưa vector vào SDK dưới dạng dict, không phải chuỗi tên."""
+        engine, provider, made = _engine_with(tmp_path, monkeypatch)
+        cloned = _cloned_entry()
+
+        result = engine.synthesize("Xin chào", cloned, model_entry=provider)
+
+        voice = made[0].calls[0]["voice"]
+        assert isinstance(voice, dict)
+        assert voice["speaker_emb"].shape == (192,)
+        assert voice["speaker_emb"].dtype == np.float32
+        # `codes` KHÔNG được có mặt: giọng clone chỉ có embedding.
+        assert "codes" not in voice
+        assert result.voice_id == cloned.id
+
+    def test_giọng_nhân_bản_tắt_use_ref_codes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Để mặc định `use_ref_codes=True` thì SDK đi tìm `codes` trong dict và
+        ném `KeyError`. Đây là bẫy đã gặp thật lúc dựng."""
+        engine, provider, made = _engine_with(tmp_path, monkeypatch)
+
+        engine.synthesize("Xin chào", _cloned_entry(), model_entry=provider)
+
+        assert made[0].calls[0]["use_ref_codes"] is False
+
+    def test_giọng_preset_vẫn_dùng_ref_codes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Đối chứng: đừng tắt nhầm cho cả 14 giọng preset — chúng có `codes`
+        thật trong model và tắt đi là giọng đổi khác."""
+        engine, entry, made = _engine_with(tmp_path, monkeypatch)
+
+        engine.synthesize("Xin chào", entry)
+
+        assert made[0].calls[0]["use_ref_codes"] is True
+
+    def test_giọng_nhân_bản_vẫn_là_estimate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Clone không đổi gì về alignment — codec MOSS vẫn 12,5 token/giây."""
+        engine, provider, _ = _engine_with(tmp_path, monkeypatch)
+        result = engine.synthesize("Một hai ba", _cloned_entry(), model_entry=provider)
+        assert result.timing_source == "estimate"
 
     def test_unload_đóng_model(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

@@ -235,6 +235,14 @@ export type VoiceCatalogItem = {
    */
   totalBytes: number;
   installed: boolean;
+  /**
+   * Giọng **nhân bản** từ một mẫu thu, không phải giọng dựng sẵn của model.
+   *
+   * UI cần biết để nói thẳng mức độ giống: giọng loại này đi được khoảng hai
+   * phần ba quãng đường tới giọng thật (đo bằng cosine trên chính speaker
+   * encoder), nên hứa "y hệt" là hứa sai. Xem `sidecar/probe/speaker_probe.py`.
+   */
+  cloned: boolean;
 };
 
 /**

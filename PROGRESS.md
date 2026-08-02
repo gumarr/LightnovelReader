@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-08-02 · commit `27bb49f`
+> **Cập nhật lần cuối:** 2026-08-02 · commit `<điền sau khi commit>`
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -41,9 +41,15 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
 
 **Việc tiếp theo:** Phase 5 xong hết. Hai việc song song:
 1. **Publish release** + kiểm nhánh cập nhật trên bản cài thật (mục 3, mục 8).
-2. **Phase 6 đã xong cả P6.1 lẫn P6.2.** Việc còn lại là **của user**: mở app →
-   Giọng đọc → tải bộ VieNeu (244 MB) → nghe thử 14 giọng và chọn một giọng.
-   Xem mục 4.79–4.81 trước khi định đổi hướng.
+2. **Phase 6 xong P6.1 → P6.3.** Việc còn lại là **của user**: mở app → Giọng đọc
+   → tải bộ VieNeu (**271 MB**, đã gồm `speaker_encoder.onnx` cho giọng nhân bản)
+   → nghe thử 15 giọng, trong đó có **Ngọc Huyền (nhân bản)**, rồi chọn một giọng.
+   Xem mục 4.79–4.81 và **4.86** trước khi định đổi hướng — 4.86 đính chính 4.81.
+
+   ⚠️ Giọng Ngọc Huyền là **clone**, không phải LoRA gốc: đo được cos 0.71–0.79
+   với giọng thật (preset nữ có sẵn chỉ 0.33–0.48, hai clip thật của chính cô ấy
+   0.93). Nghe ra chất giọng nhưng **không giống hệt** — nếu user thấy chưa đủ
+   thì đường duy nhất còn lại là torch + GPU, tức +527 MB, đã loại.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
@@ -1239,12 +1245,12 @@ ngay. Mất biến đó ở một theme là **mất chữ toàn app**, không ri
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **2271 passed** (+18 ở P6.2 — format engine 6, VoiceStylePicker 5, VoiceManager đa engine 5, schema voiceStyle 2) |
-| Unit test sidecar (pytest) | **698 passed** (+52 ở P6.1/P6.2 — timing âm tiết 11, catalog đa engine 19, engine VieNeu + registry 22) |
+| Unit test TypeScript | **2274 passed** (+3 ở P6.3 — ghi chú giọng nhân bản) |
+| Unit test sidecar (pytest) | **722 passed** (+24 ở P6.3 — fbank numpy 13, catalog speakerEmb 5, engine clone 4, chặn torch 2) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
-| **Kiểm UI thật (`pnpm ui-check`)** | **93 phép kiểm** — lần chạy gần nhất **93/93 đạt, không phép nào đỏ**. +6 ở P6.2 cho màn Giọng đọc: hai phép khoá lỗi cuộn (mục 4.83), một phép khoá **vị trí thanh cuộn** (mục 4.84). Phép kiểm canvas PDF nay hạn 60s và không còn giết cả lượt chạy khi hết giờ (mục 4.85 — đính chính 4.82). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| **Kiểm UI thật (`pnpm ui-check`)** | **94 phép kiểm** — lần chạy gần nhất **94/94 đạt, không phép nào đỏ**. +1 ở P6.3 khoá lời hứa về giọng nhân bản (mục 4.86). +6 ở P6.2 cho màn Giọng đọc: hai phép khoá lỗi cuộn (mục 4.83), một phép khoá **vị trí thanh cuộn** (mục 4.84). Phép kiểm canvas PDF nay hạn 60s và không còn giết cả lượt chạy khi hết giờ (mục 4.85 — đính chính 4.82). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Icon app | **7 cỡ** (16→256) trong `resources/icon.ico`, sinh từ `pnpm build:icon`, tái lập đúng byte |
-| Giọng đọc trong catalog | **17** — 3 Piper (2 VI + 1 EN) + 14 VieNeu (VI, dùng chung một bộ model 244 MB) |
+| Giọng đọc trong catalog | **18** — 3 Piper (2 VI + 1 EN) + 15 VieNeu (14 preset + 1 nhân bản, VI, dùng chung một bộ model 271 MB) |
 | Schema DB | **v3** — P5.4 **không** thêm migration, xem lý do ở mục 4.73 |
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
@@ -3517,6 +3523,12 @@ thiện thêm hàm này" thì đọc lại đoạn này trước.
 
 ### 4.81 P6.2 — giọng VieNeu: cái làm được, cái KHÔNG làm được
 
+> ⚠️ **ĐÍNH CHÍNH (P6.3).** Kết luận "không dùng được" dưới đây **sai một nửa**.
+> Đúng: LoRA gốc không chạy được trên ONNX. Sai: tôi kết luận luôn là *không có
+> đường nào tới giọng đó*, mà không kiểm tra đường **clone từ audio mẫu**.
+> Dataset giọng đó công khai, và `prepare_reference` có bản ONNX. Nay đã làm
+> được — xem mục **4.86**. Bài học ở cuối mục đó.
+
 **Giọng Ngọc Huyền (Vbee) — thứ user muốn — KHÔNG dùng được.** Đây là kết luận
 sau khi tra tận nơi, đừng thử lại:
 
@@ -3683,6 +3695,71 @@ Nay giữ số đo cuối và in ra `canvas 864×1296 nhưng chỉ 0 pixel khác
 `undefined`/`null`/`false` là "xong". Trả thẳng `measured.nonWhite` khi chưa đạt
 sẽ **thoát vòng lặp ngay** vì `0` vẫn là truthy theo luật đó. Phải trả `undefined`
 và ghi số đo ra biến ngoài.
+
+### 4.86 P6.3 — giọng Ngọc Huyền: làm được, bằng đường khác hẳn dự đoán
+
+Mục 4.81 kết luận giọng này **không dùng được**. Kết luận đó sai, và cách nó sai
+mới là phần đáng ghi.
+
+**Đúng phần nào.** LoRA adapter thật sự không chạy được trên ONNX: nó là trọng số
+PyTorch, không có script export, tác giả chỉ đưa đường Docker + GPU.
+
+**Sai phần nào.** Từ "LoRA không chạy được" tôi nhảy thẳng sang "không có đường
+nào tới giọng đó" — mà không kiểm hai thứ hoá ra đều mở:
+
+1. **Dataset giọng đó công khai** (`pnnbao-ump/ngochuyen_voice`, CC BY-NC-4.0,
+   không gated): 7540 mẫu audio thật của chính giọng ấy.
+2. **`prepare_reference` có bản ONNX** trong `onnx_runtime_lite.py`. README của
+   VieNeu viết *"voice cloning requires the PyTorch (GPU) engine"* — tôi đọc câu
+   đó rồi tin, không mở code kiểm. Câu đó đúng cho `add_voice`/`denoise` nhưng
+   **không** đúng cho đường trích embedding.
+
+**Cái chặn thật, và cách vòng qua.** `OnnxSpeakerEncoder` có chữ "onnx" trong
+tên nhưng `import torch` ở top-level — qua `speaker/fbank.py` →
+`torchaudio.compliance.kaldi`. Nhưng torch ở đó **chỉ dùng để tính filterbank**,
+một phép DSP có đặc tả rõ, không phải mạng nơ-ron. Viết lại bằng numpy tốn ~60
+dòng (`app/audio/fbank.py`) và bỏ được **527 MB** (đo thật, torch CPU + torchaudio).
+
+Sai số của bản numpy, đo bằng chính encoder:
+
+| | |
+|---|---|
+| Tương quan hệ số fbank | 0.987 |
+| cos(embedding numpy, embedding torch) | **0.954 – 0.982** |
+| cos hai clip THẬT của cùng người nói | 0.930 |
+
+Dòng cuối là lý do chấp nhận được: sai số numpy gây ra **nhỏ hơn** dao động tự
+nhiên giữa hai đoạn thu của chính người đó.
+
+**Giống tới đâu — nói thẳng, đừng hứa quá.**
+
+| So sánh | cos |
+|---|---|
+| Audio sinh ra vs Ngọc Huyền thật | **0.71 – 0.79** |
+| Hai clip thật của chính cô ấy | 0.93 |
+| Giọng preset nữ có sẵn vs Ngọc Huyền | 0.33 – 0.48 |
+
+Clone đi được khoảng **hai phần ba** quãng đường từ preset tới giọng thật. Đây là
+clone, **không phải** LoRA gốc. UI nói rõ câu này ở ghi chú của giọng, và
+`ui-check` khoá lại — hứa "y hệt" rồi để user tải 244 MB mới thất vọng là tệ hơn.
+
+**Chi phí thật:** +28 MB tải thêm (`speaker_encoder.onnx`, nằm trong bộ model
+dùng chung nên 15 giọng VieNeu chia nhau) và **+0 MB installer** — bản đóng gói
+vẫn đúng 217.8 MB như P6.2, đã build lại và kiểm `_internal/` không có torch.
+
+**Hai bẫy đã gặp, đừng đạp lại:**
+- `use_ref_codes` mặc định `True` → SDK đi tìm `codes` trong dict và ném
+  `KeyError`. Giọng clone chỉ có embedding nên phải tắt; giọng preset thì **giữ
+  nguyên** (có codes thật, tắt đi là đổi giọng). Có test cho cả hai chiều.
+- **Đừng** khai `vieneu._v3_turbo_engine.speaker.onnx_extractor` làm hidden
+  import — tên có chữ "onnx" nhưng nó kéo torch. Đã thêm `torch`/`torchaudio`
+  vào `EXCLUDES` và có test chặn cả ở `requirements.txt`.
+
+**Bài học chung (thứ đáng nhớ nhất ở đây):** *"Thư viện nói không làm được"* và
+*"không làm được"* là hai mệnh đề khác nhau. Lần này tài liệu đúng theo nghĩa
+hẹp của nó nhưng tôi suy rộng ra quá, và suýt đóng lại một thứ vốn làm được. Khi
+kết luận là **không**, hãy ghi rõ đã kiểm **những đường nào** — mục 4.81 thiếu
+đúng chỗ đó nên không ai (kể cả tôi) thấy được lỗ hổng.
 
 ---
 

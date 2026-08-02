@@ -1407,6 +1407,11 @@ const checkVoices = async (cdp) => {
           // mép phải ô cuộn, nên số này CHÍNH LÀ độ lệch của thanh cuộn.
           gapRight: window.innerWidth - scroll.getBoundingClientRect().right,
           note: document.querySelector('[data-testid="voice-engine-note"]') !== null,
+          // Giọng nhân bản phải nói rõ là KHÔNG giống hệt giọng gốc. Đo ở đây
+          // vì đây là lời hứa với user — sai thì họ tải 244 MB rồi mới thất vọng.
+          clonedNote: Array.from(
+            document.querySelectorAll('[data-testid="voice-engine-note"]'),
+          ).filter((n) => n.textContent.includes('nhân bản')).length,
         };
       })()
     `),
@@ -1445,6 +1450,11 @@ const checkVoices = async (cdp) => {
   );
 
   check('ghi chú riêng của engine vieneu hiện ra', measured.note === true);
+  check(
+    'giọng nhân bản nói rõ là không giống hệt',
+    measured.clonedNote === 1,
+    `${measured.clonedNote} dòng có chữ "nhân bản"`,
+  );
 
   // KHÔNG chụp ảnh màn này: danh sách 17 giọng cao ~2500 px, chụp nó ngốn đủ
   // lâu để pdfjs phía sau không kịp vẽ xong trong hạn chờ — đã làm phép kiểm

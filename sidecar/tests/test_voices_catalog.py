@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.voices.catalog import (
+    SPEAKER_EMB_DIM,
     CatalogError,
     installed_size,
     is_installed,
@@ -102,6 +103,24 @@ def raw_shared_voice(
         "license": "Apache-2.0",
         "modelId": model_id,
         "presetVoice": "Trúc Ly",
+    }
+
+
+def raw_cloned_voice(
+    voice_id: str = "vi_VN-vieneu-ngoc-huyen", model_id: str = "vi_VN-vieneu-v3turbo"
+) -> dict[str, object]:
+    """Giọng **nhân bản**: chỉ định bằng embedding thay vì tên giọng preset."""
+    return {
+        "id": voice_id,
+        "engine": "vieneu",
+        "lang": "vi",
+        "name": "VieNeu — Ngọc Huyền",
+        "quality": "high",
+        "sampleRate": 48000,
+        "license": "CC BY-NC 4.0",
+        "modelId": model_id,
+        # Giá trị giả nhưng ĐÚNG số chiều — cái đang kiểm là luật, không phải giọng.
+        "speakerEmb": [i / 100.0 for i in range(SPEAKER_EMB_DIM)],
     }
 
 
@@ -235,9 +254,14 @@ class TestLoadCatalog:
         for voice in catalog.voices:
             if voice.is_shared_model:
                 # Giọng dùng model chung không mang file — nó chỉ là một cái tên
-                # giọng trong bộ model của voice khác.
+                # giọng (hoặc một embedding) dựa trên model của voice khác.
                 assert voice.files == ()
-                assert voice.preset_voice
+                # Phải chỉ định giọng bằng ĐÚNG MỘT trong hai cách. Thiếu cả hai
+                # thì engine không biết đọc bằng giọng nào; có cả hai thì phải
+                # đoán cái nào thắng.
+                assert bool(voice.preset_voice) != bool(voice.speaker_emb), (
+                    f"{voice.id}: phải có đúng một trong presetVoice / speakerEmb"
+                )
                 continue
             if voice.engine == "piper":
                 assert {f.kind for f in voice.files} == {"model", "config"}
@@ -372,6 +396,44 @@ class TestĐaEngine:
         voice["modelId"] = "vi_VN-vieneu-v3turbo"
         with pytest.raises(CatalogError, match="files"):
             parse_catalog(raw_catalog(raw_model_voice(), voice))
+
+    def test_speakerEmb_đủ_192_chiều_thì_nhận(self) -> None:
+        voice = raw_cloned_voice()
+        catalog = parse_catalog(raw_catalog(raw_model_voice(), voice))
+        cloned = catalog.voices[1]
+        assert cloned.is_cloned
+        assert len(cloned.speaker_emb) == SPEAKER_EMB_DIM
+        assert not cloned.preset_voice
+
+    def test_speakerEmb_sai_số_chiều_bị_chặn(self) -> None:
+        """Sai số chiều thì ONNX ném lúc user bấm đọc — bắt ở catalog rõ hơn."""
+        voice = raw_cloned_voice()
+        voice["speakerEmb"] = [0.1] * 128
+        with pytest.raises(CatalogError, match="192"):
+            parse_catalog(raw_catalog(raw_model_voice(), voice))
+
+    def test_speakerEmb_chứa_thứ_không_phải_số_bị_chặn(self) -> None:
+        voice = raw_cloned_voice()
+        emb = [0.1] * SPEAKER_EMB_DIM
+        emb[7] = "x"  # type: ignore[call-overload]
+        voice["speakerEmb"] = emb
+        with pytest.raises(CatalogError, match="speakerEmb"):
+            parse_catalog(raw_catalog(raw_model_voice(), voice))
+
+    def test_khai_cả_speakerEmb_lẫn_presetVoice_bị_chặn(self) -> None:
+        """Hai cách chỉ định giọng loại trừ nhau — có cả hai thì engine phải
+        đoán cái nào thắng, và đoán sai là đọc sai giọng mà không báo gì."""
+        voice = raw_cloned_voice()
+        voice["presetVoice"] = "Trúc Ly"
+        with pytest.raises(CatalogError, match="presetVoice"):
+            parse_catalog(raw_catalog(raw_model_voice(), voice))
+
+    def test_speakerEmb_trên_engine_piper_bị_chặn(self) -> None:
+        """Piper không có khái niệm embedding giọng — khai vào là hiểu nhầm."""
+        voice = raw_voice()
+        voice["speakerEmb"] = [0.1] * SPEAKER_EMB_DIM
+        with pytest.raises(CatalogError, match="vieneu"):
+            parse_catalog(raw_catalog(voice))
 
     def test_baseUrl_riêng_đè_baseUrl_chung(self) -> None:
         catalog = parse_catalog(raw_catalog(raw_voice(), raw_model_voice()))

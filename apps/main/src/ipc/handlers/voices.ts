@@ -81,6 +81,8 @@ export const createVoicesHandlers = (deps: VoicesHandlerDeps): VoicesHandlers =>
           engine: voice.engine ?? 'piper',
           totalBytes: voice.totalBytes,
           installed: voice.installed,
+          // Cùng lý do với `engine`: sidecar cũ không gửi trường này.
+          cloned: voice.cloned ?? false,
         })),
       );
     },

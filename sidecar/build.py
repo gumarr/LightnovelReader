@@ -83,7 +83,13 @@ HIDDEN_IMPORTS = [
     "vieneu.v3turbo",
     "vieneu._v3_turbo_engine",
     "vieneu._v3_turbo_engine.onnx_runtime_lite",
-    "vieneu._v3_turbo_engine.speaker.onnx_extractor",
+    # KHÔNG khai module trích speaker embedding của SDK: tên nó có chữ "onnx"
+    # nhưng bên trong `import torch` ở top-level (qua `speaker/fbank.py` →
+    # `torchaudio.compliance.kaldi`). Khai vào là PyInstaller đi tìm torch —
+    # thứ cố ý không cài, vì bản CPU chiếm **527 MB**.
+    #
+    # Giọng nhân bản không đi qua đó: `app/audio/fbank.py` tự tính fbank bằng
+    # numpy rồi nạp thẳng `speaker_encoder.onnx` bằng onnxruntime.
     "vieneu_utils",
     "vieneu_utils.phonemize_text",
     "sea_g2p",
@@ -108,7 +114,7 @@ COLLECT_DATA = ["piper", "soundfile", "onnxruntime", "vieneu", "sea_g2p"]
 COLLECT_BINARIES = ["onnxruntime", "soundfile", "sea_g2p", "tokenizers", "soxr"]
 
 # Không mang theo thứ chỉ dùng lúc test/build — mỗi cái là vài MB.
-EXCLUDES = ["pytest", "PyInstaller", "tkinter", "unittest", "pydoc"]
+EXCLUDES = ["pytest", "PyInstaller", "tkinter", "unittest", "pydoc", "torch", "torchaudio"]
 
 
 def clean() -> None:

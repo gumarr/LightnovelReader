@@ -13,6 +13,7 @@ from .encode import (
     quality_for_bitrate,
     write_opus,
 )
+from .fbank import N_MELS, SPEAKER_SAMPLE_RATE, speaker_fbank
 from .paths import AUDIO_SUFFIX, AudioPathError, resolve_audio_path
 from .resample import (
     OPUS_SAMPLE_RATES,
@@ -34,6 +35,9 @@ from .timings import (
 
 __all__ = [
     "AUDIO_SUFFIX",
+    "N_MELS",
+    "SPEAKER_SAMPLE_RATE",
+    "speaker_fbank",
     "AudioPathError",
     "resolve_audio_path",
     "DEFAULT_BITRATE",

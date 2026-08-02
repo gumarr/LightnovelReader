@@ -76,10 +76,18 @@ export const voiceSpecLabel = (voice: {
  * Với VieNeu phải nói **trước** hai điều user sẽ gặp, thay vì để họ tự phát hiện:
  * một bộ model dùng chung cho mọi giọng (nên chỉ tải một lần), và highlight
  * theo từ kém chính xác hơn Piper (engine không trả mốc thời gian thật).
+ *
+ * `cloned` thêm một câu nữa: giọng nhân bản **không** phải bản sao y hệt. Đo
+ * bằng cosine trên chính speaker encoder thì nó đi được khoảng hai phần ba
+ * quãng đường từ giọng preset tới giọng thật (0.71–0.79, trong khi hai đoạn thu
+ * thật của cùng người đạt 0.93). Nói trước còn hơn để user nghe rồi thất vọng.
  */
-export const engineNote = (engine: TtsEngine): string | undefined => {
+export const engineNote = (engine: TtsEngine, cloned = false): string | undefined => {
   if (engine !== 'vieneu') return undefined;
-  return 'Giọng tự nhiên hơn, đọc chậm hơn một chút. Mọi giọng loại này dùng chung một bộ model — tải một lần là dùng được hết. Highlight theo từ kém chính xác hơn giọng nhanh.';
+  const base =
+    'Giọng tự nhiên hơn, đọc chậm hơn một chút. Mọi giọng loại này dùng chung một bộ model — tải một lần là dùng được hết. Highlight theo từ kém chính xác hơn giọng nhanh.';
+  if (!cloned) return base;
+  return `${base} Đây là giọng nhân bản từ một mẫu thu: nghe ra chất giọng gốc nhưng không giống hệt.`;
 };
 
 /**

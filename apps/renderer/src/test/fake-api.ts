@@ -98,6 +98,7 @@ export const fakeVoice = (overrides: Partial<VoiceCatalogItem> = {}): VoiceCatal
   engine: 'piper',
   totalBytes: 63_206_154,
   installed: false,
+  cloned: false,
   ...overrides,
 });
 

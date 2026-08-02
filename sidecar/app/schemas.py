@@ -73,6 +73,9 @@ class CatalogVoice(BaseModel):
     engine: str
     totalBytes: int  # noqa: N815
     installed: bool
+    # Giọng nhân bản từ mẫu thu, không phải giọng dựng sẵn của model. UI nói
+    # thẳng mức độ giống thay vì để user tưởng là bản sao y hệt.
+    cloned: bool = False
     files: list[VoiceFileInfo]
 
 

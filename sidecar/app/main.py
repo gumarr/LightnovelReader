@@ -149,6 +149,7 @@ def create_app(config: SidecarConfig) -> FastAPI:
                     # `entry` sẽ ra 0 byte và "đã cài" cho giọng chưa tải gì.
                     totalBytes=resolve_model_entry(catalog, entry).total_bytes,
                     installed=is_installed(models_dir, resolve_model_entry(catalog, entry)),
+                    cloned=entry.is_cloned,
                     files=[
                         VoiceFileInfo(kind=f.kind, sizeBytes=f.size_bytes, sha256=f.sha256)
                         for f in resolve_model_entry(catalog, entry).files

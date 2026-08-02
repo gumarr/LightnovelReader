@@ -50,7 +50,7 @@ export const VoiceRow = ({
     ? progress.totalBytes
     : voice.totalBytes;
   const percent = downloading ? downloadPercent(progress.receivedBytes, total) : 0;
-  const note = engineNote(voice.engine);
+  const note = engineNote(voice.engine, voice.cloned);
 
   return (
     <li

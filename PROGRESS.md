@@ -51,6 +51,8 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
    0.93). Nghe ra chất giọng nhưng **không giống hệt** — nếu user thấy chưa đủ
    thì đường duy nhất còn lại là torch + GPU, tức +527 MB, đã loại.
 
+**Đã phát hành `LN-reader-v1.2.0`** (2026-11-13): installer + portable + `latest.yml` + blockmap. `ui-check --packaged` 96/96 ở lượt 3 — xem nợ "canvas PDF bản đóng gói" ở mục 8.
+
 **P6.4 (2026-11-13):** user mới **không tải được** bộ VieNeu (HF đổi file trên
 `main`) → đã ghim commit. Audio cũ sinh trước P6.4 vẫn mang lỗi `~` → "khoảng",
 đánh vần `Yeaaahh`… — muốn sạch phải **xoá audio chương rồi tạo lại**. Sidecar
@@ -1260,7 +1262,7 @@ ngay. Mất biến đó ở một theme là **mất chữ toàn app**, không ri
 | Typecheck | Sạch (5 package) |
 | Lint | Sạch (0 warning) |
 | Sidecar `.exe` (onedir) | **145 MB** (29 → 145 vì ONNX Runtime + espeak data) |
-| Installer NSIS / portable | **143.0 / 142.8 MB** (80.8 MB trước khi có sidecar) |
+| Installer NSIS / portable | **169.3 / 169.0 MB** (bản 1.2.0; 143.0 MB ở P5.5, 80.8 MB trước khi có sidecar) |
 
 ---
 
@@ -4326,5 +4328,6 @@ scripts/
 | Chọn ngôn ngữ sách chỉ đổi được lúc nhập | Thấp | Lưu xong thì `lang` cố định; chọn nhầm phải xoá sách nhập lại (mất luôn cấu trúc chương đã sửa tay). Sửa được: thêm `library:setLang` + ô chọn ở màn chi tiết sách, nhưng phải xoá audio đã sinh vì chúng theo giọng cũ. Chưa làm vì chọn nhầm ngay ở màn xác nhận là ca hiếm — ô nằm cạnh ô tên sách, khó bỏ sót |
 | Không có UI cho `alignmentEnabled` | Thấp | **Cố ý**, xem 4.71. Phase 4 đã bỏ nên không có gì để bật/tắt; giữ field vì gỡ khỏi schema tốn một migration đổi lấy hư không. Đừng dựng UI cho nó |
 | Câu thoại 1 từ vẫn có thể bị cắt cụt | Thấp | P6.4: lảm nhảm 4 lượt liền (`“Ê?”` giọng Ngọc Linh: 7/8 lần) thì cắt về `1 s + 0,6 s/từ`. Chữ thật nằm đầu nên thường vẫn nghe được, nhưng đuôi có thể còn rác ≤ 1 s. P6.5 đã thêm bảng thán từ EN→VI (chọn từng cặp theo số đo, mục 4.88); câu ngắn thuần Việt (`“Ừm.”`, `“Ể?”`) vẫn ~8% lượt lảm nhảm — chỉ trông vào vòng sinh lại |
+| **Canvas PDF bản đóng gói đỏ 2/3 lượt `ui-check`** | **TB** | Bản 1.2.0, thư viện thật của user ("Vol 5 full"): hai lượt đầu canvas 892×1262 **0 pixel mực** sau 60 s, lượt 3 mở trang 1–2 vẽ đủ (224 790 / 245 604 pixel mẫu). **Không phải hồi quy**: so với tag 1.1.0, code reader/parser/dependency không đổi dòng nào. Phép đo nay quét **mọi** trang đang mount và in `trang:pixel` — lần đỏ sau sẽ biết là trang trắng thật của PDF hay viewer không vẽ. Chưa tái hiện được nên chưa sửa |
 | Phiên âm Nhật chỉ nhận chữ viết hoa đầu | Thấp | `Oya~ oya~` → "Ô-ia, oya": từ thứ hai viết thường nên lexicon bỏ qua. Có từ trước P6.4, chỉ lộ ra khi đo |
 | Giọng `25hours` chưa nghe thử lần nào | TB | sha256/size đã đối chiếu thật với HF, và đường 16 kHz đã lần theo code (`target_rate_for_opus` trả 16000 → **bỏ qua resample**), nhưng **chưa tải model 63 MB về để nghe**. Chất lượng `low` + 16 kHz nghe ra sao so với `vais1000` (`medium`, 22 kHz) thì chưa ai biết. Nếu tệ hơn hẳn thì nên ghi chú vào catalog để user khỏi mất công tải |

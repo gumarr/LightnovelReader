@@ -955,22 +955,29 @@ const checkPanelTabs = async (cdp) => {
  */
 const measurePdfCanvas = `
   (() => {
-    const canvas = document.querySelector('[data-testid="pdf-page"] canvas');
-    if (canvas === null) return null;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (context === null) return null;
-
-    const { width, height } = canvas;
-    if (width === 0 || height === 0) return { width, height, nonWhite: 0 };
-
-    const { data } = context.getImageData(0, 0, width, height);
-    let nonWhite = 0;
-    // Lấy mẫu mỗi 4 pixel: 864×1296 là hơn 1.1 triệu pixel, đếm hết thì chậm mà
-    // kết luận không đổi.
-    for (let i = 0; i < data.length; i += 16) {
-      if (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250) nonWhite += 1;
+    // Đo MỌI trang đang mount, lấy trang nhiều mực nhất. Chỉ đo canvas đầu tiên
+    // thì đỏ giả khi sách mở giữa chừng: trang đầu đang mount (vùng overscan) có
+    // thể là trang trắng THẬT của PDF — LN hay có trang trắng ngăn chương.
+    const pages = [];
+    let best = null;
+    for (const wrap of document.querySelectorAll('[data-testid="pdf-page"]')) {
+      const canvas = wrap.querySelector('canvas');
+      const context = canvas?.getContext('2d', { willReadFrequently: true });
+      if (canvas === null || context === null || context === undefined) continue;
+      const { width, height } = canvas;
+      let nonWhite = 0;
+      if (width > 0 && height > 0) {
+        const { data } = context.getImageData(0, 0, width, height);
+        // Lấy mẫu mỗi 4 pixel: 864×1296 là hơn 1.1 triệu pixel, đếm hết thì
+        // chậm mà kết luận không đổi.
+        for (let i = 0; i < data.length; i += 16) {
+          if (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250) nonWhite += 1;
+        }
+      }
+      pages.push(wrap.getAttribute('data-page') + ':' + nonWhite);
+      if (best === null || nonWhite > best.nonWhite) best = { width, height, nonWhite };
     }
-    return { width, height, nonWhite };
+    return best === null ? null : { ...best, pages: pages.join(' ') };
   })()
 `;
 
@@ -1332,7 +1339,7 @@ const run = async (cdp) => {
       'canvas PDF vẽ xong trong 60s',
       lastCanvas === undefined
         ? 'không thấy [data-testid="pdf-page"] canvas'
-        : `canvas ${lastCanvas.width}×${lastCanvas.height} nhưng chỉ ${lastCanvas.nonWhite} pixel khác trắng`,
+        : `canvas ${lastCanvas.width}×${lastCanvas.height} nhưng chỉ ${lastCanvas.nonWhite} pixel khác trắng (trang:pixel ${lastCanvas.pages})`,
     );
     await checkPlayer(cdp);
     return;
@@ -1354,7 +1361,7 @@ const run = async (cdp) => {
   } else {
     log('Viewer PDF:');
     check('canvas có kích thước thật', canvas.width > 0 && canvas.height > 0, `${canvas.width}×${canvas.height}`);
-    check('canvas có pixel khác trắng (đã vẽ thật)', canvas.nonWhite > 1000, `${canvas.nonWhite} pixel mẫu`);
+    check('canvas có pixel khác trắng (đã vẽ thật)', canvas.nonWhite > 1000, `${canvas.nonWhite} pixel mẫu (trang:pixel ${canvas.pages})`);
   }
 
   await checkPlayer(cdp);

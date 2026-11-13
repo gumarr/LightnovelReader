@@ -19,7 +19,13 @@ import pytest
 
 from app.engines.base import EngineError
 from app.engines.registry import EngineRegistry
-from app.engines.vieneu import DEFAULT_STYLE, SAMPLE_RATE, VieneuEngine
+from app.engines.vieneu import (
+    DEFAULT_STYLE,
+    MAX_ATTEMPTS,
+    SAMPLE_RATE,
+    VieneuEngine,
+    max_plausible_seconds,
+)
 from app.voices.catalog import Catalog, VoiceEntry, VoiceFile
 
 
@@ -30,10 +36,12 @@ class _FakeVieneu:
         self.kwargs = kwargs
         self.calls: list[dict[str, Any]] = []
         self.closed = False
+        # Độ dài từng lượt `infer` lần lượt trả về; hết danh sách thì 1 s.
+        self.durations: list[float] = []
 
     def infer(self, text: str, **kwargs: Any) -> np.ndarray:
         self.calls.append({"text": text, **kwargs})
-        seconds = 1.0
+        seconds = self.durations.pop(0) if self.durations else 1.0
         t = np.arange(int(SAMPLE_RATE * seconds), dtype=np.float64) / SAMPLE_RATE
         return (0.3 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
 
@@ -284,6 +292,49 @@ class TestVieneuEngine:
         engine, entry, _ = _engine_with(tmp_path, monkeypatch)
         with pytest.raises(EngineError, match="Không có nội dung"):
             engine.synthesize("   ", entry)
+
+    def test_lảm_nhảm_thì_sinh_lại(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`“Vâng”` đo thật từng ra 10,9 s — sinh lại tới khi độ dài tin được."""
+        engine, entry, made = _engine_with(tmp_path, monkeypatch)
+        engine.synthesize("Một", entry)  # nạp model
+        made[0].durations = [10.9, 0.4]
+        result = engine.synthesize("Vâng", entry)
+        assert len(made[0].calls) == 3
+        assert result.audio.duration_ms < 1000
+
+    def test_hết_lượt_vẫn_dài_thì_cắt_về_mức_tối_đa(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        engine, entry, made = _engine_with(tmp_path, monkeypatch)
+        engine.synthesize("Một", entry)
+        made[0].durations = [9.0, 5.0, 7.0, 6.0, 0.3]
+        result = engine.synthesize("Vâng", entry)
+        assert len(made[0].calls) == 1 + MAX_ATTEMPTS
+        # Không phát 5 s rác: cắt về mức tối đa còn tin được cho một từ.
+        assert result.audio.duration_ms <= max_plausible_seconds("Vâng") * 1000 + 50
+
+    def test_câu_dài_bình_thường_không_sinh_lại(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        engine, entry, made = _engine_with(tmp_path, monkeypatch)
+        text = "Masachika cố ngăn Alisa đi, nhưng cô đã ngắt lời cậu bằng giọng nghiêm nghị."
+        made_before = len(made)
+        engine.synthesize(text, entry)
+        made[made_before].durations = [4.4]
+        engine.synthesize(text, entry)
+        assert len(made[made_before].calls) == 2
+        assert max_plausible_seconds(text) > 4.4 * 2
+
+    @pytest.mark.parametrize("text", ['"..."', '" "', "!?", "…"])
+    def test_chỉ_có_dấu_câu_bị_từ_chối(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str
+    ) -> None:
+        """SDK biến `"..."` thành `"."` rồi model bịa ra tiếng — không được gọi."""
+        engine, entry, _ = _engine_with(tmp_path, monkeypatch)
+        with pytest.raises(EngineError, match="Không có nội dung"):
+            engine.synthesize(text, entry)
 
     def test_thiếu_cả_presetVoice_lẫn_speakerEmb_bị_từ_chối(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

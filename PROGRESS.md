@@ -3,7 +3,7 @@
 > File này ghi lại **trạng thái công việc** để phiên làm việc sau tiếp tục được ngay.
 > Kế hoạch tổng thể ở [plan.md](plan.md), quy tắc code ở [CLAUDE.md](CLAUDE.md).
 >
-> **Cập nhật lần cuối:** 2026-08-02 · commit `d302f6a`
+> **Cập nhật lần cuối:** 2026-11-13 · P6.4 + P6.5 (chưa commit)
 >
 > ⚠️ File này **bắt buộc cập nhật trong cùng commit** với thay đổi code —
 > xem mục "PROGRESS.md" trong [CLAUDE.md](CLAUDE.md).
@@ -50,6 +50,11 @@ Nếu `pnpm dev` không mở được cửa sổ: xem **mục 5.2** (biến `ELE
    với giọng thật (preset nữ có sẵn chỉ 0.33–0.48, hai clip thật của chính cô ấy
    0.93). Nghe ra chất giọng nhưng **không giống hệt** — nếu user thấy chưa đủ
    thì đường duy nhất còn lại là torch + GPU, tức +527 MB, đã loại.
+
+**P6.4 (2026-11-13):** user mới **không tải được** bộ VieNeu (HF đổi file trên
+`main`) → đã ghim commit. Audio cũ sinh trước P6.4 vẫn mang lỗi `~` → "khoảng",
+đánh vần `Yeaaahh`… — muốn sạch phải **xoá audio chương rồi tạo lại**. Sidecar
+Python đổi → phải `pnpm build:sidecar` lại trước khi phát hành. Xem mục 4.87.
 
 **Phase 1, 2, 3 đã xong.** **Phase 4 (CTC forced alignment) đã BỎ** — user nghe
 thật một chương thấy highlight bám đúng nhịp, không đáng đổi lấy model ~300 MB.
@@ -1245,10 +1250,10 @@ ngay. Mất biến đó ở một theme là **mất chữ toàn app**, không ri
 
 | Chỉ số | Giá trị |
 |---|---|
-| Unit test TypeScript | **2274 passed** (+3 ở P6.3 — ghi chú giọng nhân bản) |
-| Unit test sidecar (pytest) | **722 passed** (+24 ở P6.3 — fbank numpy 13, catalog speakerEmb 5, engine clone 4, chặn torch 2) |
+| Unit test TypeScript | **2278 passed** (+2 ở P6.5 — cờ `recommended` qua main + nhãn UI; +2 ở P6.4) |
+| Unit test sidecar (pytest) | **775 passed** (+17 ở P6.5 — thán từ 13, `recommended` 4; +36 ở P6.4) |
 | Chạy thật sidecar (probe, ngoài `pnpm test`) | **14 kịch bản**, có typecheck từ P5.3 |
-| **Kiểm UI thật (`pnpm ui-check`)** | **94 phép kiểm** — lần chạy gần nhất **94/94 đạt, không phép nào đỏ**. +1 ở P6.3 khoá lời hứa về giọng nhân bản (mục 4.86). +6 ở P6.2 cho màn Giọng đọc: hai phép khoá lỗi cuộn (mục 4.83), một phép khoá **vị trí thanh cuộn** (mục 4.84). Phép kiểm canvas PDF nay hạn 60s và không còn giết cả lượt chạy khi hết giờ (mục 4.85 — đính chính 4.82). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
+| **Kiểm UI thật (`pnpm ui-check`)** | **96 phép kiểm** — lần chạy gần nhất **96/96 đạt** (P6.5). +2 ở P6.5: Ngọc Huyền đứng đầu, nhãn "Đề xuất" có nền thật. ⚠️ Lượt đầu P6.5 đỏ giả `preload expose window.api — 0 nhóm`: renderer nạp trước khi preload build xong (race lúc dev build), chạy lại là xanh — chưa sửa gốc. +1 ở P6.3 khoá lời hứa về giọng nhân bản (mục 4.86). +6 ở P6.2 cho màn Giọng đọc: hai phép khoá lỗi cuộn (mục 4.83), một phép khoá **vị trí thanh cuộn** (mục 4.84). Phép kiểm canvas PDF nay hạn 60s và không còn giết cả lượt chạy khi hết giờ (mục 4.85 — đính chính 4.82). P5.1 (nghe thử) và P5.2 (chuột phải) vẫn cần **bấm tay** — CDP không đọc được tiếng |
 | Icon app | **7 cỡ** (16→256) trong `resources/icon.ico`, sinh từ `pnpm build:icon`, tái lập đúng byte |
 | Giọng đọc trong catalog | **18** — 3 Piper (2 VI + 1 EN) + 15 VieNeu (14 preset + 1 nhân bản, VI, dùng chung một bộ model 271 MB) |
 | Schema DB | **v3** — P5.4 **không** thêm migration, xem lý do ở mục 4.73 |
@@ -1327,6 +1332,8 @@ hồi về **sản phẩm**, và nó lớn hơn mọi nợ kỹ thuật còn l�
 |---|---|---|
 | P6.1 | Cải tiến `estimate_word_timings` + probe đo lệch so với Piper | ✅ **Xong** — đạt DoD |
 | P6.2 | Engine thứ hai (VieNeu-TTS) + catalog đa engine | ✅ **Xong** — đã chạy thật bản `.exe` |
+| P6.4 | Sửa tải model (HF đổi file), đọc sai `~` `!!` `……`, lảm nhảm ở câu ngắn | ✅ **Xong** — chạy thật model + text LN Alya, mục 4.87 |
+| P6.5 | Ngọc Huyền: embedding TB 5 clip, thán từ EN→VI, đứng đầu + nhãn "Đề xuất" | ✅ **Xong** — `ui-check` 96/96, mục 4.88 |
 
 **Thứ tự này bắt buộc, không đảo được.** Lý do đầy đủ ở mục 4.79: Piper cho
 alignment `phoneme` thật, nên **bây giờ** là lúc duy nhất còn thước đo khách quan
@@ -3761,6 +3768,99 @@ hẹp của nó nhưng tôi suy rộng ra quá, và suýt đóng lại một th�
 kết luận là **không**, hãy ghi rõ đã kiểm **những đường nào** — mục 4.81 thiếu
 đúng chỗ đó nên không ai (kể cả tôi) thấy được lỗ hổng.
 
+### 4.87 P6.4 — ba lỗi đọc sai và một lỗi tải, đều đo trên LN thật
+
+**Tải model hỏng cho mọi user mới.** Catalog trỏ `resolve/main`. Ngày
+2026-09-16 tác giả VieNeu re-export `onnx_int8/` (commit `5f2a3e9`) → sha256 đổi
+→ bước verify từ chối đúng như thiết kế. Sửa: **ghim sha commit** cho cả ba repo
+(VieNeu `1676ff1`, MOSS `ceff0d0`, Piper `2f358b6`) — đã quét lịch sử HF, chỉ
+`1676ff1` khớp đủ 8 file. **Không** nâng lên bản mới: kiến trúc đổi (`xvec_proj`),
+chưa ai kiểm engine chạy được. Test `test_url_catalog_thật_ghim_commit_không_dùng_main`
+chặn tái phạm.
+
+**Đọc sai ký tự đặc biệt** (đo bằng `normalize` của app + `normalize`/G2P của SDK):
+
+| Text | Trước P6.4 model nhận | Gốc |
+|---|---|---|
+| `nhỉ~`, `Oya~ oya~` | "nhỉ **khoảng**" | normalizer SDK hiểu `~` là "khoảng" (`5~10`) |
+| `“...”`, `“!?”`, `“…”` | `"."` → model **bịa ra tiếng** | SDK còn đúng dấu chấm, vẫn gọi model |
+| `“........”` | rỗng → **lỗi** (chấm đỏ) | luật trang trí xoá hết |
+| `Yeaaahh`, `rồiiii` | **đánh vần** từng chữ cái | G2P không nhận từ có chữ lặp |
+| `!!…`, `"...Ah` | `! .` khựng / `.` trơ đầu câu | cụm dấu |
+| `* * *` | "sao sao sao" | luật phân cách cần ≥ 4 ký tự |
+
+Trong 13 183 đoạn của 11 tập Alya có **323 đoạn không có chữ nào**. Sửa ở hai
+tầng: (1) ba luật mới trong `normalize_vi` chạy **trước** phiên âm Nhật
+(`Senseiii~` phải về `Sensei` thì lexicon mới nhận); (2) `hasSpeakableText` dời
+về `@ln/shared`, lọc ở `enqueueSegments` — **mọi** đường xếp hàng (đoạn/chương/
+sách) đều đi qua đó — và player xét nó **trước** `ready` để audio rác cũ không
+phát nữa. Engine VieNeu chặn thêm chuỗi không có `\w` làm phòng tuyến cuối.
+
+**"Giọng không đồng đều" — đo ra thủ phạm là câu cực ngắn, KHÔNG phải sampling.**
+
+| Đo (Ngọc Huyền, 12 câu LN) | T=0.8 (mặc định) | T=0.5 | T=0.3 |
+|---|---|---|---|
+| cos giọng giữa các câu (tới tâm) | 0.895 | 0.901 | 0.912 |
+| lệch âm lượng giữa câu | 0.26 dB | 0.36 | 0.37 |
+| `“Hả?”` 5 lần, dài nhất | 0.48 s | 2.32 s | **4.88 s** |
+
+Câu dài vốn đã đều; hạ `temperature` gần như không giúp mà còn làm câu ngắn
+lảm nhảm **nặng hơn** → giữ 0.8. Thêm `ref_codes` mã hoá từ clip thật cho giọng
+clone cũng đã thử: cos 0.776 → 0.774, không giúp → bỏ. Thủ phạm thật: câu 1–2 từ
+(**~8% số đoạn**: `“Eh?”`, `“Vâng”`, `“Hmm?”`) bị model **không dừng**, 8–12% số
+lần, dài tới 10,9 s thay vì 0,4 s — ở cả giọng preset lẫn clone. Sửa: audio dài
+hơn `1 s + 0,6 s/từ` (giọng thường 0,22 s/từ) thì sinh lại, tối đa 4 lượt, vẫn
+dài thì cắt về mức đó + fade 30 ms. Chạy thật 48 câu ngắn: 11 lượt bị bắt, còn 0.
+
+### 4.88 P6.5 — tối ưu Ngọc Huyền: đo từng hướng, giữ cái thắng
+
+Hai thước đo, **phải xét cùng lúc**:
+- *Giống* = cos(embedding audio sinh ra, tâm của 20 clip thật **không** dùng để
+  dựng giọng — hàng 20–39 dataset), 12 câu LN, `doc_truyen`. Trần (thật vs thật) 0.942.
+- *Lảm nhảm* = 12 câu thoại 1–2 từ × 10 lượt, đếm lượt dài > 1,6 s, **không** có
+  vòng sinh lại.
+
+| Embedding | Giống | Câu tệ nhất | Lảm nhảm /120 |
+|---|---|---|---|
+| 1 clip (P6.3) | 0.739 | 0.615 | 2–6 |
+| **TB 5 clip, độ lớn 12.9** | **0.784** | **0.733** | **9–10** |
+| TB 10 clip | 0.810 | 0.757 | 19 |
+| TB 20 clip | 0.815 | 0.758 | **25–43** |
+
+⚠️ **Bẫy đã đạp suýt ship:** đo riêng "giống" thì TB 20 clip thắng rõ, đã ghi vào
+catalog. Chạy thật câu ngắn qua engine mới lộ ra `“Ừm.”` lảm nhảm 4 lượt liền
+— đo lại thì 20 clip làm câu ngắn lảm nhảm gấp ~7 lần. Càng trung bình nhiều clip
+càng giống giọng thật nhưng model càng hay không dừng ở câu ngắn. **5 clip** lấy
+gần hết phần "giống" mà không trả giá. Độ lớn: cùng hướng, 11 → 25, 12.9 → 29,
+14.2 → 33 lượt/120 → giữ 12.9 (độ lớn của bản 1 clip). Lần sau đổi embedding:
+**luôn đo cả hai cột**. Tái lập: `probe/speaker_probe.py --extract --model-dir …`
+(sai số 5e-7 so với vector đã đo).
+
+**Phong cách** (đo với TB 20 clip): `tu_nhien` 0.823, `tin_tuc` 0.816,
+`doc_truyen` 0.806 — chênh nhỏ, dataset gốc là giọng đọc tin nên đo nghiêng về đó.
+**Không** ép phong cách cho giọng này; đó là lựa chọn của user.
+
+**Thán từ EN → VI**, 12 lượt mỗi câu, đếm lảm nhảm. Cột Huyền đo với embedding
+cuối (TB 5 clip):
+
+| Cặp | Huyền EN→VI | Linh EN→VI | Quyết định |
+|---|---|---|---|
+| Hmm→Hừm / Hm→Hừm | 9→1 / 4→1 | 2→3 / 7→3 | giữ |
+| Eh→Ể | 2→1 | 6→6 | giữ (Eh→Ê: không lợi, bỏ) |
+| Ah→A, Oh→Ồ, Uh→Ờ, Ouch→Ui da | 3→0, 5→0, 6→0, 2→0 | 3→2, 1→2, 2→1, 2→0 | giữ |
+| Huh→Hả | 1→2 | 0→1 | giữ — lượt đo với TB 20 clip ra 5→3, coi như hoà; "Hả" là chữ Việt thật |
+| Um→Ừm | 0→0 (TB 20 clip: **0→8**) | 1→0 | **bỏ** |
+| Wow→Oa | **0→2** | 2→1 | **bỏ** |
+
+Bộ đã chọn: Huyền **32 → 5**, Linh 23 → 18 → áp chung cho mọi giọng VI. Lần đo
+P6.4 kết luận "làm tệ Ngọc Linh" là do gộp chung các cặp xấu (`Ê`, `Ô`) — tách
+từng cặp mới thấy.
+
+**Thứ tự danh sách = thứ tự mảng `voices` trong catalog** (không sort ở UI). Ngọc
+Huyền đứng đầu + `recommended: true` → nhãn "Đề xuất". Cờ đi đúng đường của
+`cloned`: catalog → `/voices/catalog` → `SidecarCatalogVoice` (tuỳ chọn, sidecar
+cũ không gửi) → `VoiceCatalogItem` (bắt buộc, mặc định `false`).
+
 ---
 
 ## 5. Môi trường — đọc kỹ nếu app không chạy
@@ -4132,7 +4232,7 @@ scripts/
 |---|---|---|
 | ~~`ui-check` flaky ở phép kiểm canvas PDF~~ | ~~TB~~ **đã sửa** | Gốc không phải vite mà là **thiếu `waitFor`**: phép kiểm đo canvas ngay khi tới, trong khi pdfjs gắn `<canvas>` đúng kích thước **trước** khi vẽ. Nay chờ `nonWhite > 1000` mới kết luận. Xem mục **4.82** |
 | Chưa nghe thử 14 giọng VieNeu bằng tai | TB | Engine đã chạy thật qua bản `.exe` (mục 4.81) nhưng **chất lượng giọng** thì CDP không kiểm hộ được. User phải tự tải 244 MB rồi nghe. Nếu không giọng nào hợp thì cả P6.2 chỉ còn giá trị hạ tầng |
-| Model VieNeu chưa tải thử bằng chính `download.py` | TB | Lúc dựng, 13 file được chép tay từ cache HF vào đúng thư mục `voice_dir` để kiểm engine. Đường tải thật (sha256 + tiến độ + huỷ) đã có unit test và dùng chung code với voice Piper, nhưng **chưa ai bấm nút Tải cho voice VieNeu** — sha256/URL đã đối chiếu thật với HF (200 + đúng `content-length`) |
+| ~~Model VieNeu chưa tải thử bằng chính `download.py`~~ | ✅ **đã đóng (P6.4)** | Tải trọn 271 MB bằng `download_voice` + catalog đã ghim, 20/20 file qua sha256, `is_installed` = True, rồi tổng hợp thật. Ghi chú cũ: | Lúc dựng, 13 file được chép tay từ cache HF vào đúng thư mục `voice_dir` để kiểm engine. Đường tải thật (sha256 + tiến độ + huỷ) đã có unit test và dùng chung code với voice Piper, nhưng **chưa ai bấm nút Tải cho voice VieNeu** — sha256/URL đã đối chiếu thật với HF (200 + đúng `content-length`) |
 | `vitest` v2 kéo Vite 5 trong khi project dùng Vite 6 | Thấp | Đã né bằng cách bỏ `vitest.config.ts` khỏi typecheck của renderer. Nâng vitest lên v3 sẽ sạch hơn |
 | Chưa có icon ứng dụng | Thấp | electron-builder đang dùng icon Electron mặc định |
 | CI job `build` chưa chạy tới nơi | TB | Job `check` đã chạy và lộ 2 lỗi (xem mục 4.14). Job `build` (đóng gói + smoke test) vẫn chưa xác nhận lần nào vì `check` fail trước |
@@ -4225,4 +4325,6 @@ scripts/
 | ~~Màn Cài đặt chưa chạy trên app thật~~ | ✅ **đã đóng** | Cùng lượt chạy trên: 5 phép kiểm P5.3 xanh. Cỡ chữ preview khớp thanh trượt (18 px vs 18 px), chữ preview không trong suốt, cả dark lẫn light đều ra màu khác nhau thật |
 | Chọn ngôn ngữ sách chỉ đổi được lúc nhập | Thấp | Lưu xong thì `lang` cố định; chọn nhầm phải xoá sách nhập lại (mất luôn cấu trúc chương đã sửa tay). Sửa được: thêm `library:setLang` + ô chọn ở màn chi tiết sách, nhưng phải xoá audio đã sinh vì chúng theo giọng cũ. Chưa làm vì chọn nhầm ngay ở màn xác nhận là ca hiếm — ô nằm cạnh ô tên sách, khó bỏ sót |
 | Không có UI cho `alignmentEnabled` | Thấp | **Cố ý**, xem 4.71. Phase 4 đã bỏ nên không có gì để bật/tắt; giữ field vì gỡ khỏi schema tốn một migration đổi lấy hư không. Đừng dựng UI cho nó |
+| Câu thoại 1 từ vẫn có thể bị cắt cụt | Thấp | P6.4: lảm nhảm 4 lượt liền (`“Ê?”` giọng Ngọc Linh: 7/8 lần) thì cắt về `1 s + 0,6 s/từ`. Chữ thật nằm đầu nên thường vẫn nghe được, nhưng đuôi có thể còn rác ≤ 1 s. P6.5 đã thêm bảng thán từ EN→VI (chọn từng cặp theo số đo, mục 4.88); câu ngắn thuần Việt (`“Ừm.”`, `“Ể?”`) vẫn ~8% lượt lảm nhảm — chỉ trông vào vòng sinh lại |
+| Phiên âm Nhật chỉ nhận chữ viết hoa đầu | Thấp | `Oya~ oya~` → "Ô-ia, oya": từ thứ hai viết thường nên lexicon bỏ qua. Có từ trước P6.4, chỉ lộ ra khi đo |
 | Giọng `25hours` chưa nghe thử lần nào | TB | sha256/size đã đối chiếu thật với HF, và đường 16 kHz đã lần theo code (`target_rate_for_opus` trả 16000 → **bỏ qua resample**), nhưng **chưa tải model 63 MB về để nghe**. Chất lượng `low` + 16 kHz nghe ra sao so với `vais1000` (`medium`, 22 kHz) thì chưa ai biết. Nếu tệ hơn hẳn thì nên ghi chú vào catalog để user khỏi mất công tải |

@@ -1,4 +1,4 @@
-import type { Segment, SegmentStatus } from '@ln/shared';
+import { hasSpeakableText, type Segment, type SegmentStatus } from '@ln/shared';
 
 /**
  * Quyết định **thuần** của player: gặp một segment thì làm gì với nó.
@@ -32,15 +32,6 @@ export type SegmentDecision = {
 };
 
 /**
- * Segment không có chữ để đọc.
- *
- * Có thật trong dữ liệu: P2.7 đo trên sách DOCX thật thấy **5/195 đoạn** chỉ
- * gồm dấu câu hoặc khoảng trắng, Piper không sinh nổi audio và hàng đợi ghi lỗi.
- * Xếp lại hàng đợi cho những đoạn này là chờ một thứ không bao giờ tới.
- */
-const hasSpeakableText = (text: string): boolean => /\p{L}|\p{N}/u.test(text);
-
-/**
  * Quyết định làm gì với một segment.
  *
  * `wantsGenerate = false` (user tắt tự động tạo audio, hoặc chưa chọn giọng) thì
@@ -51,6 +42,13 @@ export const decideSegment = (
   segment: Pick<Segment, 'status' | 'text' | 'errorMessage'>,
   wantsGenerate: boolean,
 ): SegmentDecision => {
+  // Không có chữ thì không có gì để đọc — xét TRƯỚC cả `ready`: bản cũ từng
+  // sinh audio cho `“...”` và VieNeu bịa ra tiếng ở đó, phát lại là nghe rác.
+  // Đây cũng là nguồn gốc phần lớn đoạn `error` trong dữ liệu thật.
+  if (!hasSpeakableText(segment.text)) {
+    return { action: 'skip', reason: 'đoạn không có chữ để đọc' };
+  }
+
   if (segment.status === 'ready') {
     return { action: 'play', reason: 'có audio' };
   }
@@ -60,13 +58,6 @@ export const decideSegment = (
   // nữa, ngay giữa lúc đang nghe. Bỏ qua ngay, ghi lại để hiện ở danh sách đoạn.
   if (segment.status === 'error') {
     return { action: 'skip', reason: segment.errorMessage ?? 'đoạn lỗi' };
-  }
-
-  // Không có chữ thì không có gì để đọc — dù trạng thái là `pending`. Đây là
-  // nguồn gốc của phần lớn đoạn `error` trong dữ liệu thật, bắt sớm ở đây thì
-  // không phải đi một vòng hàng đợi mới biết.
-  if (!hasSpeakableText(segment.text)) {
-    return { action: 'skip', reason: 'đoạn không có chữ để đọc' };
   }
 
   if (!wantsGenerate) {

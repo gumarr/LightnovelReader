@@ -29,6 +29,14 @@ import type { WordTiming } from './types.js';
  * `charStart`/`charEnd` trỏ vào `text` gốc (nửa mở: `[charStart, charEnd)`) để
  * subtitle pane tô đúng khoảng ký tự mà không phải dò lại chuỗi.
  */
+/**
+ * Segment có chữ/số để đọc không. `“........”`, `“!?”`, `⋆ • ☆ • ⋆` thì không.
+ *
+ * Dùng chung main (không xếp hàng đợi) và renderer (không phát): gửi những đoạn
+ * này cho TTS thì Piper ném lỗi, còn VieNeu nhận chuỗi `"."` và **bịa ra tiếng**.
+ */
+export const hasSpeakableText = (text: string): boolean => /\p{L}|\p{N}/u.test(text);
+
 export type TextWord = {
   w: string;
   charStart: number;

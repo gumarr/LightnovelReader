@@ -44,6 +44,10 @@ describe('decideSegment', () => {
     }
   });
 
+  it('đoạn chỉ có dấu câu đã lỡ có audio (bản cũ) cũng bỏ qua — audio đó là tiếng bịa', () => {
+    expect(decideSegment(seg('ready', { text: '“...”' }), true).action).toBe('skip');
+  });
+
   it('đoạn có chữ số cũng là có chữ để đọc', () => {
     expect(decideSegment(seg('pending', { text: '1945.' }), true).action).toBe('request');
   });

@@ -176,6 +176,12 @@ describe('GenerateQueue — thêm việc', () => {
     expect(jobs.counts().queued).toBe(2);
   });
 
+  it('đoạn chỉ có dấu câu không vào hàng đợi — VieNeu bịa ra tiếng ở đó', () => {
+    segments.insertMany([{ ...segment('seg-dots', 'chap-1', 3), text: '“........”' }]);
+    expect(queue.enqueueSegments({ segmentIds: ['seg-1', 'seg-dots'] })).toBe(1);
+    expect(segments.findById('seg-dots')?.status).toBe('pending');
+  });
+
   it('đánh dấu segment là queued để UI hiện ngay', () => {
     queue.enqueueSegments({ segmentIds: ['seg-1'] });
     expect(segments.findById('seg-1')?.status).toBe('queued');

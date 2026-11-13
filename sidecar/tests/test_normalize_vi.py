@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.text.normalize_vi import (
+    collapse_elongation,
     collapse_whitespace,
     expand_abbreviations,
     expand_dates,
@@ -18,8 +19,11 @@ from app.text.normalize_vi import (
     expand_times,
     normalize_dashes,
     normalize_quotes,
+    normalize_tilde,
     normalize_vi,
     strip_decorative_chars,
+    tidy_punctuation_runs,
+    vietnamize_interjections,
 )
 
 
@@ -81,6 +85,100 @@ class TestKýTựTrangTrí:
     def test_dấu_ba_chấm_thường_giữ_nguyên(self) -> None:
         """"…" một dấu là ngắt nghỉ thật trong hội thoại LN, phải giữ."""
         assert "…" in strip_decorative_chars("Ừ… mình hiểu rồi.")
+
+    @pytest.mark.parametrize("text", ["* * *", "⋆ • ☆ • ⋆", "⭑ • ☆ • ⭑", "♡"])
+    def test_dòng_phân_cách_không_còn_chữ_nào(self, text: str) -> None:
+        # `* * *` từng bị VieNeu đọc thành "sao sao sao".
+        assert strip_decorative_chars(text).strip() == ""
+
+
+class TestDấuNgã:
+    """VieNeu hiểu `~` là "khoảng" → `nhỉ~` đọc thành "nhỉ khoảng"."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("tuyệt nhỉ~", "tuyệt nhỉ"),
+            ("Oya~ oya~, có vẻ", "Oya, oya, có vẻ"),
+            ("xin chào ~ xin chào ~ có ai", "xin chào, xin chào, có ai"),
+            ("phớt lờ em ~.", "phớt lờ em."),
+            ("Cảm ơn~?", "Cảm ơn?"),
+            ('"~~~~~~!', '"!'),
+            ("Ehhhh〜?!", "Ehhhh?!"),
+        ],
+    )
+    def test_dấu_ngã_kéo_giọng(self, raw: str, expected: str) -> None:
+        assert normalize_tilde(raw) == expected
+
+    def test_giữa_hai_số_là_đến(self) -> None:
+        assert normalize_tilde("5~10 người") == "5 đến 10 người"
+
+
+class TestKéoDàiChữ:
+    """G2P của VieNeu gặp `Yeaaahh` thì đánh vần từng chữ cái."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("Yeaaahh!", "Yeah!"),
+            ("ra rồiiii!!", "ra rồi!!"),
+            ("Aaahh~", "Ah~"),
+            ("Senseiii", "Sensei"),
+            ("Ểểểể", "Ể"),
+        ],
+    )
+    def test_gộp_chữ_lặp(self, raw: str, expected: str) -> None:
+        assert collapse_elongation(raw) == expected
+
+    @pytest.mark.parametrize("text", ["năm 1000", "Hmm", "Vol III", "Chương XXX", "cool", "Ah"])
+    def test_không_đụng_chữ_đang_đúng(self, text: str) -> None:
+        assert collapse_elongation(text) == text
+
+
+class TestThánTừ:
+    """Thán từ kiểu Anh làm VieNeu lảm nhảm — đổi sang âm Việt (PROGRESS 4.88)."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ('"Hmm?"', '"Hừm?"'),
+            ("Eh? Thật sao?", "Ể? Thật sao?"),
+            ("Ah, xin lỗi", "A, xin lỗi"),
+            ("Oh. Ra vậy", "Ồ. Ra vậy"),
+            ("Ouch!", "Ui da!"),
+            ("AH!", "A!"),
+            ("A-ah", "A-a"),
+        ],
+    )
+    def test_đổi(self, raw: str, expected: str) -> None:
+        assert vietnamize_interjections(raw) == expected
+
+    @pytest.mark.parametrize("text", ["Um...", "Wow!", "Ohara", "Ahri", "cái đó"])
+    def test_không_đụng(self, text: str) -> None:
+        # `Um`, `Wow` đổi thì đo ra TỆ hơn — cố ý giữ nguyên.
+        assert vietnamize_interjections(text) == text
+
+    def test_pipeline_gộp_kéo_dài_trước(self) -> None:
+        assert normalize_vi("“Hmmm~?”") == '"Hừm?"'
+        assert normalize_vi("“Ahhh, arara”") == '"A, arara"'
+
+
+class TestCụmDấuCâu:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ('"...Ah, em phải đứng trước nhỉ."', '"Ah, em phải đứng trước nhỉ."'),
+            ('"… Cậu ổn không?"', '"Cậu ổn không?"'),
+            ("ra rồi!!… Hử", "ra rồi!! Hử"),
+            ("Hả……?", "Hả?"),
+        ],
+    )
+    def test_gộp(self, raw: str, expected: str) -> None:
+        assert tidy_punctuation_runs(raw) == expected
+
+    def test_giữ_ba_chấm_giữa_câu(self) -> None:
+        # Ba chấm giữa câu là chỗ ngừng — VieNeu tự đổi thành dấu phẩy.
+        assert tidy_punctuation_runs("Ư-ừm… em…") == "Ư-ừm… em…"
 
 
 class TestKýHiệu:

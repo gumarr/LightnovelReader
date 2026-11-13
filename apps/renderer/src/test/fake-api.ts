@@ -99,6 +99,7 @@ export const fakeVoice = (overrides: Partial<VoiceCatalogItem> = {}): VoiceCatal
   totalBytes: 63_206_154,
   installed: false,
   cloned: false,
+  recommended: false,
   ...overrides,
 });
 

@@ -103,6 +103,9 @@ class VoiceEntry:
     # kết quả y hệt mọi máy. Xem `sidecar/probe/speaker_probe.py` để biết con số
     # này tái lập thế nào.
     speaker_emb: tuple[float, ...] = ()
+    # Giọng khuyên dùng — UI gắn nhãn "Đề xuất". Thứ tự hiển thị thì theo thứ
+    # tự trong catalog, không phải cờ này.
+    recommended: bool = False
 
     @property
     def total_bytes(self) -> int:
@@ -267,6 +270,10 @@ def _parse_voice(raw: object, index: int) -> VoiceEntry:
             # vẫn không dùng được, mà lúc đó user đã chờ hết 63 MB.
             raise CatalogError(f"{where}: thiếu file loại {sorted(missing)}")
 
+    recommended = raw.get("recommended", False)
+    if not isinstance(recommended, bool):
+        raise CatalogError(f"{where}: recommended phải là true/false")
+
     base_url = raw.get("baseUrl", "")
     if not isinstance(base_url, str):
         raise CatalogError(f"{where}: baseUrl phải là chuỗi")
@@ -286,6 +293,7 @@ def _parse_voice(raw: object, index: int) -> VoiceEntry:
         preset_voice=preset_voice,
         model_id=model_id,
         speaker_emb=speaker_emb,
+        recommended=recommended,
     )
 
 

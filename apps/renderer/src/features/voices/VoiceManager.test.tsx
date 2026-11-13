@@ -71,6 +71,19 @@ describe('danh sách voice', () => {
     expect(screen.getByText('Lessac')).toBeInTheDocument();
   });
 
+  it('giọng đề xuất có nhãn "Đề xuất", giọng khác thì không', async () => {
+    await renderManager({
+      voices: [
+        fakeVoice({ id: 'vi_VN-vieneu-ngoc-huyen', name: 'Ngọc Huyền', recommended: true }),
+        fakeVoice({ id: 'vi_VN-vais1000-medium', name: 'VAIS 1000' }),
+      ],
+    });
+    await waitFor(() => expect(screen.getAllByTestId('voice-row')).toHaveLength(2));
+    const [first, second] = screen.getAllByTestId('voice-row');
+    expect(within(first!).getByTestId('voice-recommended')).toHaveTextContent('Đề xuất');
+    expect(within(second!).queryByTestId('voice-recommended')).toBeNull();
+  });
+
   it('hiện dung lượng để user biết phải tải bao nhiêu', async () => {
     await renderManager();
     await waitFor(() => expect(screen.getAllByTestId('voice-row')).toHaveLength(2));

@@ -243,6 +243,8 @@ export type VoiceCatalogItem = {
    * encoder), nên hứa "y hệt" là hứa sai. Xem `sidecar/probe/speaker_probe.py`.
    */
   cloned: boolean;
+  /** Giọng khuyên dùng — UI gắn nhãn "Đề xuất". Thứ tự thì theo catalog. */
+  recommended: boolean;
 };
 
 /**

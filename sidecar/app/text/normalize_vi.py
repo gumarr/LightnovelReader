@@ -105,10 +105,84 @@ def strip_decorative_chars(text: str) -> str:
     LN hay có `♪`, `★`, `…` lặp, dòng phân cách `＊＊＊`. Piper đọc chúng thành
     tiếng ú ớ hoặc im bặt giữa câu.
     """
-    text = re.sub(r"[★☆♪♫◆◇【】＊]+", " ", text)
+    text = re.sub(r"[★☆♪♫◆◇【】＊♡♥⋆•⭑]+", " ", text)
     # Dãy dấu chấm/sao dùng làm đường phân cách
     text = re.sub(r"(?:\s*[*.…]){4,}\s*", " ", text)
+    # `* * *` (3 sao) lọt luật trên → VieNeu đọc "sao sao sao". Hai sao trở lên
+    # là trang trí; một sao lẻ (chú thích `*1`) để nguyên.
+    text = re.sub(r"\*(?:\s*\*)+", " ", text)
     return text
+
+
+# Dấu ngã kéo giọng của LN (`nhỉ~`, `Oya~ oya~`). Normalizer của VieNeu hiểu
+# `~` là "khoảng" (như `5~10`) nên đọc thành "nhỉ khoảng".
+_TILDE = "~〜～"
+
+
+def normalize_tilde(text: str) -> str:
+    """`~` giữa hai số → "đến"; trước một từ khác → dấu phẩy; còn lại → bỏ."""
+    text = re.sub(rf"(?<=\d)\s*[{_TILDE}]+\s*(?=\d)", " đến ", text)
+    text = re.sub(rf"\s*[{_TILDE}]+(?=\s+[^\W_])", ",", text)
+    return re.sub(rf"\s*[{_TILDE}]+", "", text)
+
+
+def collapse_elongation(text: str) -> str:
+    """`Yeaaahh` → `Yeah`, `rồiiii` → `rồi`.
+
+    Chữ cái lặp ≥ 3 lần không có trong từ thật nào, và G2P của VieNeu gặp nó thì
+    **đánh vần từng chữ cái** ("Y-E-A-A-A-H-H"). `hh` cuối từ cũng vậy. Không
+    đụng chữ số (`1000`) và số La Mã viết hoa (`III`, `XXX`).
+    """
+
+    def shorten(match: re.Match[str]) -> str:
+        run = match.group(0)
+        if run.isupper() and run[0] in "IX":
+            return run
+        return match.group(1)
+
+    text = re.sub(r"([^\W\d_])\1{2,}", shorten, text, flags=re.IGNORECASE)
+    return re.sub(r"(?<=[^\W\d_])([hH])\1+\b", r"\1", text)
+
+
+# Thán từ kiểu Anh trong LN dịch → âm Việt gần nhất. Đo 12 lượt/câu (PROGRESS
+# 4.88): `“Hmm?”` giọng Ngọc Huyền lảm nhảm 9/12 lần, `“Hừm?”` 1/12; cả bộ dưới
+# đây Huyền 32 → 5, Ngọc Linh 23 → 18. Cố ý KHÔNG có `Wow`→`Oa` (0 → 2/12) và
+# `Um`→`Ừm` (có lượt đo ra 0 → 8/12): đổi hai từ đó không lợi, có lúc hại.
+INTERJECTIONS: dict[str, str] = {
+    "hmm": "hừm",
+    "hm": "hừm",
+    "eh": "ể",
+    "ah": "a",
+    "huh": "hả",
+    "oh": "ồ",
+    "uh": "ờ",
+    "ouch": "ui da",
+}
+
+
+def vietnamize_interjections(text: str) -> str:
+    """`Hmm?` → `Hừm?`, `Ah!` → `A!`. Chạy SAU `collapse_elongation`
+    (`Hmmm` → `Hm`, `Ahhh` → `Ah`) nên bảng chỉ cần dạng gọn."""
+
+    def replace(match: re.Match[str]) -> str:
+        word = match.group(0)
+        spoken = INTERJECTIONS[word.lower()]
+        return spoken[0].upper() + spoken[1:] if word[0].isupper() else spoken
+
+    pattern = "|".join(sorted(INTERJECTIONS, key=len, reverse=True))
+    return re.sub(rf"(?<![^\W_])(?:{pattern})(?![^\W_])", replace, text, flags=re.IGNORECASE)
+
+
+def tidy_punctuation_runs(text: str) -> str:
+    """Gộp cụm dấu câu mà TTS đọc vấp.
+
+    - `…` / `...` ở **đầu** lời thoại (`"...Ah"`) → bỏ: VieNeu đưa một dấu `.`
+      trơ trọi vào model trước chữ đầu tiên.
+    - `!!…`, `…?` → chỉ giữ `!`/`?`: VieNeu tách thành `! .` rồi khựng giữa câu.
+    """
+    text = re.sub(r"^([\s\"'(\[]*)[.…]+\s*", r"\1", text)
+    text = re.sub(r"([!?]+)[.…]+", r"\1", text)
+    return re.sub(r"[.…]+([!?])", r"\1", text)
 
 
 def expand_symbols(text: str) -> str:
@@ -300,7 +374,17 @@ def normalize_vi_mapped(
     """
     stage = identity(text)
 
-    for rule in (normalize_quotes, normalize_dashes, strip_decorative_chars):
+    # Ba luật dấu-ngã/kéo-dài/cụm-dấu chạy TRƯỚC `transcribe_japanese`:
+    # `Senseiii~` phải về `Sensei` thì lexicon tên Nhật mới nhận ra.
+    for rule in (
+        normalize_quotes,
+        normalize_dashes,
+        strip_decorative_chars,
+        normalize_tilde,
+        collapse_elongation,
+        vietnamize_interjections,
+        tidy_punctuation_runs,
+    ):
         stage = compose(stage, diff_to_normalized(stage.spoken, rule(stage.spoken)))
 
     # Tên riêng Nhật: bước duy nhất có mapping chính xác thay vì suy ngược.

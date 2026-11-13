@@ -74,13 +74,29 @@ ENCODER_NAME = "speaker_encoder.onnx"
 
 # Hàng số 0 của split train. Chốt cứng để lần chạy sau ra đúng con số cũ —
 # lấy "một clip bất kỳ" thì mỗi lần một embedding khác, không đối chiếu được.
+# Chỉ còn dùng cho `--verify`; `--extract` lấy trung bình `EXTRACT_ROWS` hàng.
 ROW_INDEX = 0
 
+# P6.5: embedding = TRUNG BÌNH 5 clip đầu (hàng 0–4), đưa về độ lớn 12.9 (độ lớn
+# embedding 1 clip của P6.3). Chấm trên 20 clip khác (hàng 20–39), 12 câu LN,
+# `doc_truyen`; lảm nhảm = câu 1–2 từ dài > 1,6 s, 12 câu × 10 lượt:
+#   1 clip (P6.3)      giống 0.739, câu tệ nhất 0.615, lảm nhảm   6/120
+#   TB 5 clip          giống 0.784, câu tệ nhất 0.733, lảm nhảm 9–10/120  ← dùng
+#   TB 10 clip         giống 0.810, câu tệ nhất 0.757, lảm nhảm  19/120
+#   TB 20 clip         giống 0.815, câu tệ nhất 0.758, lảm nhảm 25–43/120
+# Càng nhiều clip càng giống giọng thật NHƯNG câu ngắn càng hay lảm nhảm — 5 clip
+# là điểm lấy gần hết phần "giống" mà không trả giá ở câu ngắn. Độ lớn: cùng hướng
+# vector, 11 → 25, 12.9 → 29, 14.2 → 33 lần lảm nhảm/120 → không phóng to.
+EXTRACT_ROWS = 5
+TARGET_NORM = 12.9
 
-def _model_dir() -> Path:
-    """Thư mục model VieNeu đã tải trong userData của app."""
+
+def _model_dir(override: Path | None = None) -> Path:
+    """Thư mục model VieNeu đã tải trong userData của app (hoặc `--model-dir`)."""
     import os
 
+    if override is not None:
+        return override
     return (
         Path(os.environ["USERPROFILE"])
         / "AppData"
@@ -133,20 +149,26 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
-def extract(work: Path) -> int:
-    encoder = _model_dir() / "onnx_int8" / ENCODER_NAME
+def extract(work: Path, model_dir: Path | None = None) -> int:
+    encoder = _model_dir(model_dir) / "onnx_int8" / ENCODER_NAME
     if not encoder.exists():
         print(f"Chưa có {encoder}.")
         print("Mở app → Giọng đọc → tải giọng VieNeu trước đã.")
         return 1
 
-    wav_path, transcript = _fetch_reference(work / "ngochuyen_ref.wav")
-    samples, rate = _load_wav(wav_path)
-    print(f"Clip mẫu: {samples.size / rate:.2f}s @ {rate} Hz")
-    print(f"Lời thoại: {transcript}")
-
-    embedding = _embed(samples, rate, encoder)
-    print(f"speaker_emb: {embedding.shape}, chuẩn {np.linalg.norm(embedding):.3f}")
+    with urllib.request.urlopen(ROWS_URL, timeout=60) as response:
+        rows: list[dict[str, Any]] = json.load(response)["rows"][:EXTRACT_ROWS]
+    clips = []
+    for index, row in enumerate(rows):
+        dest = work / f"extract_{index:02d}.wav"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(row["row"]["audio"][0]["src"], dest)
+        samples, rate = _load_wav(dest)
+        clips.append(_embed(samples, rate, encoder))
+    stacked = np.stack(clips)
+    mean = stacked.mean(axis=0)
+    embedding = mean / np.linalg.norm(mean) * TARGET_NORM
+    print(f"{len(clips)} clip, speaker_emb {embedding.shape}, chuẩn {TARGET_NORM}")
 
     rounded = [round(float(x), 6) for x in embedding]
     out = work / "speaker_emb.json"
@@ -206,12 +228,18 @@ def main() -> int:
         default=Path(__file__).resolve().parent / "_work",
         help="Thư mục chứa file tạm (mặc định probe/_work, đã trong .gitignore)",
     )
+    parser.add_argument(
+        "--model-dir",
+        type=Path,
+        default=None,
+        help="Thư mục voice vi_VN-vieneu-v3turbo (mặc định: userData của app)",
+    )
     args = parser.parse_args()
 
     if args.verify:
         return verify(args.work)
     if args.extract:
-        return extract(args.work)
+        return extract(args.work, args.model_dir)
     parser.print_help()
     return 1
 

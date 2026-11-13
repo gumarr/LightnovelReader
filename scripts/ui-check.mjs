@@ -1409,6 +1409,14 @@ const checkVoices = async (cdp) => {
           note: document.querySelector('[data-testid="voice-engine-note"]') !== null,
           // Giọng nhân bản phải nói rõ là KHÔNG giống hệt giọng gốc. Đo ở đây
           // vì đây là lời hứa với user — sai thì họ tải 244 MB rồi mới thất vọng.
+          // P6.4: Ngọc Huyền đứng đầu + nhãn "Đề xuất" có nền thật (bẫy màu
+          // trong suốt mục 4.23 — class có mặt chưa chắc màu tính ra được).
+          firstId: rows[0].getAttribute('data-voice-id'),
+          badgeBg: (() => {
+            const b = rows[0].querySelector('[data-testid="voice-recommended"]');
+            return b === null ? null : getComputedStyle(b).backgroundColor;
+          })(),
+          badgeCount: document.querySelectorAll('[data-testid="voice-recommended"]').length,
           clonedNote: Array.from(
             document.querySelectorAll('[data-testid="voice-engine-note"]'),
           ).filter((n) => n.textContent.includes('nhân bản')).length,
@@ -1423,6 +1431,19 @@ const checkVoices = async (cdp) => {
     'có cả giọng piper lẫn vieneu',
     (measured.engines.piper ?? 0) > 0 && (measured.engines.vieneu ?? 0) > 0,
     JSON.stringify(measured.engines),
+  );
+
+  check(
+    'Ngọc Huyền đứng đầu danh sách',
+    measured.firstId === 'vi_VN-vieneu-ngoc-huyen',
+    `hàng đầu: ${measured.firstId}`,
+  );
+  check(
+    'nhãn "Đề xuất" có đúng một, nền không trong suốt',
+    measured.badgeCount === 1 &&
+      measured.badgeBg !== null &&
+      !isTransparent(measured.badgeBg),
+    `${measured.badgeCount} nhãn, nền ${measured.badgeBg}`,
   );
 
   // Hai phép kiểm tách nhau có chủ ý: cái đầu bắt lỗi "quên khai overflow",

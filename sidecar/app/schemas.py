@@ -76,6 +76,8 @@ class CatalogVoice(BaseModel):
     # Giọng nhân bản từ mẫu thu, không phải giọng dựng sẵn của model. UI nói
     # thẳng mức độ giống thay vì để user tưởng là bản sao y hệt.
     cloned: bool = False
+    # Giọng khuyên dùng (catalog `recommended`) — UI gắn nhãn "Đề xuất".
+    recommended: bool = False
     files: list[VoiceFileInfo]
 
 

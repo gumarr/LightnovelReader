@@ -83,6 +83,7 @@ export const createVoicesHandlers = (deps: VoicesHandlerDeps): VoicesHandlers =>
           installed: voice.installed,
           // Cùng lý do với `engine`: sidecar cũ không gửi trường này.
           cloned: voice.cloned ?? false,
+          recommended: voice.recommended ?? false,
         })),
       );
     },

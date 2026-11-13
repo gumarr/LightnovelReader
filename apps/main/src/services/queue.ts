@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import {
   errorMessage,
+  hasSpeakableText,
   JOB_PRIORITY_NORMAL,
   type AudioBitrate,
   type BookLang,
@@ -319,9 +320,16 @@ export const createGenerateQueue = (deps: QueueDeps): GenerateQueue => {
     enqueueSegments(input) {
       const priority = input.priority ?? JOB_PRIORITY_NORMAL;
       const createdAt = now();
+      // Đoạn chỉ có dấu câu (`“........”`) không bao giờ được vào hàng đợi: Piper
+      // ném lỗi (chấm đỏ), VieNeu bịa ra tiếng. Lọc ở đây vì chương/sách/đoạn lẻ
+      // đều đi qua hàm này.
+      const segmentIds = input.segmentIds.filter((segmentId) => {
+        const segment = segments.findById(segmentId);
+        return segment === undefined || hasSpeakableText(segment.text);
+      });
 
       const added = jobs.enqueueMany(
-        input.segmentIds.map((segmentId) => ({
+        segmentIds.map((segmentId) => ({
           id: newId(),
           type: 'synthesize' as const,
           segmentId,
@@ -330,7 +338,7 @@ export const createGenerateQueue = (deps: QueueDeps): GenerateQueue => {
         })),
       );
 
-      for (const segmentId of input.segmentIds) {
+      for (const segmentId of segmentIds) {
         const segment = segments.findById(segmentId);
         // Segment đã có audio thì để nguyên `ready` — nó vẫn phát được trong
         // lúc chờ generate lại.

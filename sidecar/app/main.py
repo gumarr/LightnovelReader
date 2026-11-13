@@ -150,6 +150,7 @@ def create_app(config: SidecarConfig) -> FastAPI:
                     totalBytes=resolve_model_entry(catalog, entry).total_bytes,
                     installed=is_installed(models_dir, resolve_model_entry(catalog, entry)),
                     cloned=entry.is_cloned,
+                    recommended=entry.recommended,
                     files=[
                         VoiceFileInfo(kind=f.kind, sizeBytes=f.size_bytes, sha256=f.sha256)
                         for f in resolve_model_entry(catalog, entry).files

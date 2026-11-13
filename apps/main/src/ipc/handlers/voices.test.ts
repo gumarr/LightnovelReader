@@ -92,7 +92,17 @@ describe('listCatalog', () => {
       expect(result.data[0]?.id).toBe('vi_VN-vais1000-medium');
       expect(result.data[0]?.installed).toBe(false);
       expect(result.data[0]?.totalBytes).toBe(63_206_154);
+      // Sidecar cũ không gửi `recommended` → không được ra `undefined`.
+      expect(result.data[0]?.recommended).toBe(false);
     }
+  });
+
+  it('chuyển cờ recommended từ sidecar lên', async () => {
+    const { handlers } = setup(
+      fakeClient({ listCatalog: vi.fn(async () => [{ ...catalogVoice, engine: 'vieneu' as const, recommended: true }]) }),
+    );
+    const result = await handlers.listCatalog();
+    expect(result.ok && result.data[0]?.recommended).toBe(true);
   });
 });
 

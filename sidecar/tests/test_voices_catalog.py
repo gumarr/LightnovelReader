@@ -7,6 +7,7 @@ mạng hay bản đóng gói.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -282,6 +283,27 @@ class TestLoadCatalog:
             assert provider.engine == voice.engine
             assert provider.files
 
+    def test_ngọc_huyền_đứng_đầu_và_là_giọng_đề_xuất_duy_nhất(self) -> None:
+        """Thứ tự trong catalog = thứ tự trên màn Giọng đọc (P6.4)."""
+        repo_root = Path(__file__).resolve().parents[2]
+        catalog = load_catalog(repo_root / "resources" / "voices" / "catalog.json")
+        first = catalog.voices[0]
+        assert first.id == "vi_VN-vieneu-ngoc-huyen"
+        assert first.is_cloned
+        assert [v.id for v in catalog.voices if v.recommended] == [first.id]
+
+    def test_url_catalog_thật_ghim_commit_không_dùng_main(self) -> None:
+        """2026-09-16 repo VieNeu re-export `onnx_int8/` trên `main` → sha256
+        đổi → user mới tải về bị từ chối. Ghim sha commit thì file không bao
+        giờ đổi dưới chân sha256 đã chép trong catalog."""
+        repo_root = Path(__file__).resolve().parents[2]
+        catalog = load_catalog(repo_root / "resources" / "voices" / "catalog.json")
+        pinned = re.compile(r"/resolve/[0-9a-f]{40}/")
+        for voice in catalog.voices:
+            for f in voice.files:
+                url = (voice.base_url or catalog.base_url) + f.path
+                assert pinned.search(url), f"{voice.id}: {url} chưa ghim commit"
+
 
 class TestĐãCài:
     def install(self, models_dir: Path, voice_id: str, model_size: int, config_size: int) -> None:
@@ -336,6 +358,18 @@ class TestĐaEngine:
         voice = raw_voice()
         voice["engine"] = "khong-co-that"
         with pytest.raises(CatalogError, match="engine"):
+            parse_catalog(raw_catalog(voice))
+
+    def test_recommended_mặc_định_false(self) -> None:
+        assert parse_catalog(raw_catalog(raw_model_voice())).voices[0].recommended is False
+
+    def test_recommended_đọc_được(self) -> None:
+        voice = {**raw_model_voice(), "recommended": True}
+        assert parse_catalog(raw_catalog(voice)).voices[0].recommended is True
+
+    def test_recommended_không_phải_bool_bị_từ_chối(self) -> None:
+        voice = {**raw_model_voice(), "recommended": "yes"}
+        with pytest.raises(CatalogError, match="recommended"):
             parse_catalog(raw_catalog(voice))
 
     def test_voice_vieneu_không_cần_đủ_model_và_config(self) -> None:

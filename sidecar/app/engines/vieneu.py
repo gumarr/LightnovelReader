@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,17 @@ SAMPLE_RATE = 48000
 # đúng tên bên trong `onnx_dir`.
 ONNX_SUBDIR = "onnx_int8"
 MOSS_SUBDIR = "moss"
+
+# Câu thoại một-hai từ (`“Hả?”`, `“Vâng”`) bị model nói lảm nhảm 8–12% số lần,
+# dài tới 10 s thay vì 0,4 s — đo trên LN thật, PROGRESS 4.87. Giọng đọc bình
+# thường ~0,22 s/từ; vượt `1 s + 0,6 s/từ` là lảm nhảm → sinh lại. Hạ
+# `temperature` KHÔNG chữa được: đo ra còn lảm nhảm dài hơn.
+MAX_ATTEMPTS = 4
+
+
+def max_plausible_seconds(text: str) -> float:
+    """Độ dài tối đa còn tin được cho `text` — quá mức này là model lảm nhảm."""
+    return 1.0 + 0.6 * len(re.findall(r"\w+", text))
 
 
 class VieneuEngine:
@@ -210,7 +222,9 @@ class VieneuEngine:
         `model_entry` là voice **mang file model** (`resolve_model_entry`).
         Không truyền thì coi `entry` tự mang — đúng với voice VieNeu đầu tiên.
         """
-        if not text.strip():
+        # Chỉ có dấu câu (`"..."`) thì SDK đưa chuỗi `"."` vào model và nó bịa
+        # ra tiếng — phải chặn, không chỉ chặn chuỗi rỗng.
+        if not re.search(r"\w", text):
             raise EngineError("Không có nội dung để đọc")
 
         provider = model_entry or entry
@@ -232,27 +246,48 @@ class VieneuEngine:
             if tts is None:  # pragma: no cover — `_load_locked` đã ném
                 raise EngineError("Model VieNeu chưa nạp được")
 
-            try:
-                audio = tts.infer(
-                    text,
-                    voice=voice,
-                    style=self._style,
-                    # Không đóng dấu chìm: đây là audio user tự sinh trên máy
-                    # mình để nghe, không phải nội dung phát tán.
-                    apply_watermark=False,
-                    # `denoise` cần PyTorch — bật lên là ném ở máy user.
-                    denoise=False,
-                    # Giọng nhân bản chỉ có embedding, KHÔNG có `codes`. Để mặc
-                    # định `True` thì SDK đi tìm `codes` trong dict và ném
-                    # `KeyError`. Giọng preset thì vẫn dùng codes như cũ.
-                    use_ref_codes=not entry.is_cloned,
-                )
-            except Exception as exc:
-                raise EngineError(f"VieNeu tổng hợp thất bại: {exc}") from exc
+            limit = int(max_plausible_seconds(text) * SAMPLE_RATE)
+            audio = np.zeros(0, dtype=np.float32)
+            for _ in range(MAX_ATTEMPTS):
+                try:
+                    raw = tts.infer(
+                        text,
+                        voice=voice,
+                        style=self._style,
+                        # Không đóng dấu chìm: đây là audio user tự sinh trên máy
+                        # mình để nghe, không phải nội dung phát tán.
+                        apply_watermark=False,
+                        # `denoise` cần PyTorch — bật lên là ném ở máy user.
+                        denoise=False,
+                        # Giọng nhân bản chỉ có embedding, KHÔNG có `codes`. Để
+                        # mặc định `True` thì SDK đi tìm `codes` trong dict và
+                        # ném `KeyError`. Giọng preset thì vẫn dùng codes như cũ.
+                        use_ref_codes=not entry.is_cloned,
+                    )
+                except Exception as exc:
+                    raise EngineError(f"VieNeu tổng hợp thất bại: {exc}") from exc
 
-        audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+                attempt = np.asarray(raw, dtype=np.float32).reshape(-1)
+                # Hết lượt mà vẫn dài thì giữ bản ngắn nhất — ít lảm nhảm nhất.
+                if audio.size == 0 or 0 < attempt.size < audio.size:
+                    audio = attempt
+                if 0 < attempt.size <= limit:
+                    break
+                _LOGGER.warning(
+                    "VieNeu sinh %.1f s cho %r (tối đa %.1f s) — sinh lại",
+                    attempt.size / SAMPLE_RATE,
+                    text[:40],
+                    limit / SAMPLE_RATE,
+                )
+
         if audio.size == 0:
             raise EngineError("VieNeu trả về audio rỗng")
+        if audio.size > limit:
+            # Hết lượt vẫn lảm nhảm (`“Ê?”` giọng preset: 7/8 lần): chữ thật nằm
+            # ở đầu, phần sau là rác — cắt về mức tối đa, fade 30 ms khỏi bụp.
+            audio = audio[:limit].copy()
+            fade = min(limit, SAMPLE_RATE * 30 // 1000)
+            audio[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
 
         duration_ms = round(audio.size * 1000 / SAMPLE_RATE)
 

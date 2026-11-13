@@ -50,6 +50,8 @@ export type SidecarCatalogVoice = {
   installed: boolean;
   /** Giọng nhân bản từ mẫu thu. Sidecar cũ không gửi → `undefined`. */
   cloned?: boolean;
+  /** Giọng khuyên dùng. Sidecar cũ không gửi → `undefined`. */
+  recommended?: boolean;
 };
 
 export type SidecarInstalledVoice = {

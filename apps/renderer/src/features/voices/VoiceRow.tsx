@@ -68,6 +68,15 @@ export const VoiceRow = ({
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-fg">
             {voice.name}
+            {voice.recommended && (
+              <span
+                data-testid="voice-recommended"
+                className="ml-2 rounded px-1.5 py-0.5 align-middle text-xs font-medium text-accent-fg"
+                style={{ backgroundColor: 'rgb(var(--accent))' }}
+              >
+                Đề xuất
+              </span>
+            )}
             <span className="ml-2 text-xs font-normal text-fg-muted">{langLabel(voice.lang)}</span>
           </p>
           <p className="mt-0.5 text-xs text-fg-muted">{voiceSpecLabel(voice)}</p>
